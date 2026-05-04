@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# OMC / dev pipeline
+.omc/
+.dev/
+
+# Node
+node_modules/
+dist/
+.vite/
+.cache/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Tauri (Rust)
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo

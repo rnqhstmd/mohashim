@@ -1,0 +1,21 @@
+[package]
+name = "mohashim"
+version = "0.1.0"
+description = "모하심 — 키보드/마우스 + 마이크 dB 하이브리드 집중도 측정 데스크탑 앱"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "mohashim_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-store = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
