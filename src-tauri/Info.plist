@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>집중도 측정을 위해 음량(dB)만 분석합니다. 음성 데이터는 저장되지 않습니다.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>키보드/마우스 입력 발생 여부만 감지합니다. 키 내용은 수집하지 않습니다.</string>
+</dict>
+</plist>
