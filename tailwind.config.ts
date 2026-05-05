@@ -13,6 +13,11 @@ const config: Config = {
         sun: "#f4d160",
         peach: "#e89a82",
         ink: "#2b2520",
+        sproutVivid: "#4CAF50",
+        sproutFresh: "#81C784",
+        sproutNeutral: "#A5D6A7",
+        sproutDry: "#C8E6C9",
+        sproutWilt: "#BDBDBD",
       },
       fontFamily: {
         pretendard: [
@@ -22,6 +27,20 @@ const config: Config = {
           "Apple SD Gothic Neo",
           "sans-serif",
         ],
+      },
+      keyframes: {
+        "mh-bob": {
+          "0%, 100%": { transform: "translateY(0) rotate(0deg)" },
+          "50%": { transform: "translateY(-3px) rotate(-1deg)" },
+        },
+        "mh-pulse": {
+          "0%, 100%": { opacity: "0.85" },
+          "50%": { opacity: "1" },
+        },
+      },
+      animation: {
+        "mh-bob": "mh-bob 3.2s ease-in-out infinite",
+        "mh-pulse": "mh-pulse 0.6s ease-in-out infinite",
       },
     },
   },
