@@ -43,6 +43,9 @@ pub async fn focus_start<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if !matches!(current_phase(), Phase::Idle) {
         return Ok(());
     }
+    // Idle 상태에서 슬립 후 깨어났을 때 발생한 stale wake 이벤트가 atomic에 남아있으면
+    // 새 Focus 세션의 첫 tick에서 잘못 차감되므로 여기서 폐기한다.
+    let _ = crate::power::drain_wake_event();
     let minutes = read_minutes(&app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
     store_phase(Phase::Focus);
     store_time_left(minutes.saturating_mul(60));

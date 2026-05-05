@@ -23,11 +23,11 @@ describe("timer", () => {
     expect(invokeMock).toHaveBeenCalledWith("focus_start");
   });
 
-  it("focusStart swallows errors and logs to console.error", async () => {
+  it("focusStart logs to console.error and re-throws on failure", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     invokeMock.mockRejectedValueOnce(new Error("ipc failure"));
     const { focusStart } = await import("../timer");
-    await expect(focusStart()).resolves.toBeUndefined();
+    await expect(focusStart()).rejects.toThrow("ipc failure");
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
@@ -38,11 +38,11 @@ describe("timer", () => {
     expect(invokeMock).toHaveBeenCalledWith("discard_session");
   });
 
-  it("discardSession swallows errors and logs to console.error", async () => {
+  it("discardSession logs to console.error and re-throws on failure", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     invokeMock.mockRejectedValueOnce(new Error("ipc failure"));
     const { discardSession } = await import("../timer");
-    await expect(discardSession()).resolves.toBeUndefined();
+    await expect(discardSession()).rejects.toThrow("ipc failure");
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });

@@ -36,6 +36,10 @@ export function ResetConfirmModal({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reset-confirm-title"
+      aria-describedby="reset-confirm-desc"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
       onClick={handleCancel}
     >
@@ -43,13 +47,17 @@ export function ResetConfirmModal({
         className="w-72 rounded-xl bg-white p-4 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="text-sm text-ink">
+        <h2 id="reset-confirm-title" className="text-sm font-semibold text-ink">
+          데이터 초기화 확인
+        </h2>
+        <p id="reset-confirm-desc" className="mt-2 text-sm text-ink">
           '모하'를 입력하면 모든 데이터가 삭제됩니다.
         </p>
         <input
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          aria-label="확인 키워드 입력 (모하)"
           placeholder="모하"
           className="mt-3 w-full rounded-md border border-deep/20 bg-white px-3 py-2 text-sm"
         />

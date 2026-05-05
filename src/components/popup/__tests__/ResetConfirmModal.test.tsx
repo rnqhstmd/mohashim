@@ -17,7 +17,10 @@ describe("ResetConfirmModal", () => {
     render(
       <ResetConfirmModal open={true} onConfirm={vi.fn()} onCancel={vi.fn()} />
     );
-    expect(screen.getByText(/모하/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("'모하'를 입력하면 모든 데이터가 삭제됩니다.")
+    ).toBeInTheDocument();
   });
 
   it("disables confirm button initially", () => {

@@ -24,9 +24,15 @@ export function PomodoroRunning({ phase, timeLeft }: PomodoroRunningProps) {
   const [showDiscard, setShowDiscard] = useState(false);
   const heading = phase === "focus" ? "집중 중" : "휴식 중";
 
+  // discardSession 실패 시 모달을 닫지 않아 사용자가 재시도할 수 있도록 한다.
+  // IPC 에러는 timer.ts에서 console.error로 기록됨.
   const handleConfirm = async () => {
-    await discardSession();
-    setShowDiscard(false);
+    try {
+      await discardSession();
+      setShowDiscard(false);
+    } catch {
+      // 모달 유지 — 사용자가 재시도 가능
+    }
   };
 
   return (

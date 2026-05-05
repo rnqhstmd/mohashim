@@ -16,6 +16,9 @@ export function DiscardModal({ open, onConfirm, onCancel }: DiscardModalProps) {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="세션 폐기 확인"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
       onClick={onCancel}
     >

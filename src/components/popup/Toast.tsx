@@ -9,7 +9,12 @@ import { useToastQueue } from "../../lib/toast";
 export function ToastContainer() {
   const { toasts } = useToastQueue();
   return (
-    <div className="pointer-events-none absolute bottom-16 left-1/2 z-40 flex -translate-x-1/2 flex-col gap-2">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="pointer-events-none absolute bottom-16 left-1/2 z-40 flex -translate-x-1/2 flex-col gap-2"
+    >
       {toasts.map((t) => (
         <div
           key={t.id}

@@ -33,9 +33,15 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   // Focus 진입 시 자동으로 todos 탭으로 전환하여 PomodoroRunning이 보이도록.
   // 현재 IdleScreen은 todos 탭에서만 노출되지만, 외부 트리거 등으로 settings 탭에
   // 머무는 동안 Focus가 시작될 때를 대비한 fail-safe.
+  // focusStart 실패 시 IPC 에러는 이미 timer.ts에서 console.error로 기록됨.
+  // 다음 score-tick에서 phase=idle이 확인되면 IdleScreen으로 자연 복귀하므로 swallow.
   const handleFocusStart = async () => {
     setTab("todos");
-    await focusStart();
+    try {
+      await focusStart();
+    } catch {
+      // no-op: 다음 tick에서 phase=idle 확인 시 IdleScreen으로 복귀
+    }
   };
 
   return (
