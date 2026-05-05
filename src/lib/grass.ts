@@ -118,11 +118,15 @@ export async function getMonthSessions(monthOffset: number): Promise<MonthData> 
  * SVG 엘리먼트를 1080×1080 PNG Blob으로 합성.
  *
  * XMLSerializer → data:image/svg+xml;base64 → Image.decode → canvas → toBlob.
- * 한글 등 non-ASCII 안전을 위해 unescape(encodeURIComponent(...)) 인코딩 사용.
+ * 한글 등 non-ASCII 안전을 위해 TextEncoder로 UTF-8 바이트 변환 후 base64.
+ * (deprecated `unescape`/`encodeURIComponent` 패턴 대체 — PR #8 리뷰 반영)
  */
 export async function composeShareCard(svgEl: SVGSVGElement): Promise<Blob> {
   const svgString = new XMLSerializer().serializeToString(svgEl);
-  const dataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
+  const bytes = new TextEncoder().encode(svgString);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  const dataUrl = `data:image/svg+xml;base64,${btoa(binary)}`;
   const img = new Image();
   img.src = dataUrl;
   await img.decode();
