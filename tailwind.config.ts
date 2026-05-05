@@ -13,6 +13,8 @@ const config: Config = {
         sun: "#f4d160",
         peach: "#e89a82",
         ink: "#2b2520",
+        // Phase 6: todos 탭 상단 카드(PomodoroCard/FocusStartButton) 배경. active 그라디언트와 일관.
+        cream: "#fff8e0",
         // Phase 3: ModeChip 배경 색상 (FR-chip-color).
         chipIdle: "#9ca3af",
         chipFocus: "#dc4646",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Phase } from "../../lib/score";
 import type { PotatoState } from "../../lib/phrases";
 import type { Todo, WorkTag, Location } from "../../lib/storage";
@@ -52,6 +52,8 @@ export function TodosTab({
   const [workTags, setWorkTags] = useState<WorkTag[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  // 로드 완료 전에는 빈 상태 ("아직 할 일이 없어요") flicker 방지를 위해 본문 미렌더.
+  const [loaded, setLoaded] = useState(false);
 
   // 초기 로드 — cancelled flag 패턴으로 unmount 후 setState 방지.
   useEffect(() => {
@@ -69,6 +71,8 @@ export function TodosTab({
         setLocations(l);
       } catch (err) {
         console.error("[mohashim] todos load failed", err);
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
     })();
     return () => {
@@ -87,26 +91,28 @@ export function TodosTab({
     [locations]
   );
 
-  const persist = async (next: Todo[]) => {
-    const prev = todos;
+  // 직렬화된 디스크 write 큐 — 빠른 연속 클릭으로 in-flight persist가 race되어
+  // 저장 순서가 뒤바뀌거나 stale rollback이 최신 상태를 덮어쓰는 것을 방지.
+  // 메모리 state는 즉시 반영(낙관적 업데이트), 디스크 write만 직렬화한다.
+  // 실패 시 다음 persist가 그대로 진행하여 결과적 일관성 확보 (마지막 호출이 최종 상태).
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const persist = (next: Todo[]) => {
     setTodosState(next);
-    try {
-      await storeSetTodos(next);
-    } catch (err) {
-      console.error("[mohashim] todos persist failed, rolling back", err);
-      setTodosState(prev);
-    }
+    writeQueueRef.current = writeQueueRef.current.then(async () => {
+      try {
+        await storeSetTodos(next);
+      } catch (err) {
+        console.error("[mohashim] todos persist failed", err);
+      }
+    });
   };
-
-  const isRunning =
-    phase === "focus" || phase === "break" || phase === "complete";
 
   return (
     <div
       className="flex h-full flex-col"
       onClick={() => setOpenSwipeId(null)}
     >
-      {isRunning ? (
+      {phase === "focus" || phase === "break" || phase === "complete" ? (
         <PomodoroCard
           phase={phase}
           timeLeft={timeLeft}
@@ -123,7 +129,7 @@ export function TodosTab({
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto">
-          {sorted.length === 0 ? (
+          {!loaded ? null : sorted.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-deep/40">
               아직 할 일이 없어요
             </div>
@@ -136,15 +142,9 @@ export function TodosTab({
                 location={t.loc ? locMap.get(t.loc) ?? null : null}
                 openSwipeId={openSwipeId}
                 onSwipeOpen={setOpenSwipeId}
-                onToggleDone={(id) => {
-                  void persist(toggleDone(todos, id));
-                }}
-                onToggleActive={(id) => {
-                  void persist(setActive(todos, id));
-                }}
-                onDelete={(id) => {
-                  void persist(deleteTodo(todos, id));
-                }}
+                onToggleDone={(id) => persist(toggleDone(todos, id))}
+                onToggleActive={(id) => persist(setActive(todos, id))}
+                onDelete={(id) => persist(deleteTodo(todos, id))}
               />
             ))
           )}
@@ -152,9 +152,9 @@ export function TodosTab({
         <TodoInput
           workTags={workTags}
           locations={locations}
-          onSubmit={(text, tag, loc) => {
-            void persist([...todos, createTodo(text, tag, loc)]);
-          }}
+          onSubmit={(text, tag, loc) =>
+            persist([...todos, createTodo(text, tag, loc)])
+          }
         />
       </div>
     </div>

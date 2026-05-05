@@ -157,11 +157,16 @@ export async function setBreakMinutes(
   await set("break_minutes", value, options);
 }
 
-/** 폴백 정규화: tag/loc/active 부재 또는 구 타입(name) 잔존 시 안전 변환 (Phase 6 M2). */
+/**
+ * 폴백 정규화: tag/loc/active 부재 또는 구 타입(name) 잔존 시 안전 변환 (Phase 6 M2).
+ * - 비배열 잔존 데이터는 빈 배열로 무효화하여 UI 충돌 차단.
+ * - id 부재 시 결정적 prefix(`t-fallback-${idx}`)로 폴백 — 호출 시마다 같은 ID 반환 → React key 안정.
+ */
 export async function getTodos(): Promise<Todo[]> {
   const raw = await get("todos");
-  return (raw as any[]).map((t: any) => ({
-    id: typeof t?.id === "string" ? t.id : `t${Date.now()}${Math.random().toString(36).slice(2)}`,
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((t: any, idx: number) => ({
+    id: typeof t?.id === "string" ? t.id : `t-fallback-${idx}`,
     text: typeof t?.text === "string" ? t.text : "",
     done: !!t?.done,
     tag: typeof t?.tag === "string" ? t.tag : null,
@@ -174,11 +179,12 @@ export async function setTodos(value: Todo[], options: SetOptions = {}): Promise
   await set("todos", value, options);
 }
 
-/** 폴백 정규화: tag/loc/active 부재 또는 구 타입(name) 잔존 시 안전 변환 (Phase 6 M2). */
+/** 폴백 정규화 (Phase 6 M2). 비배열은 [], id 부재 시 결정적 폴백. */
 export async function getWorkTags(): Promise<WorkTag[]> {
   const raw = await get("work_tags");
-  return (raw as any[]).map((t: any) => ({
-    id: typeof t?.id === "string" ? t.id : `wt${Date.now()}${Math.random().toString(36).slice(2)}`,
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((t: any, idx: number) => ({
+    id: typeof t?.id === "string" ? t.id : `wt-fallback-${idx}`,
     emoji: typeof t?.emoji === "string" ? t.emoji : "🏷",
     label: typeof t?.label === "string" ? t.label : (typeof t?.name === "string" ? t.name : ""),
     color: typeof t?.color === "string" ? t.color : "#7aa3e6",
@@ -189,11 +195,12 @@ export async function setWorkTags(value: WorkTag[], options: SetOptions = {}): P
   await set("work_tags", value, options);
 }
 
-/** 폴백 정규화: tag/loc/active 부재 또는 구 타입(name) 잔존 시 안전 변환 (Phase 6 M2). */
+/** 폴백 정규화 (Phase 6 M2). 비배열은 [], id 부재 시 결정적 폴백. */
 export async function getLocations(): Promise<Location[]> {
   const raw = await get("locations");
-  return (raw as any[]).map((t: any) => ({
-    id: typeof t?.id === "string" ? t.id : `loc${Date.now()}${Math.random().toString(36).slice(2)}`,
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((t: any, idx: number) => ({
+    id: typeof t?.id === "string" ? t.id : `loc-fallback-${idx}`,
     emoji: typeof t?.emoji === "string" ? t.emoji : "📍",
     label: typeof t?.label === "string" ? t.label : (typeof t?.name === "string" ? t.name : ""),
     color: typeof t?.color === "string" ? t.color : "#7aa3e6",

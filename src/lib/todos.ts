@@ -109,7 +109,9 @@ export function toggleDone(todos: readonly Todo[], id: string): Todo[] {
 
   if (wasCompleted) {
     // 롤백 (D-5): 항목을 배열 맨 앞으로 이동 후 안정 정렬로 active 다음 위치 자연 배치.
-    const rolled = updated.find((t) => t.id === id)!;
+    // active=false 명시 고정 — 외부 store 직접 편집으로 done=true && active=true 데이터가
+    // 유입된 경우에도 BR-2 정책 일관성 보장.
+    const rolled = { ...updated.find((t) => t.id === id)!, active: false };
     const rest = updated.filter((t) => t.id !== id);
     return sortTodos([rolled, ...rest]);
   }

@@ -47,6 +47,7 @@ export function TodoItem({
 }: TodoItemProps) {
   const startX = useRef(0);
   const startY = useRef(0);
+  const initialOffset = useRef(0);
   const intent = useRef<SwipeIntent>("undecided");
   const [offset, setOffset] = useState(0);
 
@@ -60,6 +61,7 @@ export function TodoItem({
   const handlePointerDown = (e: ReactPointerEvent) => {
     startX.current = e.clientX;
     startY.current = e.clientY;
+    initialOffset.current = offset; // 점프 방지 — 이미 -80인 상태에서 재스와이프 시 dx 0부터 더해짐.
     intent.current = "undecided";
   };
 
@@ -74,7 +76,8 @@ export function TodoItem({
       if (ax > ay + 5) {
         intent.current = "horizontal";
         try {
-          (e.target as Element).setPointerCapture(e.pointerId);
+          // 핸들러가 부착된 컨테이너(currentTarget)에 capture — 내부 span/button으로 target이 바뀌어도 안정.
+          e.currentTarget.setPointerCapture(e.pointerId);
         } catch {
           // setPointerCapture 실패는 무시
         }
@@ -87,7 +90,7 @@ export function TodoItem({
     }
 
     if (intent.current === "horizontal") {
-      setOffset(Math.min(0, Math.max(-80, dx)));
+      setOffset(Math.min(0, Math.max(-80, initialOffset.current + dx)));
     }
   };
 
