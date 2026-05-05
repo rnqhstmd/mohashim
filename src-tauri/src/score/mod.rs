@@ -71,10 +71,17 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 ///
 /// atomic read + 산술 + emit만 수행한다 (오디오/입력 스레드를 차단하지 않음).
 /// state 변경된 tick에서만 트레이 갱신 호출 (AC-13).
+///
+/// 누적 drift 방지: `next_tick`을 절대 시각으로 유지하여 sleep + 본문 실행 시간을
+/// 흡수한다. 본문이 1초 이상 걸려 next_tick이 과거가 되면 sleep을 건너뛰고 즉시 진행.
 fn tick_loop<R: Runtime>(app: AppHandle<R>) {
     let mut prev_live: Option<LiveState> = None;
+    let mut next_tick = Instant::now();
     loop {
-        std::thread::sleep(Duration::from_secs(1));
+        next_tick += Duration::from_secs(1);
+        if let Some(remaining) = next_tick.checked_duration_since(Instant::now()) {
+            std::thread::sleep(remaining);
+        }
 
         let idle = if AX_GRANTED.load(Relaxed) {
             seconds_idle()

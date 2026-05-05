@@ -1,12 +1,14 @@
+use std::sync::atomic::Ordering::Relaxed;
+
 use rdev;
 
-use crate::score::shared::touch_input;
+use crate::score::shared::{touch_input, LAST_INPUT_AT_MS};
 
 /// 입력 후킹 스레드 기동 (FR-6, BR-3, MUST-1).
 ///
 /// `mohashim-input` 스레드 안에서 rdev::listen을 호출한다.
-/// listen Err 또는 패닉 → eprintln 후 스레드만 종료. atomic 0 유지로
-/// seconds_idle=0 → work=80, grace=active 상태가 유지된다 (BR-7).
+/// listen Err 또는 패닉 → eprintln + LAST_INPUT_AT_MS=0 리셋 후 스레드만 종료.
+/// atomic 0 유지로 seconds_idle=0 → work=80, grace=active 상태가 유지된다 (BR-7).
 ///
 /// macOS rdev 0.5.x는 CGEventTap + CFRunLoop 기반이며, 임의 std::thread에서
 /// 콜백 미발화 가능성이 있다 (§17). 본 Phase에서는 폴백 경로만 견고히 한다.
@@ -22,8 +24,11 @@ pub fn start() -> Result<(), String> {
                 touch_input();
             });
             if let Err(e) = result {
-                // BR-7: listen 실패 시 입력 후킹 스레드만 종료.
-                // atomic 0 유지 → seconds_idle=0 → work=80, grace=active.
+                // BR-7 충실도: listen 중간 실패 시점에 LAST_INPUT_AT_MS가 직전 입력값을
+                // 보유하고 있을 수 있다. 그대로 두면 seconds_idle()이 콜백 정지 시점부터
+                // 무한 증가 → 자리 비움으로 오판된다. 0(미입력 센티넬)으로 리셋해
+                // grace=active / work=80 폴백을 보장한다.
+                LAST_INPUT_AT_MS.store(0, Relaxed);
                 eprintln!("[mohashim] rdev::listen failed: {e:?}");
             }
         })
