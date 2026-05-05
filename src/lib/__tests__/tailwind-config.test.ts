@@ -98,4 +98,8 @@ describe("tailwind config — animation 정의 (AC-20)", () => {
   it("mh-pulse animation은 'mh-pulse 0.6s ease-in-out infinite'", () => {
     expect(animation["mh-pulse"]).toBe("mh-pulse 0.6s ease-in-out infinite");
   });
+
+  it("mhpulse alias (BR-7 호환) — mh-pulse와 동일 keyframe으로 폴백", () => {
+    expect(animation["mhpulse"]).toBe("mh-pulse 0.6s ease-in-out infinite");
+  });
 });

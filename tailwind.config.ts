@@ -41,6 +41,9 @@ const config: Config = {
       animation: {
         "mh-bob": "mh-bob 3.2s ease-in-out infinite",
         "mh-pulse": "mh-pulse 0.6s ease-in-out infinite",
+        // BR-7 호환 alias — timer 도메인이 무하이픈 'mhpulse' 키를 사용해도
+        // 동일 keyframe(`mh-pulse`)으로 폴백되어 chip 펄스가 silent하게 사라지지 않는다.
+        mhpulse: "mh-pulse 0.6s ease-in-out infinite",
       },
     },
   },

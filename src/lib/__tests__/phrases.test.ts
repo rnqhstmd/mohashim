@@ -140,6 +140,35 @@ describe("__pickPhraseFromArray — 빈 배열 / 단일 원소 (AC-21, BR-3)", (
   });
 });
 
+describe("pickPhrase — fractional seed 정수화 (Math.floor)", () => {
+  it("seed=0.5 → idle[0] (Math.floor(0.5)=0)", () => {
+    expect(pickPhrase("idle", 0.5)).toBe(POTATO_PHRASES.idle[0]);
+  });
+
+  it("seed=1.7 → idle[1] (Math.floor(1.7)=1)", () => {
+    expect(pickPhrase("idle", 1.7)).toBe(POTATO_PHRASES.idle[1]);
+  });
+
+  it("seed=2.9 → idle[2] (Math.floor(2.9)=2)", () => {
+    expect(pickPhrase("idle", 2.9)).toBe(POTATO_PHRASES.idle[2]);
+  });
+
+  it("seed=-1.5 → idle[1] (Math.abs=1.5 → Math.floor=1)", () => {
+    expect(pickPhrase("idle", -1.5)).toBe(POTATO_PHRASES.idle[1]);
+  });
+
+  it("__pickPhraseFromArray 단일 원소 + fractional seed → 그 원소", () => {
+    expect(__pickPhraseFromArray(["only"], 0.5)).toBe("only");
+    expect(__pickPhraseFromArray(["only"], 7.7)).toBe("only");
+  });
+
+  it("fractional seed에서 undefined 반환 없음 (회귀 방지)", () => {
+    expect(pickPhrase("idle", 0.5)).not.toBeUndefined();
+    expect(pickPhrase("focusHigh", 3.14)).not.toBeUndefined();
+    expect(typeof pickPhrase("noiseLoud", 1.999)).toBe("string");
+  });
+});
+
 describe("pickPhrase — NaN/Infinity seed 폴백 (Q2)", () => {
   it("seed=NaN → idle[0]", () => {
     expect(pickPhrase("idle", NaN)).toBe(POTATO_PHRASES.idle[0]);

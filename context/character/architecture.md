@@ -10,7 +10,7 @@ type PotatoState = 'focused' | 'calm' | 'distracted' | 'covering' | 'stressed';
 
 - viewBox `0 0 200 200`, 호빵형 몸통(rx≈60, ry≈53)
 - 표정은 state별 분기 — 눈·볼·입·기타(땀/눈물)
-- 새싹은 `<Sprout state={state} P={POTATO_PALETTE.light} />`
+- 새싹은 `<Sprout state />` — `Potato.tsx` 내부 비-export 컴포넌트. 색은 `SPROUT_FILL[state]` Tailwind 클래스로 자동 매핑되므로 외부에서 팔레트를 주입하지 않는다.
 - 애니메이션: `mh-bob` (3.2s ease-in-out, 살짝 위아래)
 
 ## 표정 매핑 규칙
@@ -59,9 +59,9 @@ function selectBucket({ phase, total, db }: Ctx): keyof typeof POTATO_PHRASES {
 ```ts
 /** @internal — 빈 배열 가드 검증용. 운영 호출자는 pickPhrase만 사용. */
 function __pickPhraseFromArray(arr: readonly string[], seed: number): string {
-  if (arr.length === 0) return "";                  // 빈 배열 가드 (NaN 체크보다 먼저)
-  const s = Number.isFinite(seed) ? seed : 0;       // NaN/Infinity 폴백 → arr[0] 보장
-  return arr[Math.abs(s) % arr.length];
+  if (arr.length === 0) return "";                       // 빈 배열 가드 (NaN 체크보다 먼저)
+  const s = Number.isFinite(seed) ? seed : 0;            // NaN/Infinity 폴백 → arr[0] 보장
+  return arr[Math.floor(Math.abs(s)) % arr.length];      // Math.floor로 정수 정규화 — fractional seed에도 안전
 }
 
 function pickPhrase(bucket: BucketKey, seed: number): string {
@@ -71,7 +71,7 @@ function pickPhrase(bucket: BucketKey, seed: number): string {
 
 - seed는 phase/total/timestamp 등에서 도출 (UI 깜빡임 방지를 위해 빠르게 변하지 않도록)
 - 같은 버킷 내 중복은 seed 회전으로 자연 분산
-- BR-3 (seed=0 → arr[0], seed 음수 → Math.abs, NaN/Infinity → 0 폴백, 빈 배열 → `""`)는 모두 `__pickPhraseFromArray`에서 보장. 운영 호출자가 가드 깜빡해도 안전.
+- BR-3 (seed=0 → arr[0], seed 음수 → Math.abs, fractional seed → Math.floor 정수화, NaN/Infinity → 0 폴백, 빈 배열 → `""`)는 모두 `__pickPhraseFromArray`에서 보장. 운영 호출자가 가드 깜빡해도 안전.
 
 ### mapPhaseToPotatoState (FR-22 / FR-23 유틸)
 
@@ -102,7 +102,7 @@ function mapPhaseToPotatoState(ctx: PhraseCtx, engineState: PotatoState): Potato
 | 컴포넌트 | 역할 |
 |----------|------|
 | `<SpeechBubble text color>` | 모하 옆 말풍선. 라운딩 14 + 1.5px ink + 2px shadow + 좌하단 45° 회전 사각 꼬리. `text === ""` 시 자체적으로 `null` 렌더 (BR-3 / AC-21). |
-| `<Sprout state P>` | 머리 위 새싹 SVG (state별 5종). Body 안쪽 첫 자식으로 렌더. |
+| `<Sprout state>` | 머리 위 새싹 SVG (state별 5종). `Potato.tsx` 내부 비-export 컴포넌트. 잎 색은 내부 `SPROUT_FILL[state]` 매핑 (`fill-sproutVivid` 등). 줄기·잎 좌/우 path 2개에 동일 fill을 적용한다. |
 
 ## sprout 5색 토큰 (확정 hex)
 
@@ -131,6 +131,7 @@ function mapPhaseToPotatoState(ctx: PhraseCtx, engineState: PotatoState): Potato
 
 - `mh-bob` 3.2s ease-in-out infinite — 모든 모하 SVG 기본 (`animated=true` 시)
 - `mh-pulse` 0.6s ease-in-out infinite — 점수 변동, grace="looking" 시 👀 이모지에 적용
+- `mhpulse` (alias) — BR-7 호환용. timer 도메인이 무하이픈 키를 사용할 때 동일 keyframe으로 폴백.
 
 ## 모드별 표정 분기 (Idle 트레이는 `tray` 도메인)
 

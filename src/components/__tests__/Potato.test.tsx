@@ -63,3 +63,39 @@ describe("Potato — sweat/tear 회귀 방지", () => {
     expect(screen.queryByTestId("potato-tear")).toBeNull();
   });
 });
+
+describe("Potato — Sprout 5단계 색 토큰 매핑 (FR-19-S)", () => {
+  // SPROUT_FILL 매핑 회귀 방지 — 5단계 각 state에서 잎 path가 정확한 fill-sprout* 클래스를 갖는지 검증.
+  // 잎 path는 별도 testid가 없으므로 querySelector로 fill-sprout* 클래스를 직접 찾는다.
+
+  const expectations: Array<{
+    state: "focused" | "calm" | "distracted" | "covering" | "stressed";
+    fill: string;
+  }> = [
+    { state: "focused", fill: "fill-sproutVivid" },
+    { state: "calm", fill: "fill-sproutFresh" },
+    { state: "distracted", fill: "fill-sproutNeutral" },
+    { state: "covering", fill: "fill-sproutDry" },
+    { state: "stressed", fill: "fill-sproutWilt" },
+  ];
+
+  for (const { state, fill } of expectations) {
+    it(`state='${state}' → 잎 path에 ${fill} 클래스 적용`, () => {
+      const { container } = render(<Potato state={state} />);
+      const leaves = container.querySelectorAll(`path.${fill}`);
+      // 잎 path는 좌/우 2개. 둘 다 동일 fill 클래스를 가져야 한다.
+      expect(leaves.length).toBe(2);
+    });
+  }
+
+  it("다른 state의 fill 클래스가 동시에 적용되지 않는다", () => {
+    const { container } = render(<Potato state="focused" />);
+    // focused는 fill-sproutVivid만. 다른 4종 클래스는 0건.
+    expect(container.querySelectorAll("path.fill-sproutFresh").length).toBe(0);
+    expect(container.querySelectorAll("path.fill-sproutNeutral").length).toBe(
+      0,
+    );
+    expect(container.querySelectorAll("path.fill-sproutDry").length).toBe(0);
+    expect(container.querySelectorAll("path.fill-sproutWilt").length).toBe(0);
+  });
+});

@@ -90,7 +90,9 @@ export function __pickPhraseFromArray(
 ): string {
   if (arr.length === 0) return "";
   const s = Number.isFinite(seed) ? seed : 0;
-  return arr[Math.abs(s) % arr.length];
+  // Math.floor로 정수 정규화. fractional seed (예: 0.5)에서도 항상 정수 인덱스를 보장 →
+  // arr[fractional]이 undefined를 반환하지 않도록 한다.
+  return arr[Math.floor(Math.abs(s)) % arr.length];
 }
 
 export function pickPhrase(bucket: BucketKey, seed: number): string {
