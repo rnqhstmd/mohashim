@@ -20,6 +20,9 @@ src-tauri/target/
 src-tauri/Cargo.lock
 src-tauri/gen/
 
+# 빌드 산출 트레이 아이콘 (DEC-8 — prebuild로 재생성)
+src-tauri/icons/tray/
+
 # Editor
 .idea/
 .vscode/
