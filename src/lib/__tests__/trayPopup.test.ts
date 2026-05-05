@@ -3,13 +3,13 @@ import { computePopupPosition } from "../trayPopup";
 
 describe("computePopupPosition", () => {
   it("clamps x to right edge on macOS retina near right of monitor", () => {
-    // primary retina monitor 2880x1800 @ sf=2.0, popup logical 320x460 → physical 640x920.
+    // primary retina monitor 2880x1800 @ sf=2.0, popup logical 320x470 → physical 640x940.
     // payload.x=2820, iconW=44 → iconCenterX=2842.
     // xRaw = round(2842 - (640 - 100)) = 2302. monitor.width - popup.width = 2240.
     // → x clamp = 2240. y = 0 + 44 = 44.
     const result = computePopupPosition(
       { x: 2820, y: 0, iconWidth: 44, iconHeight: 44 },
-      { width: 640, height: 920 },
+      { width: 640, height: 940 },
       { x: 0, y: 0, width: 2880, height: 1800 },
       "macos",
     );
@@ -17,16 +17,16 @@ describe("computePopupPosition", () => {
   });
 
   it("computes Windows tray position (popup above icon, no clamp needed)", () => {
-    // 1920x1080 @ sf=1.0, popup 320x460. payload.x=1820, y=1040, icon 32x32.
+    // 1920x1080 @ sf=1.0, popup 320x470. payload.x=1820, y=1040, icon 32x32.
     // iconCenterX = 1836. xRaw = round(1836 - 270) = 1566. 0 ≤ 1566 ≤ 1600 → no clamp.
-    // y = 1040 - 460 = 580. 0 ≤ 580 ≤ 620 → no clamp.
+    // y = 1040 - 470 = 570. 0 ≤ 570 ≤ 610 → no clamp.
     const result = computePopupPosition(
       { x: 1820, y: 1040, iconWidth: 32, iconHeight: 32 },
-      { width: 320, height: 460 },
+      { width: 320, height: 470 },
       { x: 0, y: 0, width: 1920, height: 1080 },
       "windows",
     );
-    expect(result).toEqual({ x: 1566, y: 580 });
+    expect(result).toEqual({ x: 1566, y: 570 });
   });
 
   it("clamps x to left edge when click is near left of screen (macOS)", () => {
@@ -34,7 +34,7 @@ describe("computePopupPosition", () => {
     // → x clamp = 0. y = 0 + 22 = 22.
     const result = computePopupPosition(
       { x: 10, y: 0, iconWidth: 22, iconHeight: 22 },
-      { width: 320, height: 460 },
+      { width: 320, height: 470 },
       { x: 0, y: 0, width: 1920, height: 1080 },
       "macos",
     );
@@ -46,7 +46,7 @@ describe("computePopupPosition", () => {
     // monitor.width - popup.width = 1600 → clamp = 1600. y = 0 + 22 = 22.
     const result = computePopupPosition(
       { x: 1900, y: 0, iconWidth: 22, iconHeight: 22 },
-      { width: 320, height: 460 },
+      { width: 320, height: 470 },
       { x: 0, y: 0, width: 1920, height: 1080 },
       "macos",
     );
@@ -54,12 +54,12 @@ describe("computePopupPosition", () => {
   });
 
   it("clamps y to top edge on Windows when click is near top of screen", () => {
-    // payload.x=500, y=30, icon 32x32. popup 320x460.
+    // payload.x=500, y=30, icon 32x32. popup 320x470.
     // iconCenterX=516. xRaw = round(516 - 270) = 246. 0 ≤ 246 ≤ 1600 → no x clamp.
-    // y = 30 - 460 = -430 → clamp = 0.
+    // y = 30 - 470 = -440 → clamp = 0.
     const result = computePopupPosition(
       { x: 500, y: 30, iconWidth: 32, iconHeight: 32 },
-      { width: 320, height: 460 },
+      { width: 320, height: 470 },
       { x: 0, y: 0, width: 1920, height: 1080 },
       "windows",
     );
@@ -72,7 +72,7 @@ describe("computePopupPosition", () => {
     // 1920 ≤ 3441 ≤ 3520 → no clamp. y = 0 + 22 = 22.
     const result = computePopupPosition(
       { x: 3700, y: 0, iconWidth: 22, iconHeight: 22 },
-      { width: 320, height: 460 },
+      { width: 320, height: 470 },
       { x: 1920, y: 0, width: 1920, height: 1080 },
       "macos",
     );

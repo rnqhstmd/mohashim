@@ -61,15 +61,16 @@ async function renderMacPng(svgPath, px) {
   // 3) 검정 RGB 3채널 raw (R=G=B=0).
   const blackRgb = Buffer.alloc(px * px * 3, 0);
 
-  // 4) RGB(black) + alpha 결합 → ICC 미포함 sRGB PNG.
+  // 4) RGB(black) + alpha 결합 → ICC 미포함 PNG.
+  // raw RGB 입력은 ICC 프로파일이 없으며, toColourspace/withMetadata 호출 시
+  // sharp가 sRGB ICC를 자동 삽입할 수 있어 둘 다 제거한다 (AC-T8).
   return await sharp(blackRgb, {
     raw: { width: px, height: px, channels: 3 },
   })
     .joinChannel(alphaRaw, {
       raw: { width: px, height: px, channels: 1 },
     })
-    .toColourspace("srgb")
-    .withMetadata({ icc: undefined })
+    .keepMetadata(false)
     .png({ palette: false, compressionLevel: 9, force: true })
     .toBuffer();
 }

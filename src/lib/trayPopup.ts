@@ -102,7 +102,7 @@ export async function attachTrayClickListener(
         const sf = monitor.scaleFactor;
         const popupPhysical: PopupGeometryPhysical = {
           width: Math.round(320 * sf),
-          height: Math.round(460 * sf),
+          height: Math.round(470 * sf),
         };
         const monB: MonitorBoundsPhysical = {
           x: monitor.position.x,

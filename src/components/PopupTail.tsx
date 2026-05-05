@@ -29,8 +29,8 @@ export function PopupTail({
         position: "absolute",
         left: tailX,
         ...(isBottom
-          ? { bottom: -10, transform: "scaleY(-1)" }
-          : { top: -10 }),
+          ? { bottom: 0, transform: "scaleY(-1)" }
+          : { top: 0 }),
         pointerEvents: "none",
       }}
       aria-hidden

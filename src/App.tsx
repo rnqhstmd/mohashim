@@ -140,7 +140,9 @@ function App() {
   const canEnter = onboardingCompleted && canEnterMain(permissions);
   return (
     <div
-      className="relative h-[460px] w-[320px]"
+      className={`relative h-[470px] w-[320px] flex flex-col ${
+        os === "macos" ? "justify-end" : "justify-start"
+      }`}
       style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.18))" }}
     >
       {canEnter ? (
