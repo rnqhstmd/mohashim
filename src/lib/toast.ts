@@ -9,6 +9,21 @@ export const TOAST_DURATION_MS = 3000;
 
 type ToastInput = { kind: ToastKind; text: string };
 
+const TOAST_KINDS: readonly ToastKind[] = ["complete", "sleep_discard", "info"];
+
+/**
+ * IPC payload 런타임 검증 — Rust → JS toast 이벤트의 payload 형태가
+ * { kind: ToastKind; text: string } 인지 확인한다 (RISK/MEDIUM 대응).
+ * 잘못된 payload는 console.error로 기록만 하고 큐에 추가하지 않는다.
+ */
+function isValidToastInput(payload: unknown): payload is ToastInput {
+  if (!payload || typeof payload !== "object") return false;
+  const p = payload as { kind?: unknown; text?: unknown };
+  if (typeof p.text !== "string") return false;
+  if (typeof p.kind !== "string") return false;
+  return (TOAST_KINDS as readonly string[]).includes(p.kind);
+}
+
 function makeToastId(): string {
   if (
     typeof crypto !== "undefined" &&
@@ -64,8 +79,13 @@ export function useToastQueue(): {
     let cancelled = false;
     (async () => {
       try {
-        const fn = await listen<ToastInput>(TOAST_EVENT, (e) => {
-          if (!cancelled) push(e.payload);
+        const fn = await listen<unknown>(TOAST_EVENT, (e) => {
+          if (cancelled) return;
+          if (!isValidToastInput(e.payload)) {
+            console.error("[mohashim] invalid toast payload", e.payload);
+            return;
+          }
+          push(e.payload);
         });
         if (cancelled) fn();
         else unlisten = fn;

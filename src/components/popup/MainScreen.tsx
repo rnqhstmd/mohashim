@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useScoreTick } from "../../lib/score";
+import type { Phase } from "../../lib/score";
 import { focusStart } from "../../lib/timer";
+import { useToastQueue } from "../../lib/toast";
+import { usePhrase } from "../../lib/usePhrase";
 import { BottomTabBar, type Tab } from "./BottomTabBar";
 import { IdleScreen } from "./IdleScreen";
 import { ModeChip } from "./ModeChip";
@@ -22,13 +25,49 @@ type MainScreenProps = {
  *   ToastContainer
  *
  * phase는 score-tick 기반. timer.focusStart는 Rust 단일 writer로 active_phase 갱신.
+ *
+ * Phase 5 wiring:
+ * - score-tick의 state/db/total을 추출하여 usePhrase로 멘트/potatoState를 산출.
+ * - IdleScreen / PomodoroRunning에 potatoState/phrase prop 전달.
+ * - useToastQueue는 본 컴포넌트에서만 단일 호출하여 ToastContainer에 toasts 전달.
+ * - phase=complete 1-tick 발생 시 sessionComplete 멘트를 토스트로 push (FR-35).
  */
 export function MainScreen({ onResetDone }: MainScreenProps) {
   const snap = useScoreTick();
   const [tab, setTab] = useState<Tab>("todos");
   const phase = snap?.phase ?? "idle";
   const timeLeft = snap?.timeLeft ?? 0;
+  const total = snap?.total ?? 0;
+  const db = snap?.db ?? 0;
+  const engineState = snap?.state ?? "calm";
   const isRunning = phase === "focus" || phase === "break";
+
+  const { phrase, potatoState } = usePhrase(
+    snap ? { phase, total, db, state: engineState } : null
+  );
+
+  const toastQueue = useToastQueue();
+  const pushToast = toastQueue.push;
+
+  // FR-35: phase=complete 1-tick 진입 시점에 sessionComplete 멘트를 토스트로 동시 표시.
+  // Phase 3 timer 검증 결과: timer.rs::on_phase_transition(Break, Complete)이 즉시
+  // on_complete_consumed를 호출하여 atomic이 Idle로 전환되므로 complete는 정확히 1 tick만 emit됨.
+  // prevPhaseRef로 1-tick 엣지 검출 (직전 phase != complete && 현재 phase == complete).
+  // deps에는 useCallback으로 안정화된 pushToast만 사용 — toastQueue 객체 참조는 매 렌더마다
+  // 재생성되므로 deps에 두면 불필요한 effect 재실행이 발생한다 (기능상 prevPhaseRef 가드로
+  // 안전하지만 효율 측면에서 push 함수 단일 참조가 적절).
+  const prevPhaseRef = useRef<Phase>("idle");
+  useEffect(() => {
+    if (prevPhaseRef.current !== "complete" && phase === "complete") {
+      pushToast({ kind: "complete", text: phrase });
+    }
+    prevPhaseRef.current = phase;
+  }, [phase, phrase, pushToast]);
+
+  // snap=null + DiscardModal open 동시 시: phase=idle 폴백으로 IdleScreen 전환되어
+  // PomodoroRunning(과 그 안의 DiscardModal)이 unmount된다. score-tick 일시 단절 시
+  // 발생할 수 있으나 실제 발생 가능성은 매우 낮음. 후속 Phase에서 last-known snap 유지
+  // 정책 검토 가능.
 
   // Focus 진입 시 자동으로 todos 탭으로 전환하여 PomodoroRunning이 보이도록.
   // 현재 IdleScreen은 todos 탭에서만 노출되지만, 외부 트리거 등으로 settings 탭에
@@ -56,13 +95,19 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           <PomodoroRunning
             phase={phase as "focus" | "break"}
             timeLeft={timeLeft}
+            potatoState={potatoState}
+            phrase={phrase}
           />
         ) : (
-          <IdleScreen onStart={handleFocusStart} />
+          <IdleScreen
+            onStart={handleFocusStart}
+            potatoState={potatoState}
+            phrase={phrase}
+          />
         )}
       </main>
       <BottomTabBar tab={tab} onChange={setTab} />
-      <ToastContainer />
+      <ToastContainer toasts={toastQueue.toasts} />
     </div>
   );
 }
