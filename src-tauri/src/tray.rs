@@ -160,6 +160,10 @@ fn emit_tray_click<R: Runtime>(app: &AppHandle<R>, rect: &tauri::Rect) {
 }
 
 /// FR-B2: 캐시된 아이콘으로 즉시 교체. 호출자가 prev_tray_state 비교 후 호출.
+///
+/// macOS NSStatusItem.button.image의 isTemplate 속성은 set_icon이 새 NSImage를
+/// 설정할 때 reset될 수 있으므로, set_icon 직후 매번 set_icon_as_template(true)를
+/// 호출하여 라이트/다크 자동 반전을 보장한다 (FR-B3, AC-T8).
 pub fn apply_icon<R: Runtime>(
     app: &AppHandle<R>,
     state: LiveState,
@@ -174,7 +178,12 @@ pub fn apply_icon<R: Runtime>(
         .get(&state)
         .ok_or_else(|| format!("icon missing for {state:?}"))?;
     tray.set_icon(Some(img.clone()))
-        .map_err(|e| format!("set_icon failed: {e}"))
+        .map_err(|e| format!("set_icon failed: {e}"))?;
+    #[cfg(target_os = "macos")]
+    if let Err(e) = tray.set_icon_as_template(true) {
+        eprintln!("[mohashim] set_icon_as_template failed: {e}");
+    }
+    Ok(())
 }
 
 /// FR-C1, C2, C3, BR-T3, BR-T4: title을 직접 받아 갱신. 호출자가 prev_title 비교 후 호출.
