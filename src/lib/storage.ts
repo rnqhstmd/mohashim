@@ -222,7 +222,8 @@ export async function setLocations(value: Location[], options: SetOptions = {}):
  */
 export async function getSessions(): Promise<Record<string, SessionRecord>> {
   const raw = await get("sessions");
-  if (!raw || typeof raw !== "object") return {};
+  // Array도 typeof === "object"라 Object.entries로 통과될 수 있으므로 명시 차단 (cross-review 반영).
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const result: Record<string, SessionRecord> = {};
   for (const [date, entry] of Object.entries(raw as Record<string, unknown>)) {
     if (!entry || typeof entry !== "object") continue;

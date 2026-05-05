@@ -30,6 +30,9 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
 
   useEffect(() => {
     let cancelled = false;
+    // monthOffset 변경 시 stale data로 ShareCard가 합성되는 것을 방지하기 위해 즉시 초기화.
+    setData(null);
+    setLoaded(false);
     (async () => {
       try {
         const md = await getMonthSessions(monthOffset);
@@ -46,11 +49,23 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
   }, [monthOffset]);
 
   const handleShare = async () => {
-    if (!shareRef.current || busy) return;
+    if (!shareRef.current || busy || !data) return;
+    // 월 이동 중 stale data 방지 — data.monthOffset이 현재 monthOffset과 일치할 때만 진행.
+    if (data.monthOffset !== monthOffset) return;
     setBusy(true);
     try {
-      const blob = await composeShareCard(shareRef.current);
-      await copyShareCardToClipboard(blob);
+      // QE-1 1초 SLA — Promise.race로 timeout. 초과 시 실패 토스트.
+      const SHARE_TIMEOUT_MS = 1000;
+      const composed = await Promise.race<Blob>([
+        composeShareCard(shareRef.current).then(async (blob) => {
+          await copyShareCardToClipboard(blob);
+          return blob;
+        }),
+        new Promise<Blob>((_, reject) =>
+          setTimeout(() => reject(new Error("share timeout > 1s")), SHARE_TIMEOUT_MS)
+        ),
+      ]);
+      void composed;
       onShareToast("share_ok", "복사됨");
     } catch (err) {
       console.error("[mohashim] share failed", err);
