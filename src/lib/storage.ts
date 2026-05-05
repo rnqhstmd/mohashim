@@ -19,7 +19,11 @@ export type Todo = {
 };
 export type WorkTag = { id: string; emoji: string; label: string; color: string };
 export type Location = { id: string; emoji: string; label: string; color: string };
-export type SessionRecord = { date: string; minutes: number };
+export type SessionRecord = {
+  date: string;     // 'YYYY-MM-DD' (로컬 시간대)
+  sessions: number; // 그 날 완료 세션 수
+  avg: number;      // 그 날 평균 집중 점수 (0~100)
+};
 export type ActivePhase = "idle" | "focus" | "break";
 
 export type StoreSchema = {
@@ -99,7 +103,7 @@ export type SetOptions = {
   save?: boolean;
 };
 
-export async function set<K extends Exclude<keyof StoreSchema, "active_phase">>(
+export async function set<K extends Exclude<keyof StoreSchema, "active_phase" | "sessions">>(
   key: K,
   value: StoreSchema[K],
   options: SetOptions = {}
@@ -209,6 +213,29 @@ export async function getLocations(): Promise<Location[]> {
 
 export async function setLocations(value: Location[], options: SetOptions = {}): Promise<void> {
   await set("locations", value, options);
+}
+
+/**
+ * 세션 기록 read-only 헬퍼. sessions 키의 writer는 Rust 단일 (Phase 8 R-G1).
+ * 폴백 정규화: 비객체 → {}, 각 엔트리 부적합 시 { sessions: 0, avg: 0 } 정규화.
+ * 기존 minutes 필드 데이터(Phase 1)는 sessions/avg 부재로 무시됨 (D-G5).
+ */
+export async function getSessions(): Promise<Record<string, SessionRecord>> {
+  const raw = await get("sessions");
+  if (!raw || typeof raw !== "object") return {};
+  const result: Record<string, SessionRecord> = {};
+  for (const [date, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const sessions = typeof e.sessions === "number" && e.sessions >= 0 ? e.sessions : 0;
+    const avg = typeof e.avg === "number" && e.avg >= 0 && e.avg <= 100 ? e.avg : 0;
+    result[date] = {
+      date: typeof e.date === "string" ? e.date : date,
+      sessions,
+      avg,
+    };
+  }
+  return result;
 }
 
 /**

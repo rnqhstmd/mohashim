@@ -10,7 +10,10 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
 
 use crate::score::phase::Phase;
-use crate::score::shared::{current_phase, store_phase, store_time_left};
+use crate::score::shared::{
+    current_phase, reset_session_totals, snapshot_and_reset_session_avg, store_phase,
+    store_time_left,
+};
 use crate::storage::{ACTIVE_PHASE_KEY, STORE_FILE};
 
 /// 슬립 grace 기준 (BR-sleep-1, DEC-10a/b). wall-clock 경과 ≤ 180s: 세션 유지.
@@ -47,6 +50,8 @@ pub async fn focus_start<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     // 새 Focus 세션의 첫 tick에서 잘못 차감되므로 여기서 폐기한다.
     let _ = crate::power::drain_wake_event();
     let minutes = read_minutes(&app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
+    // Phase 8 R-G2: Focus 시작 시 누적 점수 리셋.
+    reset_session_totals();
     store_phase(Phase::Focus);
     store_time_left(minutes.saturating_mul(60));
     write_active_phase(&app, "focus");
@@ -112,10 +117,57 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
 /// 토스트 발화는 Phase 5(character)에서 frontend MainScreen이 sessionComplete
 /// 캐릭터 멘트로 push한다. FR-35: SpeechBubble과 토스트에 동일한 캐릭터 멘트가
 /// 표시되도록 frontend 단일 발화 — 본 함수에서 emit_toast를 호출하면 중복 표시됨.
+///
+/// Phase 8 R-G1: 세션 평균을 산출하여 sessions 키에 직접 적재한다.
+/// Rust 단일 writer 정책 (active_phase 패턴 동일). 적재 실패는 swallow — UI에 영향 없음.
 pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
+    let avg = snapshot_and_reset_session_avg();
+    if let Err(e) = append_session_record(app, avg) {
+        eprintln!("[mohashim] append_session_record failed: {e}");
+    }
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
+}
+
+/// sessions 키 적재 (R-G1, FR-16, BR-G4).
+///
+/// 같은 날짜 키가 이미 있으면 sessions++ + 가중 평균 갱신. 없으면 신규 1회 레코드.
+/// 자정 경계는 chrono::Local 기준 — 23:55 시작 → 00:05 Complete 시 익일 적재.
+fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(), String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|e| format!("store open failed: {e}"))?;
+    let raw = store.get("sessions").unwrap_or(json!({}));
+    let mut map = if let Some(obj) = raw.as_object() {
+        obj.clone()
+    } else {
+        serde_json::Map::new()
+    };
+
+    let (new_sessions, new_avg) = if let Some(e) = map.get(&today).and_then(|v| v.as_object()) {
+        let old_sessions = e.get("sessions").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let old_avg = e.get("avg").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let s = old_sessions + 1;
+        let avg_num = old_avg as u64 * old_sessions as u64 + score as u64;
+        let avg = (avg_num + (s as u64 / 2)) / s as u64;
+        (s, avg as u32)
+    } else {
+        (1u32, score)
+    };
+
+    map.insert(
+        today.clone(),
+        json!({
+            "date": today,
+            "sessions": new_sessions,
+            "avg": new_avg,
+        }),
+    );
+    store.set("sessions", Value::Object(map));
+    store.save().map_err(|e| format!("store save failed: {e}"))?;
+    Ok(())
 }
 
 /// 슬립 grace 초과 자동 Discarded (DEC-10b, FR-toast-sleep, AC-9).

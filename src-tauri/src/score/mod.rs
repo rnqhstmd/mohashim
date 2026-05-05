@@ -125,6 +125,11 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         let live = state_from_total(total);
         let grace = grace_from(idle, work);
 
+        // Phase 8 R-G2: Focus tick에만 세션 평균 누적.
+        if matches!(current_phase(), Phase::Focus) {
+            crate::score::shared::accumulate_session_score(total as u32);
+        }
+
         // 3) phase 분기 (FR-4a/4b, AC-3 Complete 1-tick).
         let phase_at_emit;
         let time_left_for_emit;
