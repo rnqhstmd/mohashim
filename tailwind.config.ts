@@ -17,6 +17,12 @@ const config: Config = {
         chipIdle: "#9ca3af",
         chipFocus: "#dc4646",
         chipBreak: "#d68a6a",
+        // Phase 4: character/잔디 색상 토큰.
+        sproutVivid: "#4CAF50",
+        sproutFresh: "#81C784",
+        sproutNeutral: "#A5D6A7",
+        sproutDry: "#C8E6C9",
+        sproutWilt: "#BDBDBD",
       },
       fontFamily: {
         pretendard: [
@@ -28,14 +34,29 @@ const config: Config = {
         ],
       },
       keyframes: {
-        // Phase 3: ModeChip pulse dot 애니메이션 (FR-pulse).
+        // Phase 3: ModeChip pulse dot 애니메이션 (FR-pulse, AC-30).
+        // PRD 명시 1.2s ease-in-out scale 효과.
         mhpulse: {
           "0%, 100%": { transform: "scale(1)", opacity: "1" },
           "50%": { transform: "scale(1.4)", opacity: "0.5" },
         },
+        // Phase 4: character (모하 캐릭터) 애니메이션.
+        "mh-bob": {
+          "0%, 100%": { transform: "translateY(0) rotate(0deg)" },
+          "50%": { transform: "translateY(-3px) rotate(-1deg)" },
+        },
+        "mh-pulse": {
+          "0%, 100%": { opacity: "0.85" },
+          "50%": { opacity: "1" },
+        },
       },
       animation: {
+        // Phase 3: timer 도메인이 사용하는 mhpulse는 자체 keyframe(1.2s scale) 사용.
+        // character가 main에 추가한 mh-pulse alias 폴백은 phase-3 머지로 더 이상 필요 없음.
         mhpulse: "mhpulse 1.2s ease-in-out infinite",
+        // Phase 4: character 도메인 애니메이션.
+        "mh-bob": "mh-bob 3.2s ease-in-out infinite",
+        "mh-pulse": "mh-pulse 0.6s ease-in-out infinite",
       },
     },
   },
