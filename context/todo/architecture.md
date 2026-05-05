@@ -79,3 +79,23 @@ todos.sort((a, b) => {
 
 - 투두는 timer 모드와 무관하게 항상 추가/완료/삭제 가능
 - "▶" 액션 = 해당 todo를 active로 표시 후 timer Focus 진입 (timer 도메인 호출)
+
+## 확정 결정 사항 (Phase 6 PR #6)
+
+| 분류 | ID | 항목 | 확정 |
+|------|----|------|------|
+| PRD | D-1 | 기본 태그 시드 시점 | TS 부트 (`App.tsx` `initStorage()` 직후 `seedDefaultTags()`). Rust 변경 없음. |
+| PRD | D-2 | active 토글 위치 | 행 우측 끝 ▶/★ 아이콘 (체크박스 분리) |
+| PRD | D-3 | 태그 삭제 confirm | 미표시, 즉시 draft에서 제거 |
+| PRD | D-4 | 투두 항목 삭제 UI | 좌측 스와이프 → 삭제 버튼 노출 |
+| PRD | D-5 | 롤백 정렬 위치 | 미완료 영역 최상단 (active 항목이 있으면 그 바로 아래) |
+| User | U-1 | todos 탭 통합 | 옵션 A — `<TodosTab />`이 phase 분기로 PomodoroCard/FocusStartButton 내장 |
+| User | U-2 | 기본 위치 태그 명칭 | 사무실 → **회사** |
+| User | U-3 | 태그 갱신 반영 | `<TodosTab key={tab} />` 재마운트 |
+| User | U-4 | BR-5 시점 | 일괄 저장 (TagListEditor onSave에서 setTodos+removeTagRefs+flush) |
+| Critic | M-1 | 옵션 A 명세 | TodosTab phase 분기 + handleFocusStart 보존, IdleScreen/PomodoroRunning 직접 분기 제거 |
+| Critic | M-2 | 폴백 강화 | name→label 자동 매핑 + COLOR_PALETTE[0] 폴백 (외부 호출자 grep 0건 검증 후) |
+| Critic | M-3 | 롤백 결정성 | toggleDone에서 splice → sortTodos 순서로 결정성 보장 |
+| Critic | C-1 | 스와이프 의도 분기 | 5px 임계, dx-dy 비교, setPointerCapture |
+| Critic | C-2 | dirty 통신 | TagListEditor 자체 처리, SettingsScreen은 단순 라우터 |
+| Critic | C-3 | ACCENT 토큰 | 인라인 hex 유지, sun(#f4d160)이 ACCENT 역할 |
