@@ -19,6 +19,9 @@ use crate::score::shared::{
     current_phase, load_db_ema, seconds_idle, store_time_left, time_left_secs, AX_GRANTED,
     EMIT_ERR_COUNT, MIC_GRANTED, SCORE_STARTED, START_AT,
 };
+
+/// FR-2 / BR-noise-80: Idle 상태에서 시끄럽다(loud) 판단 임계값(dB).
+const NOISE_LOUD_THRESHOLD_DB: f32 = 80.0;
 use crate::score::state::ScoreSnapshot;
 use crate::score::{noise::noise_score, work::work_score};
 use crate::timer;
@@ -87,13 +90,17 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         }
 
         // 1) 슬립 wake 처리 (DEC-10/10a/10b, BR-sleep-1/2).
+        // wake 차감이 발생하면 같은 tick의 phase 분기에서 -1을 추가 적용하지 않는다 —
+        // 그렇지 않으면 1초가 중복 차감되어 슬립 경과 산출이 어긋난다.
+        let mut wake_handled = false;
         if let Some(elapsed) = power::drain_wake_event() {
             let phase = current_phase();
             if matches!(phase, Phase::Focus | Phase::Break) {
                 if elapsed <= timer::SLEEP_GRACE_SECS {
                     let cur = time_left_secs();
                     store_time_left(cur.saturating_sub(elapsed));
-                    // 0 도달 시 아래 phase 분기에서 자동 전환 처리.
+                    wake_handled = true;
+                    // 차감 결과가 0이면 같은 tick의 phase 분기에서 자동 전환이 그대로 발생.
                 } else {
                     timer::on_sleep_overflow_discard(&app);
                 }
@@ -125,7 +132,8 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         match cur_phase {
             Phase::Focus | Phase::Break => {
                 let cur = time_left_secs();
-                let new = cur.saturating_sub(1);
+                // wake 차감이 이미 발생한 tick에서는 -1을 추가하지 않는다 (중복 차감 방지).
+                let new = if wake_handled { cur } else { cur.saturating_sub(1) };
                 if new == 0 {
                     let to = if cur_phase == Phase::Focus {
                         Phase::Break
@@ -154,8 +162,8 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // FR-2 / BR-noise-80: Idle 상태에서 80dB 초과 tick 카운터 (멘트 출력은 후속 character 도메인).
-        if matches!(phase_at_emit, Phase::Idle) && db > 80.0 {
+        // FR-2 / BR-noise-80: Idle 상태에서 NOISE_LOUD_THRESHOLD_DB 초과 tick 카운터 (멘트 출력은 후속 character 도메인).
+        if matches!(phase_at_emit, Phase::Idle) && db > NOISE_LOUD_THRESHOLD_DB {
             crate::score::shared::IDLE_NOISE_LOUD_TICKS.fetch_add(1, Relaxed);
         }
 

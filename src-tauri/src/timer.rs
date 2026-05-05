@@ -11,10 +11,7 @@ use tauri_plugin_store::StoreExt;
 
 use crate::score::phase::Phase;
 use crate::score::shared::{current_phase, store_phase, store_time_left};
-use crate::storage::STORE_FILE;
-
-/// 스토어 9번째 키. 허용값: `"idle"` | `"focus"` | `"break"` (BR-active-phase).
-pub const ACTIVE_PHASE_KEY: &str = "active_phase";
+use crate::storage::{ACTIVE_PHASE_KEY, STORE_FILE};
 
 /// 슬립 grace 기준 (BR-sleep-1, DEC-10a/b). wall-clock 경과 ≤ 180s: 세션 유지.
 pub const SLEEP_GRACE_SECS: u64 = 180;
@@ -23,6 +20,12 @@ const FOCUS_MINUTES_KEY: &str = "focus_minutes";
 const BREAK_MINUTES_KEY: &str = "break_minutes";
 const DEFAULT_FOCUS_MINUTES: u64 = 25;
 const DEFAULT_BREAK_MINUTES: u64 = 5;
+
+/// UI canSave가 보장하는 focus/break 분(分) 범위. 손상/외부 편집 케이스 방어용.
+pub const FOCUS_MINUTES_MIN: u64 = 5;
+pub const FOCUS_MINUTES_MAX: u64 = 90;
+pub const BREAK_MINUTES_MIN: u64 = 3;
+pub const BREAK_MINUTES_MAX: u64 = 30;
 
 // =====================================================================
 // Tauri commands
@@ -173,6 +176,9 @@ fn write_active_phase<R: Runtime>(app: &AppHandle<R>, value: &str) {
 }
 
 /// `focus_minutes` / `break_minutes` 스토어 read. 누락/타입 불일치 시 default.
+///
+/// store가 외부 편집/손상으로 0/1/9999 등 비정상 값을 반환해도 비정상 세션이
+/// 생성되지 않도록 UI canSave와 동일한 범위로 clamp 한다 (단일 진실 소스).
 fn read_minutes<R: Runtime>(app: &AppHandle<R>, key: &str, default: u64) -> u64 {
     let store = match app.store(STORE_FILE) {
         Ok(s) => s,
@@ -181,10 +187,16 @@ fn read_minutes<R: Runtime>(app: &AppHandle<R>, key: &str, default: u64) -> u64 
             return default;
         }
     };
-    match store.get(key) {
+    let raw = match store.get(key) {
         Some(v) => v.as_u64().unwrap_or(default),
         None => default,
-    }
+    };
+    let (min, max) = match key {
+        FOCUS_MINUTES_KEY => (FOCUS_MINUTES_MIN, FOCUS_MINUTES_MAX),
+        BREAK_MINUTES_KEY => (BREAK_MINUTES_MIN, BREAK_MINUTES_MAX),
+        _ => (default, default),
+    };
+    raw.clamp(min, max)
 }
 
 /// OS 알림 발송 (FR-4a-notif, FR-4b-notif, FR-notif-fallback).

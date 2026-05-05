@@ -6,11 +6,16 @@ use tauri_plugin_store::StoreExt;
 
 pub const STORE_FILE: &str = ".store.json";
 
+/// 9번째 스토어 키. timer 모듈에서 단일 writer 정책으로 영속하지만, defaults 시드와
+/// 부트 시 자동 Discarded 검사에서도 참조하므로 storage 모듈에 단일 정의를 둔다
+/// (storage ← timer 단방향 의존을 유지하기 위해 storage.rs에 정의). 허용값:
+/// `"idle"` | `"focus"` | `"break"` (Complete/Discarded는 즉시 idle로 기록).
+pub const ACTIVE_PHASE_KEY: &str = "active_phase";
+
 /// 9개 defaults 키 목록 (idempotent 시드, C9).
 ///
 /// `active_phase` 9번째 키 영속 의도: PRD AC-12/13 (앱 재시작 시 진행 중이던 세션
-/// 자동 Discarded 처리)와 후속 grass 도메인의 비정상 종료 추적용. 허용값:
-/// `"idle"` | `"focus"` | `"break"` (Complete/Discarded는 즉시 idle로 기록).
+/// 자동 Discarded 처리)와 후속 grass 도메인의 비정상 종료 추적용.
 fn defaults() -> [(&'static str, Value); 9] {
     [
         ("onboarding_completed", json!(false)),
@@ -21,7 +26,7 @@ fn defaults() -> [(&'static str, Value); 9] {
         ("work_tags", json!([])),
         ("locations", json!([])),
         ("sessions", json!({})),
-        ("active_phase", json!("idle")),
+        (ACTIVE_PHASE_KEY, json!("idle")),
     ]
 }
 
