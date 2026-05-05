@@ -104,19 +104,18 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
     }
 }
 
-/// Complete 1-tick emit 후 Idle 복귀 (FR-4b, FR-toast-complete, AC-3).
+/// Complete 1-tick emit 후 Idle 복귀 (FR-4b, AC-3).
 ///
 /// score::tick에서 `match Phase::Complete` 분기 진입 시 호출된다.
-/// atomic을 Idle로 리셋 + `active_phase`="idle" 영속 + 토스트 emit.
+/// atomic을 Idle로 리셋 + `active_phase`="idle" 영속만 담당.
+///
+/// 토스트 발화는 Phase 5(character)에서 frontend MainScreen이 sessionComplete
+/// 캐릭터 멘트로 push한다. FR-35: SpeechBubble과 토스트에 동일한 캐릭터 멘트가
+/// 표시되도록 frontend 단일 발화 — 본 함수에서 emit_toast를 호출하면 중복 표시됨.
 pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
-    emit_toast(
-        app,
-        "complete",
-        "세션을 완료했습니다",
-    );
 }
 
 /// 슬립 grace 초과 자동 Discarded (DEC-10b, FR-toast-sleep, AC-9).

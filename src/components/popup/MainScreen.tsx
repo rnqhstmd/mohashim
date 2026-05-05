@@ -53,16 +53,23 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   // Phase 3 timer 검증 결과: timer.rs::on_phase_transition(Break, Complete)이 즉시
   // on_complete_consumed를 호출하여 atomic이 Idle로 전환되므로 complete는 정확히 1 tick만 emit됨.
   // prevPhaseRef로 1-tick 엣지 검출 (직전 phase != complete && 현재 phase == complete).
-  // deps에는 useCallback으로 안정화된 pushToast만 사용 — toastQueue 객체 참조는 매 렌더마다
-  // 재생성되므로 deps에 두면 불필요한 effect 재실행이 발생한다 (기능상 prevPhaseRef 가드로
-  // 안전하지만 효율 측면에서 push 함수 단일 참조가 적절).
+  //
+  // deps 정책 (PR #5 review 반영):
+  // - phase는 엣지 검출 트리거이므로 deps 필수.
+  // - phrase는 deps에서 제외 — usePhrase가 currentBucket 기반으로 phase=complete 진입 즉시
+  //   sessionComplete 첫 멘트를 반환하므로 effect 진입 시점의 phrase가 항상 정확.
+  //   8초마다 phrase 회전으로 effect가 재실행되어도 prevPhaseRef 가드로 push는 차단되지만
+  //   불필요한 effect 재실행을 차단하여 비용 최소화.
+  // - pushToast는 toast.ts에서 useCallback으로 안정화된 참조라 재실행 영향 없음.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const prevPhaseRef = useRef<Phase>("idle");
   useEffect(() => {
     if (prevPhaseRef.current !== "complete" && phase === "complete") {
       pushToast({ kind: "complete", text: phrase });
     }
     prevPhaseRef.current = phase;
-  }, [phase, phrase, pushToast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, pushToast]);
 
   // snap=null + DiscardModal open 동시 시: phase=idle 폴백으로 IdleScreen 전환되어
   // PomodoroRunning(과 그 안의 DiscardModal)이 unmount된다. score-tick 일시 단절 시

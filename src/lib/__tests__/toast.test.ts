@@ -125,6 +125,85 @@ describe("useToastQueue", () => {
     await waitFor(() => expect(unlistenMock).toHaveBeenCalledOnce());
   });
 
+  it("invalid payload (missing text) — 큐 미추가 + console.error", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let handler: ((e: { payload: unknown }) => void) | null = null;
+    listenMock.mockImplementation(
+      async (_event: string, cb: (e: { payload: unknown }) => void) => {
+        handler = cb;
+        return unlistenMock;
+      }
+    );
+
+    const { useToastQueue } = await import("../toast");
+    const { result } = renderHook(() => useToastQueue());
+    await waitFor(() => expect(handler).not.toBeNull());
+
+    act(() => {
+      handler!({ payload: { kind: "complete" } }); // text 누락
+    });
+
+    expect(result.current.toasts).toHaveLength(0);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[mohashim] invalid toast payload",
+      expect.anything()
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("invalid payload (unknown kind) — 큐 미추가 + console.error", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let handler: ((e: { payload: unknown }) => void) | null = null;
+    listenMock.mockImplementation(
+      async (_event: string, cb: (e: { payload: unknown }) => void) => {
+        handler = cb;
+        return unlistenMock;
+      }
+    );
+
+    const { useToastQueue } = await import("../toast");
+    const { result } = renderHook(() => useToastQueue());
+    await waitFor(() => expect(handler).not.toBeNull());
+
+    act(() => {
+      handler!({ payload: { kind: "unknown", text: "x" } });
+    });
+
+    expect(result.current.toasts).toHaveLength(0);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[mohashim] invalid toast payload",
+      expect.anything()
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("invalid payload (null) — 큐 미추가 + console.error", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let handler: ((e: { payload: unknown }) => void) | null = null;
+    listenMock.mockImplementation(
+      async (_event: string, cb: (e: { payload: unknown }) => void) => {
+        handler = cb;
+        return unlistenMock;
+      }
+    );
+
+    const { useToastQueue } = await import("../toast");
+    const { result } = renderHook(() => useToastQueue());
+    await waitFor(() => expect(handler).not.toBeNull());
+
+    act(() => {
+      handler!({ payload: null });
+    });
+
+    expect(result.current.toasts).toHaveLength(0);
+    // null payload 케이스 — expect.anything()가 null을 매칭하지 않으므로 두 번째 인자는 명시적 null로 검증.
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[mohashim] invalid toast payload",
+      null
+    );
+    errorSpy.mockRestore();
+  });
+
   it("clears pending timers on unmount", async () => {
     vi.useFakeTimers();
     const clearSpy = vi.spyOn(global, "clearTimeout");

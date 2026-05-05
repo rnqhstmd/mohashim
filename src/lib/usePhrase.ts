@@ -97,8 +97,9 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
     dispatch({ type: "set_bucket", bucket: currentBucket });
   }, [currentBucket]);
 
-  // 8초마다 seed 증가. mount 시 1회만 등록 — bucket 변경에도 interval 유지 (절대 8초 주기).
-  // bucket 변경 시 seed=0 reset은 reducer에서 처리되므로 다음 tick은 seed=1로 진행.
+  // 8초마다 seed 증가. bucket 변경 시 interval 재시작하여 새 버킷 첫 멘트가 8초 동안 유지되도록.
+  // (이전: mount 1회 등록 — bucket 전환 시점이 interval mid-period면 첫 멘트가 짧게 노출됨.)
+  // BR-1 첫 멘트 8초 보장을 위해 currentBucket을 deps에 포함.
   useEffect(() => {
     const handle = setInterval(() => {
       dispatch({ type: "tick" });
@@ -106,11 +107,18 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
     return () => {
       clearInterval(handle);
     };
-  }, []);
+  }, [currentBucket]);
 
+  // currentBucket은 매 렌더에서 즉시 산출되지만 state.bucket은 dispatch 후 다음 렌더에야 갱신된다.
+  // bucket 변경 직후 1 렌더 동안 stale phrase가 반환되는 것을 막기 위해 phrase 산출은 currentBucket 우선.
+  // - currentBucket === state.bucket: reducer가 추적 중인 state.seed 사용 (8초 회전).
+  // - currentBucket !== state.bucket: dispatch 전 첫 렌더 — seed=0으로 새 버킷 첫 멘트 즉시 표시 (BR-2).
   const phrase = useMemo(
-    () => pickPhrase(state.bucket, state.seed),
-    [state.bucket, state.seed]
+    () => {
+      const effectiveSeed = currentBucket === state.bucket ? state.seed : 0;
+      return pickPhrase(currentBucket, effectiveSeed);
+    },
+    [currentBucket, state.bucket, state.seed]
   );
 
   const potatoState = useMemo(
@@ -122,5 +130,7 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
     [safePhase, safeTotal, safeDb, safeState]
   );
 
-  return { bucket: state.bucket, phrase, potatoState };
+  // bucket도 currentBucket 우선 반환 — phrase와 정합. 호출자가 bucket 분기 UI를 그릴 때
+  // dispatch 지연으로 1 렌더 동안 이전 버킷이 노출되는 것 방지.
+  return { bucket: currentBucket, phrase, potatoState };
 }
