@@ -99,7 +99,11 @@ describe("tailwind config — animation 정의 (AC-20)", () => {
     expect(animation["mh-pulse"]).toBe("mh-pulse 0.6s ease-in-out infinite");
   });
 
-  it("mhpulse alias (BR-7 호환) — mh-pulse와 동일 keyframe으로 폴백", () => {
-    expect(animation["mhpulse"]).toBe("mh-pulse 0.6s ease-in-out infinite");
+  it("mhpulse animation은 timer 도메인 자체 keyframe (PRD AC-30, 1.2s ease-in-out scale)", () => {
+    // Phase 4 머지 시점에는 character가 BR-7 호환 alias (mh-pulse 폴백)를 두었으나,
+    // Phase 3 timer 도메인이 자체 mhpulse keyframe을 정의하면서 alias가 timer AC-30
+    // (mhpulse keyframe 1.2s ease-in-out 정의)을 위반하게 되어 자체 keyframe으로 복원.
+    // character는 mh-bob / mh-pulse를 직접 사용하므로 alias 의존 없음.
+    expect(animation["mhpulse"]).toBe("mhpulse 1.2s ease-in-out infinite");
   });
 });

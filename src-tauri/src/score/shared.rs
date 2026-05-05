@@ -1,6 +1,8 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering::Relaxed};
 use std::sync::OnceLock;
 use std::time::Instant;
+
+use crate::score::phase::Phase;
 
 /// 앱 부트 기준 시각 (Q10). now_ms 계산 기준점.
 pub static START_AT: OnceLock<Instant> = OnceLock::new();
@@ -21,6 +23,24 @@ pub static SCORE_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// emit 실패 throttle 카운터 (MUST-4).
 pub static EMIT_ERR_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// 현재 phase. 0=Idle, 1=Focus, 2=Break, 3=Complete, 4=Discarded.
+/// 단일 writer: timer.rs / score::tick(자동 전환). reader: score::tick.
+pub static PHASE_BITS: AtomicU8 = AtomicU8::new(0);
+
+/// 현재 세션 잔여 초. Idle/Discarded/Complete 시 0.
+pub static TIME_LEFT_SECS: AtomicU64 = AtomicU64::new(0);
+
+/// 슬립 진입 시각 (UNIX wall-clock ms). 0=미슬립.
+/// monotonic Instant는 슬립 중 동결 → wall-clock 사용.
+pub static SLEEP_AT_UNIX_MS: AtomicU64 = AtomicU64::new(0);
+
+/// DidWake 발생 플래그. WillSleep과 짝지어 wake 이벤트 신호.
+pub static WAKE_FLAG: AtomicBool = AtomicBool::new(false);
+
+/// FR-2 / BR-noise-80: phase=Idle 상태에서 db_ema > 80.0 인 1Hz tick 카운터.
+/// 본 Phase는 카운터 증가만 수행 — 실제 멘트 출력은 후속 character 도메인.
+pub static IDLE_NOISE_LOUD_TICKS: AtomicU64 = AtomicU64::new(0);
 
 /// START_AT 기준 ms 경과. START_AT 미초기화 시 0 반환.
 pub fn now_ms() -> u64 {
@@ -65,6 +85,26 @@ pub fn seconds_idle() -> u64 {
     (now - last) / 1000
 }
 
+/// 현재 phase atomic 로드 (PHASE_BITS → Phase 디코드).
+pub fn current_phase() -> Phase {
+    Phase::from_u8(PHASE_BITS.load(Relaxed))
+}
+
+/// phase atomic 저장 (Phase → u8 인코드).
+pub fn store_phase(p: Phase) {
+    PHASE_BITS.store(p.as_u8(), Relaxed);
+}
+
+/// 잔여 초 atomic 로드.
+pub fn time_left_secs() -> u64 {
+    TIME_LEFT_SECS.load(Relaxed)
+}
+
+/// 잔여 초 atomic 저장.
+pub fn store_time_left(secs: u64) {
+    TIME_LEFT_SECS.store(secs, Relaxed);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +136,33 @@ mod tests {
         // last_input=0 상태를 강제로 만든 후 검증.
         LAST_INPUT_AT_MS.store(0, Relaxed);
         assert_eq!(seconds_idle(), 0);
+    }
+
+    #[test]
+    fn phase_store_load_roundtrip() {
+        for p in [
+            Phase::Idle,
+            Phase::Focus,
+            Phase::Break,
+            Phase::Complete,
+            Phase::Discarded,
+        ] {
+            store_phase(p);
+            assert_eq!(current_phase(), p);
+        }
+        // 종료 시 Idle 복원 (다른 테스트와의 공유 atomic 영향 최소화).
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    fn time_left_store_load_roundtrip() {
+        store_time_left(0);
+        assert_eq!(time_left_secs(), 0);
+        store_time_left(1500);
+        assert_eq!(time_left_secs(), 1500);
+        store_time_left(u64::MAX);
+        assert_eq!(time_left_secs(), u64::MAX);
+        // 종료 시 0 복원.
+        store_time_left(0);
     }
 }

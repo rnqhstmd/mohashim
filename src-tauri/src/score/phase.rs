@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-/// 세션 phase. 본 Phase에서는 항상 Idle (외부 트리거는 lifecycle Phase로 이월).
+/// 세션 phase. atomic 영속을 위해 u8 변환 헬퍼 제공 (PHASE_BITS).
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
@@ -9,6 +9,30 @@ pub enum Phase {
     Break,
     Complete,
     Discarded,
+}
+
+impl Phase {
+    /// Phase → u8. 0=Idle, 1=Focus, 2=Break, 3=Complete, 4=Discarded.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Phase::Idle => 0,
+            Phase::Focus => 1,
+            Phase::Break => 2,
+            Phase::Complete => 3,
+            Phase::Discarded => 4,
+        }
+    }
+
+    /// u8 → Phase. 미정의 값(99 등)은 Idle로 폴백 (atomic 손상 방어).
+    pub fn from_u8(v: u8) -> Phase {
+        match v {
+            1 => Phase::Focus,
+            2 => Phase::Break,
+            3 => Phase::Complete,
+            4 => Phase::Discarded,
+            _ => Phase::Idle,
+        }
+    }
 }
 
 /// Grace Period 상태 (BR-2).
@@ -82,5 +106,25 @@ mod tests {
         assert_eq!(grace_from(180, 80), GraceState::Active);
         assert_eq!(grace_from(181, 80), GraceState::Looking);
         assert_eq!(grace_from(300, 0), GraceState::Gone);
+    }
+
+    #[test]
+    fn phase_u8_roundtrip_all_variants() {
+        for p in [
+            Phase::Idle,
+            Phase::Focus,
+            Phase::Break,
+            Phase::Complete,
+            Phase::Discarded,
+        ] {
+            assert_eq!(Phase::from_u8(p.as_u8()), p);
+        }
+    }
+
+    #[test]
+    fn phase_from_u8_undefined_falls_back_to_idle() {
+        assert_eq!(Phase::from_u8(5), Phase::Idle);
+        assert_eq!(Phase::from_u8(99), Phase::Idle);
+        assert_eq!(Phase::from_u8(255), Phase::Idle);
     }
 }

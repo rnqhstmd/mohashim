@@ -15,17 +15,9 @@ import {
   type PermissionState,
 } from "./lib/permissions";
 import { OnboardingScreen } from "./components/popup/OnboardingScreen";
+import { MainScreen } from "./components/popup/MainScreen";
 
 type BootStatus = "loading" | "ready";
-
-function MainScreen() {
-  return (
-    <div className="flex h-[460px] w-[320px] flex-col items-center justify-center bg-mist font-pretendard text-ink">
-      <h1 className="text-lg font-bold text-deep">모하심</h1>
-      <p className="mt-2 text-sm text-deep/70">준비 중</p>
-    </div>
-  );
-}
 
 function App() {
   const [bootStatus, setBootStatus] = useState<BootStatus>("loading");
@@ -117,7 +109,7 @@ function App() {
 
   const canEnter = onboardingCompleted && canEnterMain(permissions);
   return canEnter ? (
-    <MainScreen />
+    <MainScreen onResetDone={() => setOnboardingCompletedState(false)} />
   ) : (
     <OnboardingScreen
       permissions={permissions}

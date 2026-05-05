@@ -1,9 +1,19 @@
+/**
+ * Storage typed wrapper.
+ *
+ * IMPORTANT (BR-active-phase): `active_phase` 키는 **Rust 단일 writer**다.
+ * `set("active_phase", ...)`을 직접 호출하지 말 것. TypeScript의 인덱스 키 제너릭
+ * 특성상 컴파일 타임에 특정 키만 차단하기 어려우므로 코드 리뷰에서 강제한다.
+ * setter는 의도적으로 export하지 않으며, read-only `getActivePhase`만 노출한다.
+ */
+import { invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
 
 export type Todo = { id: string; text: string; done: boolean };
 export type WorkTag = { id: string; name: string; color: string };
 export type Location = { id: string; name: string };
 export type SessionRecord = { date: string; minutes: number };
+export type ActivePhase = "idle" | "focus" | "break";
 
 export type StoreSchema = {
   onboarding_completed: boolean;
@@ -14,6 +24,7 @@ export type StoreSchema = {
   work_tags: WorkTag[];
   locations: Location[];
   sessions: Record<string, SessionRecord>;
+  active_phase: ActivePhase;
 };
 
 export const STORE_FILE = ".store.json";
@@ -27,6 +38,7 @@ export const STORE_DEFAULTS: StoreSchema = {
   work_tags: [],
   locations: [],
   sessions: {},
+  active_phase: "idle",
 };
 
 type StoreInstance = Awaited<ReturnType<typeof Store.load>>;
@@ -104,4 +116,57 @@ export async function getOnboardingCompleted(): Promise<boolean> {
 
 export async function setOnboardingCompleted(value: boolean): Promise<void> {
   await set("onboarding_completed", value);
+}
+
+/**
+ * 현재 active_phase 값을 반환한다 (read-only).
+ *
+ * setter는 의도적으로 export하지 않는다. active_phase 키의 store write는
+ * Rust `timer.rs`가 단일 writer로 수행한다 (DEC-11, MUST-1).
+ */
+export async function getActivePhase(): Promise<ActivePhase> {
+  return get("active_phase");
+}
+
+export async function getFocusMinutes(): Promise<number> {
+  return get("focus_minutes");
+}
+
+export async function setFocusMinutes(
+  value: number,
+  options: SetOptions = {}
+): Promise<void> {
+  await set("focus_minutes", value, options);
+}
+
+export async function getBreakMinutes(): Promise<number> {
+  return get("break_minutes");
+}
+
+export async function setBreakMinutes(
+  value: number,
+  options: SetOptions = {}
+): Promise<void> {
+  await set("break_minutes", value, options);
+}
+
+/**
+ * 사용자 데이터 전체 초기화. Rust `reset_all` 커맨드를 호출한다.
+ *
+ * Rust 측에서 atomic 강제 → store clear → 9키 default 시드 순으로 처리한다.
+ * 실패 시 에러를 호출자에게 재전파하여 상위(SettingsScreen)가 onResetDone 미호출 등
+ * 후속 처리를 결정할 수 있도록 한다.
+ */
+export async function resetAllData(): Promise<void> {
+  try {
+    await invoke("reset_all");
+    // Rust 측에서 store.clear() + seed_defaults()로 디스크가 갱신되었으나
+    // 모듈 스코프 메모이제이션된 storeInstance는 stale. 무효화하여 다음 호출에서
+    // Store.load(STORE_FILE)을 재실행하도록 한다.
+    storeInstance = null;
+    initPromise = null;
+  } catch (err) {
+    console.error("[mohashim] reset_all failed", err);
+    throw err;
+  }
 }
