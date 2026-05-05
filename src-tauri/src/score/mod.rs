@@ -13,12 +13,15 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::audio;
 use crate::input;
 use crate::permissions::{self, PermissionStatus};
+use crate::power;
 use crate::score::phase::{grace_from, state_from_total, LiveState, Phase};
 use crate::score::shared::{
-    load_db_ema, seconds_idle, AX_GRANTED, EMIT_ERR_COUNT, MIC_GRANTED, SCORE_STARTED, START_AT,
+    current_phase, load_db_ema, seconds_idle, store_time_left, time_left_secs, AX_GRANTED,
+    EMIT_ERR_COUNT, MIC_GRANTED, SCORE_STARTED, START_AT,
 };
 use crate::score::state::ScoreSnapshot;
 use crate::score::{noise::noise_score, work::work_score};
+use crate::timer;
 use crate::tray;
 
 /// score 엔진 기동 (FR-13, MUST-5).
@@ -83,6 +86,21 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             std::thread::sleep(remaining);
         }
 
+        // 1) 슬립 wake 처리 (DEC-10/10a/10b, BR-sleep-1/2).
+        if let Some(elapsed) = power::drain_wake_event() {
+            let phase = current_phase();
+            if matches!(phase, Phase::Focus | Phase::Break) {
+                if elapsed <= timer::SLEEP_GRACE_SECS {
+                    let cur = time_left_secs();
+                    store_time_left(cur.saturating_sub(elapsed));
+                    // 0 도달 시 아래 phase 분기에서 자동 전환 처리.
+                } else {
+                    timer::on_sleep_overflow_discard(&app);
+                }
+            }
+        }
+
+        // 2) 기존 work/noise/state/grace 산출.
         let idle = if AX_GRANTED.load(Relaxed) {
             seconds_idle()
         } else {
@@ -100,6 +118,47 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         let live = state_from_total(total);
         let grace = grace_from(idle, work);
 
+        // 3) phase 분기 (FR-4a/4b, AC-3 Complete 1-tick).
+        let phase_at_emit;
+        let time_left_for_emit;
+        let cur_phase = current_phase();
+        match cur_phase {
+            Phase::Focus | Phase::Break => {
+                let cur = time_left_secs();
+                let new = cur.saturating_sub(1);
+                if new == 0 {
+                    let to = if cur_phase == Phase::Focus {
+                        Phase::Break
+                    } else {
+                        Phase::Complete
+                    };
+                    timer::on_phase_transition(&app, cur_phase, to);
+                    phase_at_emit = to;
+                    time_left_for_emit = time_left_secs();
+                } else {
+                    store_time_left(new);
+                    phase_at_emit = cur_phase;
+                    time_left_for_emit = new;
+                }
+            }
+            Phase::Complete => {
+                // AC-3 단일 tick 정합: 정상 흐름에서는 (Break, Complete) 전이가 위 분기에서 발생하고
+                // 본 tick 끝에서 on_complete_consumed로 atomic이 Idle로 복귀하므로 본 분기 진입 안 됨.
+                // 외부 트리거로 atomic이 Complete로 set된 비정상 케이스에 대한 방어 no-op.
+                phase_at_emit = Phase::Idle;
+                time_left_for_emit = 0;
+            }
+            Phase::Idle | Phase::Discarded => {
+                phase_at_emit = Phase::Idle;
+                time_left_for_emit = 0;
+            }
+        }
+
+        // FR-2 / BR-noise-80: Idle 상태에서 80dB 초과 tick 카운터 (멘트 출력은 후속 character 도메인).
+        if matches!(phase_at_emit, Phase::Idle) && db > 80.0 {
+            crate::score::shared::IDLE_NOISE_LOUD_TICKS.fetch_add(1, Relaxed);
+        }
+
         let snap = ScoreSnapshot {
             total,
             work,
@@ -108,8 +167,8 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             db,
             seconds_idle: idle,
             grace,
-            phase: Phase::Idle,
-            time_left: 0,
+            phase: phase_at_emit,
+            time_left: time_left_for_emit,
         };
 
         if let Err(e) = app.emit("score-tick", &snap) {
@@ -130,6 +189,13 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
                     // prev_live 미갱신 → 다음 tick에서 재시도.
                 }
             }
+        }
+
+        // AC-3 토스트 순서 보장: score-tick(Complete) emit 직후 atomic Idle 복귀 + 토스트 발화.
+        // emit이 비동기이므로 토스트가 score-tick(Complete) payload보다 먼저 JS에 도달하지
+        // 않도록 본 tick의 emit 이후에 호출한다. 다음 tick은 atomic=Idle이라 Idle arm 진입.
+        if phase_at_emit == Phase::Complete {
+            timer::on_complete_consumed(&app);
         }
     }
 }

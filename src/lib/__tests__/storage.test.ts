@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const inMemory = new Map<string, unknown>();
+const invokeMock = vi.fn();
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+}));
 
 vi.mock("@tauri-apps/plugin-store", () => {
   return {
@@ -21,6 +26,8 @@ vi.mock("@tauri-apps/plugin-store", () => {
 
 beforeEach(() => {
   inMemory.clear();
+  invokeMock.mockReset();
+  invokeMock.mockResolvedValue(undefined);
   vi.resetModules();
 });
 
@@ -66,5 +73,45 @@ describe("storage", () => {
     await mod.flush();
     await expect(mod.get("focus_minutes")).resolves.toBe(40);
     await expect(mod.get("break_minutes")).resolves.toBe(10);
+  });
+
+  it("getActivePhase returns 'idle' by default", async () => {
+    const mod = await import("../storage");
+    await expect(mod.getActivePhase()).resolves.toBe("idle");
+  });
+
+  it("getActivePhase returns persisted value when set", async () => {
+    const mod = await import("../storage");
+    await mod.set("active_phase", "focus");
+    await expect(mod.getActivePhase()).resolves.toBe("focus");
+  });
+
+  it("resetAllData invokes 'reset_all' tauri command", async () => {
+    const mod = await import("../storage");
+    await mod.resetAllData();
+    expect(invokeMock).toHaveBeenCalledWith("reset_all");
+  });
+
+  it("resetAllData rethrows invoke error after logging to console.error", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    invokeMock.mockRejectedValueOnce(new Error("ipc failure"));
+    const mod = await import("../storage");
+    await expect(mod.resetAllData()).rejects.toThrow("ipc failure");
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("getFocusMinutes / setFocusMinutes round-trip", async () => {
+    const mod = await import("../storage");
+    await expect(mod.getFocusMinutes()).resolves.toBe(25);
+    await mod.setFocusMinutes(45);
+    await expect(mod.getFocusMinutes()).resolves.toBe(45);
+  });
+
+  it("getBreakMinutes / setBreakMinutes round-trip", async () => {
+    const mod = await import("../storage");
+    await expect(mod.getBreakMinutes()).resolves.toBe(5);
+    await mod.setBreakMinutes(15);
+    await expect(mod.getBreakMinutes()).resolves.toBe(15);
   });
 });

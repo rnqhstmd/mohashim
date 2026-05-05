@@ -6,8 +6,12 @@ use tauri_plugin_store::StoreExt;
 
 pub const STORE_FILE: &str = ".store.json";
 
-/// 8개 defaults 키 목록 (idempotent 시드, C9).
-fn defaults() -> [(&'static str, Value); 8] {
+/// 9개 defaults 키 목록 (idempotent 시드, C9).
+///
+/// `active_phase` 9번째 키 영속 의도: PRD AC-12/13 (앱 재시작 시 진행 중이던 세션
+/// 자동 Discarded 처리)와 후속 grass 도메인의 비정상 종료 추적용. 허용값:
+/// `"idle"` | `"focus"` | `"break"` (Complete/Discarded는 즉시 idle로 기록).
+fn defaults() -> [(&'static str, Value); 9] {
     [
         ("onboarding_completed", json!(false)),
         ("focus_minutes", json!(25)),
@@ -17,6 +21,7 @@ fn defaults() -> [(&'static str, Value); 8] {
         ("work_tags", json!([])),
         ("locations", json!([])),
         ("sessions", json!({})),
+        ("active_phase", json!("idle")),
     ]
 }
 
@@ -44,7 +49,9 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 }
 
 /// Store를 열고 누락된 defaults를 시드한다.
-fn seed_defaults<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+///
+/// `reset_all`에서 store.clear() 직후 호출하므로 `pub(crate)`로 노출한다.
+pub(crate) fn seed_defaults<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let store = app
         .store(STORE_FILE)
         .map_err(|e| format!("store open failed: {e}"))?;
@@ -97,5 +104,21 @@ fn backup_corrupted<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         std::fs::remove_file(&store_path)
             .map_err(|e| format!("remove {} failed: {e}", store_path.display()))?;
     }
+    Ok(())
+}
+
+/// 모든 데이터 초기화 (FR-24, BR-reset-1, MUST-2).
+///
+/// 순서: ① atomic 강제 리셋 → ② store.clear() → ③ seed_defaults.
+/// atomic을 먼저 Idle로 강제하여 score::tick의 자동 전환이 reset 도중 store에
+/// 끼어들지 못하도록 차단한다 (Rust 단일 writer 정책 보강).
+#[tauri::command]
+pub async fn reset_all<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    crate::timer::reset_runtime_state();
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|e| format!("store open failed: {e}"))?;
+    store.clear();
+    seed_defaults(&app)?;
     Ok(())
 }
