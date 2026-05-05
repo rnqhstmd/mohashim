@@ -1,4 +1,7 @@
+mod audio;
+mod input;
 mod permissions;
+pub mod score;
 mod storage;
 mod tray;
 
@@ -21,6 +24,9 @@ pub fn run() {
             }
             if let Err(err) = tray::init_tray(app.handle()) {
                 eprintln!("[mohashim] tray init failed: {err}");
+            }
+            if let Err(err) = score::start(app.handle()) {
+                eprintln!("[mohashim] score start failed: {err}");
             }
             Ok(())
         })

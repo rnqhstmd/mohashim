@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 
-#[derive(Serialize, Clone, Copy, Debug)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionStatus {
     Granted,
@@ -21,6 +21,20 @@ pub struct PermissionState {
 pub enum PermissionKind {
     Microphone,
     Accessibility,
+}
+
+// =====================================================================
+// 내부 헬퍼 (score 모듈 게이팅용)
+// =====================================================================
+
+/// score::start에서 권한 1회 조회용 동기 헬퍼.
+pub fn current_mic_status() -> PermissionStatus {
+    platform::mic_status()
+}
+
+/// score::start에서 권한 1회 조회용 동기 헬퍼.
+pub fn current_accessibility_status() -> PermissionStatus {
+    platform::accessibility_status()
 }
 
 // =====================================================================
