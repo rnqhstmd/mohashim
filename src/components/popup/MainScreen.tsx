@@ -40,7 +40,11 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   const total = snap?.total ?? 0;
   const db = snap?.db ?? 0;
   const engineState = snap?.state ?? "calm";
-  const isRunning = phase === "focus" || phase === "break";
+  // complete 1-tick 동안 IdleScreen으로 갑자기 전환되어 size=100→120 점프가 발생하는 것을
+  // 막기 위해 complete도 isRunning에 포함. PomodoroRunning에 sessionComplete 멘트가 1초간
+  // 표시되며, 다음 tick(idle)부터 IdleScreen으로 자연 전환된다.
+  const isRunning =
+    phase === "focus" || phase === "break" || phase === "complete";
 
   const { phrase, potatoState } = usePhrase(
     snap ? { phase, total, db, state: engineState } : null
@@ -100,7 +104,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           <PlaceholderTab name="잔디" />
         ) : isRunning ? (
           <PomodoroRunning
-            phase={phase as "focus" | "break"}
+            phase={phase as "focus" | "break" | "complete"}
             timeLeft={timeLeft}
             potatoState={potatoState}
             phrase={phrase}

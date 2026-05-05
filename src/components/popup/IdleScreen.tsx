@@ -15,16 +15,17 @@ type IdleScreenProps = {
  * atomic phase=Focus + active_phase 스토어를 갱신한다.
  *
  * 레이아웃 (FR-31):
- *   1. Potato(120, animated) + SpeechBubble 좌하단 (relative 컨테이너 + absolute)
+ *   1. Potato(120, animated) + SpeechBubble 가로 배치 — SpeechBubble 좌하단 꼬리가
+ *      Potato 방향(왼쪽 아래)을 자연스럽게 가리킨다. DiscardModal과 동일 패턴.
  *   2. 안내 문구
  *   3. "집중 시작" 버튼
  */
 export function IdleScreen({ onStart, potatoState, phrase }: IdleScreenProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-      <div className="relative">
+      <div className="flex items-start justify-center gap-2">
         <Potato state={potatoState} size={120} animated={true} />
-        <div className="absolute -bottom-2 -left-16">
+        <div className="mt-10">
           <SpeechBubble text={phrase} />
         </div>
       </div>

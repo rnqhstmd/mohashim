@@ -5,8 +5,11 @@ import { SpeechBubble } from "../SpeechBubble";
 import type { PotatoState } from "../../lib/phrases";
 import { DiscardModal } from "./DiscardModal";
 
+// complete는 1-tick 동안만 PomodoroRunning에 잠시 머무르며 (sessionComplete 멘트 표시),
+// 다음 tick에 idle로 전환되어 IdleScreen으로 빠진다. 본 컴포넌트는 phase를 직접 사용하지
+// 않으므로 (ModeChip이 우상단에서 표시) 시각 분기 없음. 타입에는 명시적으로 포함.
 type PomodoroRunningProps = {
-  phase: "focus" | "break";
+  phase: "focus" | "break" | "complete";
   timeLeft: number;
   potatoState: PotatoState;
   phrase: string;
@@ -26,7 +29,7 @@ function formatMmSs(secs: number): string {
  * atomic phase=Idle + active_phase=idle 동기화한다.
  *
  * 레이아웃 (FR-32, 4단):
- *   1. Potato(100, animated) + SpeechBubble 좌하단
+ *   1. Potato(100, animated) + SpeechBubble 가로 배치 (꼬리가 Potato 향함)
  *   2. MM:SS 카운트다운 (text-5xl tabular-nums)
  *   3. "그만하기" 버튼
  *   4. DiscardModal (open 시)
@@ -57,9 +60,9 @@ export function PomodoroRunning({
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-      <div className="relative">
+      <div className="flex items-start justify-center gap-2">
         <Potato state={potatoState} size={100} animated={true} />
-        <div className="absolute -bottom-2 -left-16">
+        <div className="mt-8">
           <SpeechBubble text={phrase} />
         </div>
       </div>
