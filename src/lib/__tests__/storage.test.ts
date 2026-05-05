@@ -58,4 +58,13 @@ describe("storage", () => {
     await mod.initStorage();
     await expect(mod.get("focus_minutes")).resolves.toBe(25);
   });
+
+  it("set with { save: false } defers persistence; flush() commits batched writes", async () => {
+    const mod = await import("../storage");
+    await mod.set("focus_minutes", 40, { save: false });
+    await mod.set("break_minutes", 10, { save: false });
+    await mod.flush();
+    await expect(mod.get("focus_minutes")).resolves.toBe(40);
+    await expect(mod.get("break_minutes")).resolves.toBe(10);
+  });
 });

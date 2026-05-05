@@ -71,12 +71,30 @@ export async function get<K extends keyof StoreSchema>(
   return value;
 }
 
+export type SetOptions = {
+  /**
+   * 디스크 flush 여부. 기본 true.
+   * 짧은 시간 내 다수 키를 변경할 때 false로 모은 뒤 마지막에 `flush()`를 호출하면
+   * 디스크 I/O를 1회로 묶을 수 있다.
+   */
+  save?: boolean;
+};
+
 export async function set<K extends keyof StoreSchema>(
   key: K,
-  value: StoreSchema[K]
+  value: StoreSchema[K],
+  options: SetOptions = {}
 ): Promise<void> {
   const store = await ensureStore();
   await store.set(key, value);
+  if (options.save !== false) {
+    await store.save();
+  }
+}
+
+/** 보류된 변경 사항을 디스크에 flush. `set(key, value, { save: false })`와 짝을 이룬다. */
+export async function flush(): Promise<void> {
+  const store = await ensureStore();
   await store.save();
 }
 

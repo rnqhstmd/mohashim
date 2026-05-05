@@ -62,7 +62,9 @@ fn seed_defaults<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
-/// 손상된 `.store.json`을 `.store.json.corrupted-{unix_ts}`로 rename 백업.
+/// 손상된 `.store.json`을 `.store.json.corrupted-{unix_ts}`로 백업.
+/// rename은 cross-filesystem 에서 EXDEV로 실패할 수 있으므로,
+/// 그 경우 copy + remove_file 폴백을 시도한다.
 fn backup_corrupted<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let dir = app
         .path()
@@ -77,7 +79,23 @@ fn backup_corrupted<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let backup_path = dir.join(format!("{STORE_FILE}.corrupted-{ts}"));
-    std::fs::rename(&store_path, &backup_path)
-        .map_err(|e| format!("rename {} -> {} failed: {e}", store_path.display(), backup_path.display()))?;
+
+    if let Err(rename_err) = std::fs::rename(&store_path, &backup_path) {
+        // EXDEV 등 cross-device 실패에 대비한 copy + remove 폴백.
+        eprintln!(
+            "[mohashim] rename {} -> {} failed ({rename_err}), falling back to copy",
+            store_path.display(),
+            backup_path.display()
+        );
+        std::fs::copy(&store_path, &backup_path).map_err(|e| {
+            format!(
+                "copy {} -> {} failed: {e}",
+                store_path.display(),
+                backup_path.display()
+            )
+        })?;
+        std::fs::remove_file(&store_path)
+            .map_err(|e| format!("remove {} failed: {e}", store_path.display()))?;
+    }
     Ok(())
 }
