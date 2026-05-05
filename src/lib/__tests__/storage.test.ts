@@ -81,8 +81,12 @@ describe("storage", () => {
   });
 
   it("getActivePhase returns persisted value when set", async () => {
+    // BR-active-phase: active_phase의 writer는 Rust(timer.rs) 단일 책임이므로
+    // TS `set` API는 active_phase 키를 컴파일 타임에 차단한다 (Exclude<..., "active_phase">).
+    // 테스트에서는 Rust가 디스크에 기록한 상황을 시뮬레이션하기 위해 mock store에
+    // 직접 값을 주입한다.
+    inMemory.set("active_phase", "focus");
     const mod = await import("../storage");
-    await mod.set("active_phase", "focus");
     await expect(mod.getActivePhase()).resolves.toBe("focus");
   });
 

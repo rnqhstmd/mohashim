@@ -5,30 +5,30 @@ import { focusStart } from "../../lib/timer";
 import { useToastQueue } from "../../lib/toast";
 import { usePhrase } from "../../lib/usePhrase";
 import { BottomTabBar, type Tab } from "./BottomTabBar";
-import { IdleScreen } from "./IdleScreen";
 import { ModeChip } from "./ModeChip";
-import { PomodoroRunning } from "./PomodoroRunning";
 import { SettingsScreen } from "./SettingsScreen";
 import { ToastContainer } from "./Toast";
+import { TodosTab } from "./TodosTab";
 
 type MainScreenProps = {
   onResetDone: () => void;
 };
 
 /**
- * 메인 팝업 화면 (설계 §11/§13).
+ * 메인 팝업 화면 (설계 §11/§13/§6).
  *
  * 구조:
  *   ModeChip (absolute 우상단)
- *   <main> 탭/phase에 따라 IdleScreen | PomodoroRunning | SettingsScreen | Placeholder
+ *   <main> 탭에 따라 TodosTab | SettingsScreen | Placeholder
  *   BottomTabBar
  *   ToastContainer
  *
  * phase는 score-tick 기반. timer.focusStart는 Rust 단일 writer로 active_phase 갱신.
  *
- * Phase 5 wiring:
- * - score-tick의 state/db/total을 추출하여 usePhrase로 멘트/potatoState를 산출.
- * - IdleScreen / PomodoroRunning에 potatoState/phrase prop 전달.
+ * Phase 6 wiring (옵션 A 통합 — M1):
+ * - todos 탭은 항상 <TodosTab key={tab} />을 렌더하며, 내부에서 phase에 따라 PomodoroCard /
+ *   FocusStartButton 분기를 처리한다. MainScreen은 IdleScreen/PomodoroRunning을 직접 분기하지 않는다.
+ * - score-tick의 state/db/total을 추출하여 usePhrase로 멘트/potatoState를 산출 후 TodosTab에 전달.
  * - useToastQueue는 본 컴포넌트에서만 단일 호출하여 ToastContainer에 toasts 전달.
  * - phase=complete 1-tick 발생 시 sessionComplete 멘트를 토스트로 push (FR-35).
  */
@@ -40,11 +40,6 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   const total = snap?.total ?? 0;
   const db = snap?.db ?? 0;
   const engineState = snap?.state ?? "calm";
-  // complete 1-tick 동안 IdleScreen으로 갑자기 전환되어 size=100→120 점프가 발생하는 것을
-  // 막기 위해 complete도 isRunning에 포함. PomodoroRunning에 sessionComplete 멘트가 1초간
-  // 표시되며, 다음 tick(idle)부터 IdleScreen으로 자연 전환된다.
-  const isRunning =
-    phase === "focus" || phase === "break" || phase === "complete";
 
   const { phrase, potatoState } = usePhrase(
     snap ? { phase, total, db, state: engineState } : null
@@ -75,22 +70,16 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, pushToast]);
 
-  // snap=null + DiscardModal open 동시 시: phase=idle 폴백으로 IdleScreen 전환되어
-  // PomodoroRunning(과 그 안의 DiscardModal)이 unmount된다. score-tick 일시 단절 시
-  // 발생할 수 있으나 실제 발생 가능성은 매우 낮음. 후속 Phase에서 last-known snap 유지
-  // 정책 검토 가능.
-
-  // Focus 진입 시 자동으로 todos 탭으로 전환하여 PomodoroRunning이 보이도록.
-  // 현재 IdleScreen은 todos 탭에서만 노출되지만, 외부 트리거 등으로 settings 탭에
-  // 머무는 동안 Focus가 시작될 때를 대비한 fail-safe.
+  // Focus 진입 시 자동으로 todos 탭으로 전환하여 PomodoroCard가 보이도록.
+  // 외부 트리거 등으로 settings 탭에 머무는 동안 Focus가 시작될 때를 대비한 fail-safe.
   // focusStart 실패 시 IPC 에러는 이미 timer.ts에서 console.error로 기록됨.
-  // 다음 score-tick에서 phase=idle이 확인되면 IdleScreen으로 자연 복귀하므로 swallow.
+  // 다음 score-tick에서 phase=idle이 확인되면 FocusStartButton으로 자연 복귀하므로 swallow.
   const handleFocusStart = async () => {
     setTab("todos");
     try {
       await focusStart();
     } catch {
-      // no-op: 다음 tick에서 phase=idle 확인 시 IdleScreen으로 복귀
+      // no-op: 다음 tick에서 phase=idle 확인 시 FocusStartButton으로 복귀
     }
   };
 
@@ -102,18 +91,14 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           <SettingsScreen onResetDone={onResetDone} />
         ) : tab === "grass" ? (
           <PlaceholderTab name="잔디" />
-        ) : isRunning ? (
-          <PomodoroRunning
-            phase={phase as "focus" | "break" | "complete"}
+        ) : (
+          <TodosTab
+            key={tab}
+            phase={phase}
             timeLeft={timeLeft}
             potatoState={potatoState}
             phrase={phrase}
-          />
-        ) : (
-          <IdleScreen
-            onStart={handleFocusStart}
-            potatoState={potatoState}
-            phrase={phrase}
+            onFocusStart={handleFocusStart}
           />
         )}
       </main>
