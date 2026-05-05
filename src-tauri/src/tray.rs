@@ -116,11 +116,12 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     }
 
     // FR-B3: macOS template 모드.
-    if cfg!(target_os = "macos") {
-        if let Some(t) = app.tray_by_id("main") {
-            if let Err(e) = t.set_icon_as_template(true) {
-                eprintln!("[mohashim] set_icon_as_template failed: {e}");
-            }
+    // 컴파일타임 cfg로 분기하여 비-macOS 타겟에서 set_icon_as_template 심볼 미존재로 인한
+    // 빌드 실패를 차단한다 (apply_icon과 동일 패턴).
+    #[cfg(target_os = "macos")]
+    if let Some(t) = app.tray_by_id("main") {
+        if let Err(e) = t.set_icon_as_template(true) {
+            eprintln!("[mohashim] set_icon_as_template failed: {e}");
         }
     }
 
