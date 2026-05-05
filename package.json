@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "tray:gen": "node scripts/tray-gen.mjs",
+    "prebuild": "npm run tray:gen"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -18,7 +20,8 @@
     "@tauri-apps/plugin-store": "^2",
     "@tauri-apps/plugin-notification": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "^2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
@@ -31,7 +34,9 @@
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "jsdom": "^25.0.1",
+    "png-to-ico": "^2.1.8",
     "postcss": "^8.4.49",
+    "sharp": "^0.33.0",
     "tailwindcss": "^3.4.15",
     "typescript": "~5.6.3",
     "vite": "^5.4.11",

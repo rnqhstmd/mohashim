@@ -14,7 +14,7 @@ use crate::audio;
 use crate::input;
 use crate::permissions::{self, PermissionStatus};
 use crate::power;
-use crate::score::phase::{grace_from, state_from_total, LiveState, Phase};
+use crate::score::phase::{final_tray_state, grace_from, state_from_total, LiveState, Phase};
 use crate::score::shared::{
     current_phase, load_db_ema, seconds_idle, store_time_left, time_left_secs, AX_GRANTED,
     EMIT_ERR_COUNT, MIC_GRANTED, SCORE_STARTED, START_AT,
@@ -81,7 +81,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 /// 누적 drift 방지: `next_tick`을 절대 시각으로 유지하여 sleep + 본문 실행 시간을
 /// 흡수한다. 본문이 1초 이상 걸려 next_tick이 과거가 되면 sleep을 건너뛰고 즉시 진행.
 fn tick_loop<R: Runtime>(app: AppHandle<R>) {
-    let mut prev_live: Option<LiveState> = None;
+    let mut prev_tray_state: Option<LiveState> = None;
+    let mut prev_title: Option<Option<String>> = None;
     let mut next_tick = Instant::now();
     loop {
         next_tick += Duration::from_secs(1);
@@ -167,6 +168,11 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             crate::score::shared::IDLE_NOISE_LOUD_TICKS.fetch_add(1, Relaxed);
         }
 
+        // FR-D1~D3: Idle override 적용한 최종 tray_state.
+        let tray_state = final_tray_state(live, phase_at_emit, db);
+        // FR-C1~C3, BR-T3, BR-T4: phase=Focus|Break && time_left>0일 때만 mm:ss.
+        let title = crate::tray::format_title(phase_at_emit, time_left_for_emit);
+
         let snap = ScoreSnapshot {
             total,
             work,
@@ -187,14 +193,30 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        if Some(live) != prev_live {
-            match tray::apply_state(&app, live) {
+        // 1) 아이콘 + tooltip: tray_state 변경 시에만 (BR-T7, AC-T11).
+        if Some(tray_state) != prev_tray_state {
+            match tray::apply_icon(&app, tray_state) {
                 Ok(()) => {
-                    prev_live = Some(live);
+                    // tooltip 라벨도 동기화 (Phase 0 패턴 유지).
+                    let _ = tray::apply_tooltip_label(&app, tray_state);
+                    prev_tray_state = Some(tray_state);
                 }
                 Err(e) => {
-                    eprintln!("[mohashim] tray apply_state failed: {e}");
-                    // prev_live 미갱신 → 다음 tick에서 재시도.
+                    eprintln!("[mohashim] tray apply_icon failed: {e}");
+                    // prev_tray_state 미갱신 → 다음 tick에서 재시도.
+                }
+            }
+        }
+
+        // 2) 타이틀: format_title 결과 변경 시에만 (None→None 재호출 방지).
+        if Some(&title) != prev_title.as_ref() {
+            match tray::apply_title(&app, title.as_deref()) {
+                Ok(()) => {
+                    prev_title = Some(title);
+                }
+                Err(e) => {
+                    eprintln!("[mohashim] tray apply_title failed: {e}");
+                    // prev_title 미갱신 → 다음 tick에서 재시도.
                 }
             }
         }
