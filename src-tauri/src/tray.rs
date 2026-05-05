@@ -41,9 +41,13 @@ fn icon_path_for<R: Runtime>(app: &AppHandle<R>, s: LiveState) -> Result<PathBuf
         .resource_dir()
         .map_err(|e| format!("resource_dir: {e}"))?;
     if cfg!(target_os = "macos") {
+        // init_tray가 main 윈도우 생성 전에 호출될 가능성 대비:
+        // get_webview_window 실패 시 primary_monitor의 scale_factor를 폴백으로 사용하여
+        // Retina 환경에서 @1x로 폴백되는 화질 저하를 방지한다.
         let sf = app
             .get_webview_window("main")
             .and_then(|w| w.scale_factor().ok())
+            .or_else(|| app.primary_monitor().ok().flatten().map(|m| m.scale_factor()))
             .unwrap_or(1.0);
         let suffix = if sf >= 3.0 {
             "@3x"
@@ -131,9 +135,11 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 /// rect를 PhysicalPosition / PhysicalSize 단위로 변환 후 emit. (MUST-ADDRESS D)
 /// scale_factor 미획득 시 1.0 폴백 + 경고 로그.
 fn emit_tray_click<R: Runtime>(app: &AppHandle<R>, rect: &tauri::Rect) {
+    // main 윈도우가 hide 상태이거나 모니터 간 이동한 경우에 대비해 primary_monitor 폴백.
     let sf = app
         .get_webview_window("main")
         .and_then(|w| w.scale_factor().ok())
+        .or_else(|| app.primary_monitor().ok().flatten().map(|m| m.scale_factor()))
         .unwrap_or_else(|| {
             eprintln!("[mohashim] tray-click: scale_factor unavailable, fallback 1.0");
             1.0
