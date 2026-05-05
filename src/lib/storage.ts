@@ -9,9 +9,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
 
-export type Todo = { id: string; text: string; done: boolean };
-export type WorkTag = { id: string; name: string; color: string };
-export type Location = { id: string; name: string };
+export type Todo = {
+  id: string;
+  text: string;
+  done: boolean;
+  tag: string | null;
+  loc: string | null;
+  active: boolean;
+};
+export type WorkTag = { id: string; emoji: string; label: string; color: string };
+export type Location = { id: string; emoji: string; label: string; color: string };
 export type SessionRecord = { date: string; minutes: number };
 export type ActivePhase = "idle" | "focus" | "break";
 
@@ -92,7 +99,7 @@ export type SetOptions = {
   save?: boolean;
 };
 
-export async function set<K extends keyof StoreSchema>(
+export async function set<K extends Exclude<keyof StoreSchema, "active_phase">>(
   key: K,
   value: StoreSchema[K],
   options: SetOptions = {}
@@ -148,6 +155,60 @@ export async function setBreakMinutes(
   options: SetOptions = {}
 ): Promise<void> {
   await set("break_minutes", value, options);
+}
+
+/**
+ * 폴백 정규화: tag/loc/active 부재 또는 구 타입(name) 잔존 시 안전 변환 (Phase 6 M2).
+ * - 비배열 잔존 데이터는 빈 배열로 무효화하여 UI 충돌 차단.
+ * - id 부재 시 결정적 prefix(`t-fallback-${idx}`)로 폴백 — 호출 시마다 같은 ID 반환 → React key 안정.
+ */
+export async function getTodos(): Promise<Todo[]> {
+  const raw = await get("todos");
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((t: any, idx: number) => ({
+    id: typeof t?.id === "string" ? t.id : `t-fallback-${idx}`,
+    text: typeof t?.text === "string" ? t.text : "",
+    done: !!t?.done,
+    tag: typeof t?.tag === "string" ? t.tag : null,
+    loc: typeof t?.loc === "string" ? t.loc : null,
+    active: !!t?.active,
+  }));
+}
+
+export async function setTodos(value: Todo[], options: SetOptions = {}): Promise<void> {
+  await set("todos", value, options);
+}
+
+/** 폴백 정규화 (Phase 6 M2). 비배열은 [], id 부재 시 결정적 폴백. */
+export async function getWorkTags(): Promise<WorkTag[]> {
+  const raw = await get("work_tags");
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((t: any, idx: number) => ({
+    id: typeof t?.id === "string" ? t.id : `wt-fallback-${idx}`,
+    emoji: typeof t?.emoji === "string" ? t.emoji : "🏷",
+    label: typeof t?.label === "string" ? t.label : (typeof t?.name === "string" ? t.name : ""),
+    color: typeof t?.color === "string" ? t.color : "#7aa3e6",
+  }));
+}
+
+export async function setWorkTags(value: WorkTag[], options: SetOptions = {}): Promise<void> {
+  await set("work_tags", value, options);
+}
+
+/** 폴백 정규화 (Phase 6 M2). 비배열은 [], id 부재 시 결정적 폴백. */
+export async function getLocations(): Promise<Location[]> {
+  const raw = await get("locations");
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((t: any, idx: number) => ({
+    id: typeof t?.id === "string" ? t.id : `loc-fallback-${idx}`,
+    emoji: typeof t?.emoji === "string" ? t.emoji : "📍",
+    label: typeof t?.label === "string" ? t.label : (typeof t?.name === "string" ? t.name : ""),
+    color: typeof t?.color === "string" ? t.color : "#7aa3e6",
+  }));
+}
+
+export async function setLocations(value: Location[], options: SetOptions = {}): Promise<void> {
+  await set("locations", value, options);
 }
 
 /**

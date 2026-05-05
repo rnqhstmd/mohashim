@@ -5,6 +5,7 @@ import {
   initStorage,
   setOnboardingCompleted,
 } from "./lib/storage";
+import { seedDefaultTags } from "./lib/todos";
 import {
   canEnterMain,
   getPermissionStatus,
@@ -35,6 +36,9 @@ function App() {
     (async () => {
       try {
         await initStorage();
+        // D-1, AC-seed-timing: initStorage 직후 / UI 렌더 이전에 기본 태그 시드.
+        // 내부에서 try/catch swallow하므로 본 effect의 catch 분기로 빠지지 않는다.
+        await seedDefaultTags();
         const [perms, oc] = await Promise.all([
           getPermissionStatus(),
           getOnboardingCompleted(),

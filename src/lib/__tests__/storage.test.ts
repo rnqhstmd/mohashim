@@ -81,8 +81,12 @@ describe("storage", () => {
   });
 
   it("getActivePhase returns persisted value when set", async () => {
+    // BR-active-phase: active_phase의 writer는 Rust(timer.rs) 단일 책임이므로
+    // TS `set` API는 active_phase 키를 컴파일 타임에 차단한다 (Exclude<..., "active_phase">).
+    // 테스트에서는 Rust가 디스크에 기록한 상황을 시뮬레이션하기 위해 mock store에
+    // 직접 값을 주입한다.
+    inMemory.set("active_phase", "focus");
     const mod = await import("../storage");
-    await mod.set("active_phase", "focus");
     await expect(mod.getActivePhase()).resolves.toBe("focus");
   });
 
@@ -113,5 +117,78 @@ describe("storage", () => {
     await expect(mod.getBreakMinutes()).resolves.toBe(5);
     await mod.setBreakMinutes(15);
     await expect(mod.getBreakMinutes()).resolves.toBe(15);
+  });
+
+  // ---------- Phase 6 폴백 정규화 회귀 테스트 ----------
+
+  it("getTodos: 비배열 잔존 데이터를 빈 배열로 무효화", async () => {
+    inMemory.set("todos", { not: "an array" });
+    const mod = await import("../storage");
+    await expect(mod.getTodos()).resolves.toEqual([]);
+  });
+
+  it("getTodos: 신규 필드(tag/loc/active) 부재 시 null/false 폴백", async () => {
+    inMemory.set("todos", [
+      { id: "t1", text: "구버전", done: false },
+      { id: "t2", text: "완료", done: true },
+    ]);
+    const mod = await import("../storage");
+    const result = await mod.getTodos();
+    expect(result).toEqual([
+      { id: "t1", text: "구버전", done: false, tag: null, loc: null, active: false },
+      { id: "t2", text: "완료", done: true, tag: null, loc: null, active: false },
+    ]);
+  });
+
+  it("getTodos: id 부재 시 결정적 폴백 ID — 호출 시마다 동일", async () => {
+    inMemory.set("todos", [{ text: "no-id-1" }, { text: "no-id-2" }]);
+    const mod = await import("../storage");
+    const a = await mod.getTodos();
+    const b = await mod.getTodos();
+    expect(a[0].id).toBe("t-fallback-0");
+    expect(a[1].id).toBe("t-fallback-1");
+    expect(a[0].id).toBe(b[0].id);
+    expect(a[1].id).toBe(b[1].id);
+  });
+
+  it("getWorkTags: 구 타입(name) → 신 타입(label) 자동 변환 + emoji/color 폴백", async () => {
+    inMemory.set("work_tags", [
+      { id: "old-1", name: "예전라벨", color: "#abcdef" },
+      { id: "old-2", name: "이름만" },
+    ]);
+    const mod = await import("../storage");
+    const result = await mod.getWorkTags();
+    expect(result).toEqual([
+      { id: "old-1", emoji: "🏷", label: "예전라벨", color: "#abcdef" },
+      { id: "old-2", emoji: "🏷", label: "이름만", color: "#7aa3e6" },
+    ]);
+  });
+
+  it("getWorkTags: 비배열 잔존 데이터를 빈 배열로 무효화", async () => {
+    inMemory.set("work_tags", "corrupted");
+    const mod = await import("../storage");
+    await expect(mod.getWorkTags()).resolves.toEqual([]);
+  });
+
+  it("getLocations: 구 타입(name) → 신 타입(label) 자동 변환 + 결정적 ID 폴백", async () => {
+    inMemory.set("locations", [
+      { name: "도서관" }, // id 부재
+      { id: "loc-x", name: "카페", color: "#deadbe" },
+    ]);
+    const mod = await import("../storage");
+    const result = await mod.getLocations();
+    expect(result).toEqual([
+      { id: "loc-fallback-0", emoji: "📍", label: "도서관", color: "#7aa3e6" },
+      { id: "loc-x", emoji: "📍", label: "카페", color: "#deadbe" },
+    ]);
+  });
+
+  it("set은 active_phase 키를 컴파일 타임에 차단 (런타임 회피 시나리오 검증)", async () => {
+    const mod = await import("../storage");
+    // @ts-expect-error active_phase는 set 시그니처에서 Exclude로 제거됨 (BR-active-phase)
+    await mod.set("active_phase", "focus");
+    // 런타임 회피로 호출했을 때도 store가 받기는 하지만, 정상 경로에서는 컴파일 에러로 차단됨.
+    // 본 테스트는 타입 가드의 존재만 확인 (@ts-expect-error 미발생 시 테스트 실패).
+    expect(true).toBe(true);
   });
 });
