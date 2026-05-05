@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Potato } from "../Potato";
+import type { PotatoState } from "../../lib/phrases";
 
 describe("Potato — viewBox + animate-mh-bob 토글 (AC-16)", () => {
   it("animated=true 일 때 viewBox 200×200 + animate-mh-bob 클래스를 적용한다", () => {
@@ -61,6 +62,33 @@ describe("Potato — sweat/tear 회귀 방지", () => {
     render(<Potato state="focused" />);
     expect(screen.queryByTestId("potato-sweat")).toBeNull();
     expect(screen.queryByTestId("potato-tear")).toBeNull();
+  });
+});
+
+describe("Potato — invalid state 런타임 폴백 (HIGH 회귀 방지)", () => {
+  // 호출자가 `as PotatoState` 캐스트 등으로 invalid 값을 흘려도
+  // Potato는 throw 없이 'calm'으로 폴백해야 한다.
+
+  it("invalid 문자열 state → throw 없이 calm aria-label로 렌더", () => {
+    expect(() =>
+      render(<Potato state={"invalid_state" as unknown as PotatoState} />),
+    ).not.toThrow();
+    expect(
+      screen.getByRole("img", { name: "차분한 모하" }),
+    ).toBeInTheDocument();
+  });
+
+  it("undefined state → throw 없이 calm 폴백", () => {
+    expect(() =>
+      render(<Potato state={undefined as unknown as PotatoState} />),
+    ).not.toThrow();
+  });
+
+  it("invalid state에서도 Sprout 잎 path가 calm 색(fill-sproutFresh)으로 폴백", () => {
+    const { container } = render(
+      <Potato state={"bogus" as unknown as PotatoState} />,
+    );
+    expect(container.querySelectorAll("path.fill-sproutFresh").length).toBe(2);
   });
 });
 

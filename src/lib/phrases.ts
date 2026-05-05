@@ -99,7 +99,7 @@ export function pickPhrase(bucket: BucketKey, seed: number): string {
   return __pickPhraseFromArray(POTATO_PHRASES[bucket], seed);
 }
 
-const VALID_POTATO_STATES: ReadonlySet<PotatoState> = new Set([
+export const VALID_POTATO_STATES: ReadonlySet<PotatoState> = new Set([
   "focused",
   "calm",
   "distracted",

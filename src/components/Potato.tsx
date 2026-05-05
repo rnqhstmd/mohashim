@@ -1,4 +1,4 @@
-import type { PotatoState } from "../lib/phrases";
+import { VALID_POTATO_STATES, type PotatoState } from "../lib/phrases";
 
 export type PotatoProps = {
   state: PotatoState;
@@ -23,16 +23,20 @@ const SPROUT_FILL: Record<PotatoState, string> = {
 };
 
 export function Potato({ state, size = 140, animated = true }: PotatoProps) {
+  // 호출자가 `as PotatoState` 캐스트 등으로 invalid 값을 흘려도 throw 없이 'calm' 폴백.
+  // (Sprout 내부의 SPROUT_LEAF_TRANSFORMS[state] 가 undefined가 되어 leaves.left 접근 시 TypeError가 나는 것을 방지.
+  //  mapPhaseToPotatoState와 동일한 폴백 정책을 컴포넌트 단에도 일관 적용.)
+  const safeState: PotatoState = VALID_POTATO_STATES.has(state) ? state : "calm";
   return (
     <svg
       viewBox="0 0 200 200"
       width={size}
       height={size}
       role="img"
-      aria-label={POTATO_ARIA_LABELS[state]}
+      aria-label={POTATO_ARIA_LABELS[safeState]}
       className={animated ? "animate-mh-bob" : undefined}
     >
-      <Sprout state={state} />
+      <Sprout state={safeState} />
       <ellipse
         cx="100"
         cy="115"
@@ -41,7 +45,7 @@ export function Potato({ state, size = 140, animated = true }: PotatoProps) {
         className="fill-sun stroke-ink"
         strokeWidth="1.5"
       />
-      {renderFace(state)}
+      {renderFace(safeState)}
     </svg>
   );
 }
