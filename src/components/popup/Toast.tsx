@@ -1,13 +1,18 @@
-import { useToastQueue } from "../../lib/toast";
+import type { ToastMessage } from "../../lib/toast";
+
+type ToastContainerProps = {
+  toasts: ToastMessage[];
+};
 
 /**
  * 팝업 하단의 토스트 컨테이너 (설계 §22).
  *
- * useToastQueue가 Rust → JS `toast` 이벤트를 구독하고 3초 자동 dismiss.
- * webview 활성 시에만 가시, OS 알림이 1차 전달 수단.
+ * `useToastQueue`는 MainScreen에서만 단일 호출하고, ToastContainer는 그 큐의
+ * 스냅샷(toasts)만 prop으로 전달받아 렌더한다. 다중 호출 시 큐 인스턴스가
+ * 분리되어 push/dismiss가 다른 인스턴스로 갈 수 있으므로 본 컴포넌트 내부에서는
+ * 절대 useToastQueue를 호출하지 않는다.
  */
-export function ToastContainer() {
-  const { toasts } = useToastQueue();
+export function ToastContainer({ toasts }: ToastContainerProps) {
   return (
     <div
       role="status"
