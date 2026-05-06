@@ -296,11 +296,17 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
     const sessions = typeof e.sessions === "number" && e.sessions >= 0 ? e.sessions : 0;
     const avg = typeof e.avg === "number" && e.avg >= 0 && e.avg <= 100 ? e.avg : 0;
     const sum = typeof e.sum === "number" && e.sum >= 0 ? e.sum : undefined;
+    // Phase 12 FR-6: todos_completed 정규화. 0 미만 또는 비숫자는 undefined로 폴백 (grass.ts에서 0 폴백).
+    const todosCompleted =
+      typeof e.todos_completed === "number" && e.todos_completed >= 0
+        ? e.todos_completed
+        : undefined;
     result[date] = {
       date: typeof e.date === "string" ? e.date : date,
       sessions,
       avg,
       ...(sum !== undefined ? { sum } : {}),
+      ...(todosCompleted !== undefined ? { todos_completed: todosCompleted } : {}),
     };
   }
   return result;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { ContributionGraph } from "./ContributionGraph";
 import { ShareCard } from "./ShareCard";
 import {
@@ -48,6 +49,45 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
     })();
     return () => {
       cancelled = true;
+    };
+  }, [monthOffset]);
+
+  /**
+   * Phase 12 FR-7 / AC-14: Rust `record_todo_completion` / `undo_todo_completion`이
+   * emit한 `todo-completion` 이벤트 수신 시 현재 monthOffset을 다시 로드하여
+   * 잔디 색칠을 즉시 갱신한다. 다른 월을 보고 있어도 mounted 동안은 listener 활성.
+   *
+   * mounted 플래그 + cancelled 패턴으로 unmount 후 setState 차단 + listen 등록 race 방지.
+   */
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      try {
+        const u = await listen("todo-completion", () => {
+          if (!mounted) return;
+          (async () => {
+            try {
+              const md = await getMonthSessions(monthOffset);
+              if (mounted) setData(md);
+            } catch (err) {
+              console.error("[mohashim] grass reload failed", err);
+            }
+          })();
+        });
+        if (mounted) {
+          unlisten = u;
+        } else {
+          // mount 도중 unmount된 경우 즉시 해제.
+          u();
+        }
+      } catch (err) {
+        console.error("[mohashim] todo-completion listen failed", err);
+      }
+    })();
+    return () => {
+      mounted = false;
+      unlisten?.();
     };
   }, [monthOffset]);
 
