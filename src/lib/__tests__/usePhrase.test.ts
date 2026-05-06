@@ -1,6 +1,6 @@
 import { StrictMode, createElement, type ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { usePhrase } from "../usePhrase";
 import { POTATO_PHRASES } from "../phrases";
 import type { LiveState, Phase } from "../score";
@@ -21,12 +21,18 @@ const noiseLoudCtx: Ctx = {
   state: "calm",
 };
 
+let mockRandom: MockInstance<() => number>;
+
 beforeEach(() => {
   vi.useFakeTimers();
+  // Math.random 결정성 확보: 기본값 0 → pickPhrase는 항상 [0]번 멘트를 반환.
+  // 특정 it에서 mockReturnValueOnce를 체이닝하여 다음 호출만 다른 값으로 덮어쓴다.
+  mockRandom = vi.spyOn(Math, "random").mockReturnValue(0);
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("usePhrase", () => {
@@ -37,14 +43,18 @@ describe("usePhrase", () => {
     expect(result.current.potatoState).toBe("calm");
   });
 
-  it("AC-11 (BR-1): 8000ms 경과 시 seed=1로 증가하여 다음 멘트 순환", () => {
+  it("AC-11 (BR-1): 8000ms 경과 시 다음 멘트로 회전", () => {
     const { result } = renderHook(() => usePhrase(idleCtx));
     expect(result.current.phrase).toBe(POTATO_PHRASES.idle[0]);
 
+    // setInterval 콜백의 pickPhrase 호출에서만 idle[targetIdx]를 반환하도록 stub.
+    // targetIdx / length는 floor 시 항상 targetIdx → length 변경에도 의도 보존.
+    const targetIdx = 1;
+    mockRandom.mockReturnValueOnce(targetIdx / POTATO_PHRASES.idle.length);
     act(() => {
       vi.advanceTimersByTime(8000);
     });
-    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[1]);
+    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[targetIdx]);
   });
 
   it("BR-1 경계: 7999ms에서는 멘트 변화 없음, +1ms 시점에 변경", () => {
@@ -56,24 +66,29 @@ describe("usePhrase", () => {
     });
     expect(result.current.phrase).toBe(POTATO_PHRASES.idle[0]);
 
+    const targetIdx = 1;
+    mockRandom.mockReturnValueOnce(targetIdx / POTATO_PHRASES.idle.length);
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[1]);
+    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[targetIdx]);
   });
 
-  it("AC-13 (BR-2): bucket 변경 시 seed=0으로 초기화되어 새 버킷 첫 멘트", () => {
+  it("AC-13 (BR-2): bucket 변경 시 새 버킷 첫 멘트 즉시 갱신", () => {
     const { result, rerender } = renderHook(({ ctx }) => usePhrase(ctx), {
       initialProps: { ctx: idleCtx },
     });
 
-    // idle에서 8초 경과 → seed=1
+    // idle에서 8초 경과 → idle[targetIdx]로 회전
+    const targetIdx = 1;
+    mockRandom.mockReturnValueOnce(targetIdx / POTATO_PHRASES.idle.length);
     act(() => {
       vi.advanceTimersByTime(8000);
     });
-    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[1]);
+    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[targetIdx]);
 
-    // focusHigh ctx로 전환 → bucket 변경, seed=0 reset
+    // focusHigh ctx로 전환 → bucket 변경 시 useEffect의 pickPhrase가 random=0 → focusHigh[0]
+    mockRandom.mockReturnValueOnce(0);
     rerender({ ctx: focusHighCtx });
     expect(result.current.bucket).toBe("focusHigh");
     expect(result.current.phrase).toBe(POTATO_PHRASES.focusHigh[0]);

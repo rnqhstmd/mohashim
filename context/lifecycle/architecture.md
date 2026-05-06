@@ -87,6 +87,7 @@ function canEnterMain(p: PermissionState): boolean {
 | `locations` | Location[] | todo |
 | `sessions` | Map<date, SessionRecord> | grass |
 | `notifications_enabled` | bool | timer |
+| `auto_launch_enabled` | bool | lifecycle (PR #9) |
 
 ## 폰트 번들 (DEC-1)
 
@@ -128,6 +129,35 @@ src/assets/fonts/
 - 권한 카드 우측 점수 pill — 마이크=20점 / 접근성=80점 (점수 비중 시각화)
 - Privacy badge — BLUE_LIGHT 배경 + BLUE_DEEP 보더 + 자물쇠 이모지
 - 동의 버튼 클릭 → 두 권한 순차 요청 → 둘 다 OK 시 메인 진입, 한 쪽이라도 거절 시 onboarding 유지
+
+## 트레이 정체성 (PR #9)
+
+`visible:false` + `LSUIElement` + `prevent_close` 세 변경의 결합 효과로 모하심을 트레이 전용 앱으로 정착시킨다.
+
+- **`tauri.conf.json` `visible: false`** — 부팅 시점에 메인 윈도우 자동 노출 안 함. 부팅 깜빡임 제거.
+- **`Info.plist` `LSUIElement = true`** — macOS Dock 아이콘 + Cmd+Tab 앱 전환 목록에서 제외 (메뉴바 전용 앱 동작).
+- **`on_close_requested` → `api.prevent_close()` + `window.hide()`** — 창 닫기(X)는 종료가 아니라 숨김. 트레이 "종료" 메뉴(`app.exit(0)`)만 실 종료 경로.
+
+### 첫 실행 윈도우 show
+
+`lib.rs` setup에서 `storage::get_onboarding_completed`로 값을 읽어 `false`이면 `attempt_show`로 메인 윈도우를 show + set_focus한다.
+
+- `attempt_show`는 `app.get_webview_window("main")`이 None일 경우 `tauri::async_runtime::spawn`으로 100ms sleep 후 1회 재시도, 그래도 실패하면 eprintln 후 종료
+- store open 실패는 conservative fallback으로 `attempt_show`를 그대로 호출 (신규 설치 가능성으로 간주, 영구 invisible 회피)
+
+### Cmd+Q 정책
+
+본 Phase 범위 외. `prevent_close`는 `WindowEvent::CloseRequested`만 처리하며, macOS Cmd+Q는 `ApplicationShouldTerminate` 별도 경로로 종료 가능. `LSUIElement=true`로 메뉴바가 사라져 발화 빈도는 감소하나 완전 차단은 아님 — 후속 Phase에서 결정.
+
+## autostart 백엔드 (PR #9)
+
+`tauri-plugin-autostart` v2를 도입하여 사용자 설정으로 OS 자동 실행을 제어한다 (UI 토글은 후속 Phase).
+
+- macOS launcher = **`LaunchAgent`** — 사용자 단위 plist (`~/Library/LaunchAgents/`)에 등록
+- 기본값 = **`auto_launch_enabled: false`** — 신규 설치 시 OFF 상태. 사용자가 명시적으로 켜야 자동 실행
+- Rust 단일 writer 정책 — `set_auto_launch` IPC만 store.set 수행. setup의 `sync_autolaunch`는 read만 하고 OS API enable/disable로 정렬
+- 동기화 실패는 `eprintln!` 후 부트 진행 (기존 setup 정책 일관)
+- `reset_all`도 store false 리셋과 함께 `app.autolaunch().disable()` 호출하여 OS↔store 정합 유지
 
 ## 라이트 모드 only (DEC-13)
 

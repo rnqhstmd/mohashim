@@ -32,6 +32,7 @@ export type StoreSchema = {
   focus_minutes: number;
   break_minutes: number;
   notifications_enabled: boolean;
+  auto_launch_enabled: boolean;
   todos: Todo[];
   work_tags: WorkTag[];
   locations: Location[];
@@ -46,6 +47,7 @@ export const STORE_DEFAULTS: StoreSchema = {
   focus_minutes: 25,
   break_minutes: 5,
   notifications_enabled: true,
+  auto_launch_enabled: false,
   todos: [],
   work_tags: [],
   locations: [],
@@ -104,7 +106,9 @@ export type SetOptions = {
   save?: boolean;
 };
 
-export async function set<K extends Exclude<keyof StoreSchema, "active_phase" | "sessions">>(
+export async function set<
+  K extends Exclude<keyof StoreSchema, "active_phase" | "sessions" | "auto_launch_enabled">
+>(
   key: K,
   value: StoreSchema[K],
   options: SetOptions = {}
@@ -128,6 +132,21 @@ export async function getOnboardingCompleted(): Promise<boolean> {
 
 export async function setOnboardingCompleted(value: boolean): Promise<void> {
   await set("onboarding_completed", value);
+}
+
+/**
+ * 자동 실행 상태 read.
+ *
+ * `auto_launch_enabled`는 store와 OS LaunchAgent 두 시스템에 분산되어 있어 단일 진실 소스가
+ * 부재한다. Rust `set_auto_launch` IPC가 store + OS API를 함께 갱신하는 단일 writer이므로,
+ * 프론트엔드는 일반 `set()` 경로 대신 본 wrapper만 사용한다 (set 제너릭에서 키 제외됨).
+ */
+export async function getAutoLaunch(): Promise<boolean> {
+  return invoke<boolean>("get_auto_launch");
+}
+
+export async function setAutoLaunch(enabled: boolean): Promise<void> {
+  await invoke("set_auto_launch", { enabled });
 }
 
 /**
@@ -245,7 +264,7 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
 /**
  * 사용자 데이터 전체 초기화. Rust `reset_all` 커맨드를 호출한다.
  *
- * Rust 측에서 atomic 강제 → store clear → 9키 default 시드 순으로 처리한다.
+ * Rust 측에서 atomic 강제 → store clear → 10키 default 시드 순으로 처리한다.
  * 실패 시 에러를 호출자에게 재전파하여 상위(SettingsScreen)가 onResetDone 미호출 등
  * 후속 처리를 결정할 수 있도록 한다.
  */

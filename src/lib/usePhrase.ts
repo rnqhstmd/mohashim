@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   mapPhaseToPotatoState,
   pickPhrase,
@@ -28,42 +28,23 @@ const FALLBACK_INPUT: { phase: Phase; total: number; db: number; state: LiveStat
   state: "calm",
 };
 
-type State = { bucket: BucketKey; seed: number };
-type Action =
-  | { type: "set_bucket"; bucket: BucketKey }
-  | { type: "tick" };
-
 /**
- * bucket과 seed를 단일 state로 묶어 동기 갱신한다 (HIGH 1+2+4 대응).
- *
- * - set_bucket: bucket 동일 시 변경 없음(StrictMode 이중 invoke no-op),
- *   다르면 seed=0으로 동기 reset (BR-2).
- * - tick: seed +1 (BR-1).
- *
- * setSeed(0) + setInterval 분리 effect의 batching 레이스를 제거한다.
- */
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "set_bucket":
-      if (state.bucket === action.bucket) return state;
-      return { bucket: action.bucket, seed: 0 };
-    case "tick":
-      return { ...state, seed: state.seed + 1 };
-  }
-}
-
-/**
- * 멘트 회전 + potatoState 산출 hook (FR-34, BR-1, BR-2, BR-3, BR-5).
+ * 멘트 회전 + potatoState 산출 hook (FR-2, FR-3, BR-1, BR-2, BR-5, DEC-9-10).
  *
  * - 입력 null(snap=null) 시 idle/calm 폴백으로 처리한다 (BR-5).
- * - bucket이 바뀌면 reducer가 seed=0으로 동기 reset하여 새 버킷 첫 멘트부터 표시한다 (BR-2).
- * - 8초마다 dispatch({type:"tick"})로 seed를 1씩 증가시켜 동일 버킷 내에서 멘트를 순환한다 (BR-1).
+ * - bucket이 바뀌면 즉시 새 버킷 첫 멘트로 갱신한다 (FR-2, BR-2).
+ * - 8초마다 같은 버킷에서 새 멘트로 회전한다 (FR-3, BR-1). bucket 변경 시 interval
+ *   재시작하여 새 버킷 첫 멘트가 8초 동안 유지되도록 한다.
  * - potatoState는 mapPhaseToPotatoState로 산출. discarded는 score-tick으로 emit되지 않으므로
  *   본 hook에서는 직접 다루지 않으며, DiscardModal은 정적으로 stressed를 렌더한다 (BR-6).
  * - 입력 방어: phase=discarded → idle 폴백, total은 0~100 clamp (PRD BR-4 호출자 책임 보정).
  * - noiseLoud bucket 진입/해제 히스테리시스는 score 도메인(Rust audio.rs)의 EMA 필터로
  *   흡수됨. db_ema가 80dB 경계를 짧은 시간 내 반복 교차하지 않으므로 본 hook의 1Hz 버킷
  *   전환은 안정적. 추가 frontend 디바운스 미필요.
+ *
+ * Phase 9: useReducer(seed) 제거. pickPhrase가 Math.random을 내부화하므로 seed 추적 불필요.
+ * useState lazy init으로 첫 렌더 phrase를 currentBucket 기준으로 산출한다. StrictMode가
+ * 두 번 호출해도 마지막 결과만 보존되어 사용자 인지 영향 없음 (DEC-9-10).
  */
 export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
   const safeCtx = input ?? FALLBACK_INPUT;
@@ -74,52 +55,34 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
   const safeDb = safeCtx.db; // db는 score.ts에서 NaN 방어된 상태로 가정.
   const safeState = safeCtx.state;
 
-  // initialBucket은 첫 렌더 1회만 사용. 이후는 set_bucket dispatch로 갱신.
-  const initialBucket = useMemo(
-    () => selectBucket({ phase: safePhase, total: safeTotal, db: safeDb }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-  const [state, dispatch] = useReducer(reducer, {
-    bucket: initialBucket,
-    seed: 0,
-  });
-
   // 매 렌더의 bucket 산출.
   const currentBucket = useMemo(
     () => selectBucket({ phase: safePhase, total: safeTotal, db: safeDb }),
     [safePhase, safeTotal, safeDb]
   );
 
-  // bucket 변경 감지 → reducer가 seed=0 동기 reset. StrictMode 이중 invoke 시
-  // 동일 bucket이면 reducer가 state를 그대로 반환하여 no-op.
-  useEffect(() => {
-    dispatch({ type: "set_bucket", bucket: currentBucket });
-  }, [currentBucket]);
+  // lazy init: 첫 렌더에서 currentBucket 기준 멘트 1개 산출.
+  const [phrase, setPhrase] = useState<string>(() => pickPhrase(currentBucket));
+  const [prevBucket, setPrevBucket] = useState<BucketKey>(currentBucket);
 
-  // 8초마다 seed 증가. bucket 변경 시 interval 재시작하여 새 버킷 첫 멘트가 8초 동안 유지되도록.
-  // (이전: mount 1회 등록 — bucket 전환 시점이 interval mid-period면 첫 멘트가 짧게 노출됨.)
-  // BR-1 첫 멘트 8초 보장을 위해 currentBucket을 deps에 포함.
+  // bucket 변경 시 즉시 새 버킷 첫 멘트로 갱신 (FR-2, BR-2).
+  // useEffect 대신 렌더링 중 상태를 조정하여 1-render lag(stale phrase 노출)을 방지한다.
+  // React 가이드 "Adjusting state when a prop changes" 패턴.
+  if (currentBucket !== prevBucket) {
+    setPrevBucket(currentBucket);
+    setPhrase(pickPhrase(currentBucket));
+  }
+
+  // 8초마다 같은 버킷 내에서 멘트 회전 (FR-3, BR-1). bucket 변경 시 interval 재시작하여
+  // 새 버킷 첫 멘트가 8초 동안 유지되도록 currentBucket을 deps에 포함.
   useEffect(() => {
     const handle = setInterval(() => {
-      dispatch({ type: "tick" });
+      setPhrase(pickPhrase(currentBucket));
     }, PHRASE_ROTATE_MS);
     return () => {
       clearInterval(handle);
     };
   }, [currentBucket]);
-
-  // currentBucket은 매 렌더에서 즉시 산출되지만 state.bucket은 dispatch 후 다음 렌더에야 갱신된다.
-  // bucket 변경 직후 1 렌더 동안 stale phrase가 반환되는 것을 막기 위해 phrase 산출은 currentBucket 우선.
-  // - currentBucket === state.bucket: reducer가 추적 중인 state.seed 사용 (8초 회전).
-  // - currentBucket !== state.bucket: dispatch 전 첫 렌더 — seed=0으로 새 버킷 첫 멘트 즉시 표시 (BR-2).
-  const phrase = useMemo(
-    () => {
-      const effectiveSeed = currentBucket === state.bucket ? state.seed : 0;
-      return pickPhrase(currentBucket, effectiveSeed);
-    },
-    [currentBucket, state.bucket, state.seed]
-  );
 
   const potatoState = useMemo(
     () =>
@@ -130,7 +93,5 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
     [safePhase, safeTotal, safeDb, safeState]
   );
 
-  // bucket도 currentBucket 우선 반환 — phrase와 정합. 호출자가 bucket 분기 UI를 그릴 때
-  // dispatch 지연으로 1 렌더 동안 이전 버킷이 노출되는 것 방지.
   return { bucket: currentBucket, phrase, potatoState };
 }

@@ -16,3 +16,7 @@
 | 디자인 팔레트 | Sky `#7aa3e6` · Mist `#d8e4f7` · Deep `#445478` · Sun `#f4d160` · Peach `#e89a82` · Ink `#2b2520` |
 | 라이트 모드 only (MVP) | v0.1은 라이트 모드만. 다크 모드는 추후 |
 | 모노레포 | 프론트엔드(React/TS)와 백엔드(Rust)를 단일 git 레포에서 함께 관리 |
+| 트레이 정체성 | `visible:false` + `LSUIElement` + `prevent_close` 세 변경의 결합 효과로 메뉴바/시스템 트레이 전용 앱처럼 동작하는 상태 (PR #9) |
+| LaunchAgent | macOS 자동 실행 등록 방식. 사용자 단위 `~/Library/LaunchAgents/` plist. tauri-plugin-autostart 채택 (PR #9) |
+| LSUIElement | macOS Info.plist 키. true이면 Dock 아이콘 + Cmd+Tab 목록에서 앱 제외. 메뉴바 전용 앱 동작 (PR #9) |
+| prevent_close | Tauri `WindowEvent::CloseRequested` 핸들러에서 `api.prevent_close()` 호출하여 종료 차단. 모하심은 X 클릭 시 hide로 유도 (PR #9) |

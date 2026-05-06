@@ -272,6 +272,10 @@ fn send_notification<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
     if matches!(current_phase(), Phase::Focus) {
         return;
     }
+    // FR-21: notifications_enabled=false면 OS 알림 발송 차단. 누락/실패 시 default true (BR-6).
+    if !crate::storage::get_notifications_enabled(app) {
+        return;
+    }
     if let Err(e) = app
         .notification()
         .builder()
