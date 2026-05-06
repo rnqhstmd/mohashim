@@ -12,7 +12,6 @@ export type UsePhraseInput =
   | {
       phase: Phase;
       total: number;
-      db: number;
       state: LiveState;
       noiseLoudActive: boolean;
     }
@@ -30,13 +29,11 @@ export const PHRASE_ROTATE_MS = 8000;
 const FALLBACK_INPUT: {
   phase: Phase;
   total: number;
-  db: number;
   state: LiveState;
   noiseLoudActive: boolean;
 } = {
   phase: "idle",
   total: 0,
-  db: 0,
   state: "calm",
   noiseLoudActive: false,
 };
@@ -51,9 +48,10 @@ const FALLBACK_INPUT: {
  * - potatoState는 mapPhaseToPotatoState로 산출. discarded는 score-tick으로 emit되지 않으므로
  *   본 hook에서는 직접 다루지 않으며, DiscardModal은 정적으로 stressed를 렌더한다 (BR-6).
  * - 입력 방어: phase=discarded → idle 폴백, total은 0~100 clamp (PRD BR-4 호출자 책임 보정).
- * - noiseLoud bucket 진입/해제 히스테리시스는 score 도메인(Rust audio.rs)의 EMA 필터로
- *   흡수됨. db_ema가 80dB 경계를 짧은 시간 내 반복 교차하지 않으므로 본 hook의 1Hz 버킷
- *   전환은 안정적. 추가 frontend 디바운스 미필요.
+ * - noiseLoud 진입 hysteresis는 Rust score::tick의 IDLE_NOISE_LOUD_TICKS 카운터(5틱 임계)로
+ *   구현됨. 프론트는 snap.noiseLoud boolean을 그대로 noiseLoudActive로 소비. PR #11 리뷰 반영:
+ *   db 필드는 분기에서 사용되지 않으므로 ctx에서 제거하여 매초 dB 변경에 의한 useMemo 재계산을
+ *   차단했다.
  *
  * Phase 9: useReducer(seed) 제거. pickPhrase가 Math.random을 내부화하므로 seed 추적 불필요.
  * useState lazy init으로 첫 렌더 phrase를 currentBucket 기준으로 산출한다. StrictMode가
@@ -65,7 +63,6 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
   const safePhase: Phase = safeCtx.phase === "discarded" ? "idle" : safeCtx.phase;
   // total 0~100 clamp (PRD BR-4 호출자 책임 — JS 레벨 보정).
   const safeTotal = Math.max(0, Math.min(100, safeCtx.total));
-  const safeDb = safeCtx.db; // db는 score.ts에서 NaN 방어된 상태로 가정.
   const safeState = safeCtx.state;
   const safeNoiseLoudActive = safeCtx.noiseLoudActive;
 
@@ -75,10 +72,9 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
       selectBucket({
         phase: safePhase,
         total: safeTotal,
-        db: safeDb,
         noiseLoudActive: safeNoiseLoudActive,
       }),
-    [safePhase, safeTotal, safeDb, safeNoiseLoudActive]
+    [safePhase, safeTotal, safeNoiseLoudActive]
   );
 
   // lazy init: 첫 렌더에서 currentBucket 기준 멘트 1개 산출.
@@ -110,12 +106,11 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
         {
           phase: safePhase,
           total: safeTotal,
-          db: safeDb,
           noiseLoudActive: safeNoiseLoudActive,
         },
         safeState
       ),
-    [safePhase, safeTotal, safeDb, safeNoiseLoudActive, safeState]
+    [safePhase, safeTotal, safeNoiseLoudActive, safeState]
   );
 
   return { bucket: currentBucket, phrase, potatoState };

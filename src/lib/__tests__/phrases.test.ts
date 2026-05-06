@@ -17,55 +17,55 @@ afterEach(() => {
 describe("selectBucket — 버킷 분기 (AC-1~AC-12, BR-2)", () => {
   it("AC-1: phase=idle, db=75, noiseLoudActive=false → 'idle'", () => {
     expect(
-      selectBucket({ phase: "idle", total: 0, db: 75, noiseLoudActive: false })
+      selectBucket({ phase: "idle", total: 0, noiseLoudActive: false })
     ).toBe("idle");
   });
 
   it("AC-2: phase=idle, noiseLoudActive=true → 'noiseLoud'", () => {
     expect(
-      selectBucket({ phase: "idle", total: 0, db: 81, noiseLoudActive: true })
+      selectBucket({ phase: "idle", total: 0, noiseLoudActive: true })
     ).toBe("noiseLoud");
   });
 
   it("AC-3: phase=idle, db=80, noiseLoudActive=false → 'idle' (db=80은 noiseLoud 미해당)", () => {
     expect(
-      selectBucket({ phase: "idle", total: 0, db: 80, noiseLoudActive: false })
+      selectBucket({ phase: "idle", total: 0, noiseLoudActive: false })
     ).toBe("idle");
   });
 
   it("AC-4: phase=focus, total=80 → 'focusHigh'", () => {
     expect(
-      selectBucket({ phase: "focus", total: 80, db: 50, noiseLoudActive: false })
+      selectBucket({ phase: "focus", total: 80, noiseLoudActive: false })
     ).toBe("focusHigh");
   });
 
   it("AC-5: phase=focus, total=79 → 'focusLow'", () => {
     expect(
-      selectBucket({ phase: "focus", total: 79, db: 50, noiseLoudActive: false })
+      selectBucket({ phase: "focus", total: 79, noiseLoudActive: false })
     ).toBe("focusLow");
   });
 
   it("AC-6: phase=focus, total=40 → 'focusLow'", () => {
     expect(
-      selectBucket({ phase: "focus", total: 40, db: 50, noiseLoudActive: false })
+      selectBucket({ phase: "focus", total: 40, noiseLoudActive: false })
     ).toBe("focusLow");
   });
 
   it("AC-7: phase=focus, total=39 → 'focusBroken'", () => {
     expect(
-      selectBucket({ phase: "focus", total: 39, db: 50, noiseLoudActive: false })
+      selectBucket({ phase: "focus", total: 39, noiseLoudActive: false })
     ).toBe("focusBroken");
   });
 
   it("AC-8: phase=focus, total=0 → 'focusBroken'", () => {
     expect(
-      selectBucket({ phase: "focus", total: 0, db: 50, noiseLoudActive: false })
+      selectBucket({ phase: "focus", total: 0, noiseLoudActive: false })
     ).toBe("focusBroken");
   });
 
   it("AC-9 (BR-2): phase=focus, total=100, db=90 → 'focusHigh' (noiseLoud 아님)", () => {
     expect(
-      selectBucket({ phase: "focus", total: 100, db: 90, noiseLoudActive: false })
+      selectBucket({ phase: "focus", total: 100, noiseLoudActive: false })
     ).toBe("focusHigh");
   });
 
@@ -74,7 +74,6 @@ describe("selectBucket — 버킷 분기 (AC-1~AC-12, BR-2)", () => {
       selectBucket({
         phase: "discarded",
         total: 50,
-        db: 50,
         noiseLoudActive: false,
       })
     ).toBe("discarded");
@@ -85,7 +84,6 @@ describe("selectBucket — 버킷 분기 (AC-1~AC-12, BR-2)", () => {
       selectBucket({
         phase: "complete",
         total: 50,
-        db: 50,
         noiseLoudActive: false,
       })
     ).toBe("sessionComplete");
@@ -93,20 +91,20 @@ describe("selectBucket — 버킷 분기 (AC-1~AC-12, BR-2)", () => {
 
   it("AC-12: phase=break → 'break'", () => {
     expect(
-      selectBucket({ phase: "break", total: 50, db: 50, noiseLoudActive: false })
+      selectBucket({ phase: "break", total: 50, noiseLoudActive: false })
     ).toBe("break");
   });
 
   // Phase 11 신규: noiseLoudActive 기반 분기 (FR-7, BR-3, BR-5).
   it("Phase 11 (FR-7): phase=idle, db=90, noiseLoudActive=false → 'idle' (db 무관, hysteresis 미충족)", () => {
     expect(
-      selectBucket({ phase: "idle", total: 0, db: 90, noiseLoudActive: false })
+      selectBucket({ phase: "idle", total: 0, noiseLoudActive: false })
     ).toBe("idle");
   });
 
   it("Phase 11 (FR-7): phase=idle, db=50, noiseLoudActive=true → 'noiseLoud' (분기는 active 플래그 기준)", () => {
     expect(
-      selectBucket({ phase: "idle", total: 0, db: 50, noiseLoudActive: true })
+      selectBucket({ phase: "idle", total: 0, noiseLoudActive: true })
     ).toBe("noiseLoud");
   });
 });
@@ -251,7 +249,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("FR-22: idle + noiseLoudActive=false → 'calm' (idle calm 고정)", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "idle", total: 0, db: 50, noiseLoudActive: false },
+        { phase: "idle", total: 0, noiseLoudActive: false },
         "focused"
       )
     ).toBe("calm");
@@ -260,7 +258,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("Phase 11 (MA-1): idle + noiseLoudActive=true → 'covering' (db 무관)", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "idle", total: 0, db: 50, noiseLoudActive: true },
+        { phase: "idle", total: 0, noiseLoudActive: true },
         "focused"
       )
     ).toBe("covering");
@@ -269,7 +267,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("Phase 11 (MA-1): idle + db=90 + noiseLoudActive=false → 'calm' (db 무관, hysteresis 미충족)", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "idle", total: 0, db: 90, noiseLoudActive: false },
+        { phase: "idle", total: 0, noiseLoudActive: false },
         "focused"
       )
     ).toBe("calm");
@@ -278,7 +276,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("FR-23: discarded → 'stressed' (고정)", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "discarded", total: 50, db: 50, noiseLoudActive: false },
+        { phase: "discarded", total: 50, noiseLoudActive: false },
         "focused"
       )
     ).toBe("stressed");
@@ -287,7 +285,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("focus 시 엔진 state 통과 ('focused')", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "focus", total: 90, db: 50, noiseLoudActive: false },
+        { phase: "focus", total: 90, noiseLoudActive: false },
         "focused"
       )
     ).toBe("focused");
@@ -296,7 +294,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("break 시 엔진 state 통과 ('calm')", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "break", total: 50, db: 50, noiseLoudActive: false },
+        { phase: "break", total: 50, noiseLoudActive: false },
         "calm"
       )
     ).toBe("calm");
@@ -305,7 +303,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("complete 시 엔진 state 통과 ('stressed')", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "complete", total: 50, db: 50, noiseLoudActive: false },
+        { phase: "complete", total: 50, noiseLoudActive: false },
         "stressed"
       )
     ).toBe("stressed");
@@ -314,7 +312,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("invalid engineState (union 외)는 'calm' 폴백", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "focus", total: 50, db: 50, noiseLoudActive: false },
+        { phase: "focus", total: 50, noiseLoudActive: false },
         "invalid_state" as PotatoState,
       ),
     ).toBe("calm");
@@ -323,7 +321,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("undefined engineState도 'calm' 폴백", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "focus", total: 50, db: 50, noiseLoudActive: false },
+        { phase: "focus", total: 50, noiseLoudActive: false },
         undefined as unknown as PotatoState,
       ),
     ).toBe("calm");

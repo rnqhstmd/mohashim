@@ -149,16 +149,15 @@ pub fn reset_noise_loud_state() {
 /// FR-7~9 / BR-3~5: idle+db>80 hysteresis 산출 (순수 함수).
 ///
 /// atomic 의존 없이 입력값만으로 (new_count, active)를 결정한다 — tick_loop에서
-/// load → 본 함수 → store 패턴으로 호출. CON-2 단위 테스트 가능성을 위해 분리.
+/// fetch_update 클로저 안에서 호출 (PR #11 리뷰: load-store race 방지).
+/// CON-2 단위 테스트 가능성을 위해 분리.
 ///
 /// - phase != Idle → (0, false)  (BR-3: Idle 외 phase는 어떤 dB여도 누적 불가)
-/// - phase == Idle && db <= NOISE_LOUD_THRESHOLD_DB → (0, false)  (BR-4: db=80 미증가)
+/// - phase == Idle && !(db > NOISE_LOUD_THRESHOLD_DB) → (0, false)
+///   (BR-4: db=80 미증가 + NaN 방어 — `!(NaN > 80)`은 true이므로 NaN 입력 시 0 리셋)
 /// - phase == Idle && db > NOISE_LOUD_THRESHOLD_DB  → (prev+1, prev+1 >= NOISE_LOUD_HYSTERESIS_TICKS)
 pub fn apply_noise_loud_hysteresis(phase: Phase, db: f32, prev_count: u64) -> (u64, bool) {
-    if !matches!(phase, Phase::Idle) {
-        return (0, false);
-    }
-    if db <= NOISE_LOUD_THRESHOLD_DB {
+    if !matches!(phase, Phase::Idle) || !(db > NOISE_LOUD_THRESHOLD_DB) {
         return (0, false);
     }
     let new_count = prev_count.saturating_add(1);
@@ -179,6 +178,7 @@ pub fn store_time_left(secs: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn db_ema_store_load_roundtrip() {
@@ -210,6 +210,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn phase_store_load_roundtrip() {
         for p in [
             Phase::Idle,
@@ -269,6 +270,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ac11_store_phase_focus_resets_counter() {
         // 누적된 카운터가 Idle 외 phase 진입 시 0으로 리셋.
         IDLE_NOISE_LOUD_TICKS.store(7, Relaxed);
@@ -279,6 +281,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ac11_store_phase_idle_preserves_counter() {
         // Idle→Idle 전이는 카운터 유지 (FR-7 누적 보존).
         IDLE_NOISE_LOUD_TICKS.store(7, Relaxed);
@@ -294,5 +297,31 @@ mod tests {
         let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, 80.0, 0);
         assert_eq!(c, 0);
         assert!(!a);
+    }
+
+    #[test]
+    fn nan_db_returns_zero_inactive() {
+        // PR #11 리뷰: NaN 입력 시 카운터가 증가하지 않고 즉시 리셋.
+        // `!(NaN > 80.0)` is true → (0, false) 보장.
+        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::NAN, 7);
+        assert_eq!(c, 0);
+        assert!(!a);
+    }
+
+    #[test]
+    fn negative_infinity_db_returns_zero_inactive() {
+        // 음의 무한대도 `!(-inf > 80.0)` true → (0, false).
+        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::NEG_INFINITY, 7);
+        assert_eq!(c, 0);
+        assert!(!a);
+    }
+
+    #[test]
+    fn positive_infinity_db_increments() {
+        // 양의 무한대는 `+inf > 80.0` true이므로 누적은 됨 (실 운영에서는 audio sanitize가 차단).
+        // 그러나 hysteresis 정책상 phase=Idle && db>80에서는 누적이 정의된 동작이라 의도적 허용.
+        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::INFINITY, 4);
+        assert_eq!(c, 5);
+        assert!(a);
     }
 }

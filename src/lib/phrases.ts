@@ -15,7 +15,6 @@ export type BucketKey =
 export type PhraseCtx = {
   phase: Phase;
   total: number;
-  db: number;
   noiseLoudActive: boolean;
 };
 
@@ -75,15 +74,15 @@ export const POTATO_PHRASES: Record<BucketKey, readonly string[]> = {
 };
 
 /**
- * 점수 엔진의 (phase, total, db, noiseLoudActive)를 멘트 버킷으로 매핑한다.
+ * 점수 엔진의 (phase, total, noiseLoudActive)를 멘트 버킷으로 매핑한다.
  *
  * @param ctx.phase — score.ts의 Phase union 값 ("idle"|"focus"|"break"|"complete"|"discarded").
  * @param ctx.total — 0~100 범위 가정 (PRD BR-4). 범위 초과값(음수/100초과)은 호출자 책임이며,
  *   현재 구현은 음수→focusBroken, 100초과→focusHigh로 폴백한다 (의도된 동작 아님).
  *   score.ts에서 total을 0~100으로 clamp하거나 호출 직전에 보정해야 한다.
- * @param ctx.db — 데시벨 값 (참고용). 분기 판단은 noiseLoudActive로 수행 (Phase 11).
  * @param ctx.noiseLoudActive — Rust score::tick의 hysteresis 카운터 활성 플래그.
  *   phase=idle && noiseLoudActive=true에서만 noiseLoud 버킷 진입 (FR-7, BR-3).
+ *   PR #11 리뷰: 원래 ctx.db로 분기했으나 db는 더 이상 분기에 사용되지 않아 제거됨.
  */
 export function selectBucket(ctx: PhraseCtx): BucketKey {
   if (ctx.phase === "discarded") return "discarded";

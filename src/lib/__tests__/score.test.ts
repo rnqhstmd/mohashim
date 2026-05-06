@@ -47,11 +47,14 @@ describe("useScoreTick", () => {
       grace: "active" as const,
       phase: "idle" as const,
       timeLeft: 0,
+      noiseLoud: false,
     };
     act(() => {
       handler!({ payload });
     });
     await waitFor(() => expect(result.current).toEqual(payload));
+    // PR #11 리뷰: noiseLoud 필드가 ScoreSnapshot 10키 계약에 포함됨을 명시 검증.
+    expect(result.current?.noiseLoud).toBe(false);
   });
 
   it("calls unlisten on unmount (AC-14)", async () => {

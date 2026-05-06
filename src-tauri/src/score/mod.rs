@@ -165,12 +165,18 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         }
 
         // Phase 11 FR-7~9 / BR-3~5: noiseLoud hysteresis 진입 산출.
-        // load → 순수 함수 → store 패턴. phase_at_emit이 Idle 외이거나 db ≤ 80이면
-        // (0, false)로 즉시 리셋된다. NOISE_LOUD_HYSTERESIS_TICKS(=5) 도달 시 active=true.
-        let prev_loud_ticks = IDLE_NOISE_LOUD_TICKS.load(Relaxed);
-        let (new_loud_ticks, noise_loud_active) =
-            apply_noise_loud_hysteresis(phase_at_emit, db, prev_loud_ticks);
-        IDLE_NOISE_LOUD_TICKS.store(new_loud_ticks, Relaxed);
+        // PR #11 리뷰: fetch_update로 원자화 (load-store race 방지).
+        // store_phase가 다른 스레드에서 카운터를 0으로 리셋하면 클로저가 재호출되어
+        // 새 prev=0 기준으로 (1, false)를 산출 → race 발생 시에도 일관성 보장.
+        // phase_at_emit이 Idle 외이거나 db가 NaN/≤80이면 (0, false)로 즉시 리셋.
+        // NOISE_LOUD_HYSTERESIS_TICKS(=5) 도달 시 active=true.
+        let mut noise_loud_active = false;
+        let _ = IDLE_NOISE_LOUD_TICKS.fetch_update(Relaxed, Relaxed, |prev| {
+            let (new_count, active) =
+                apply_noise_loud_hysteresis(phase_at_emit, db, prev);
+            noise_loud_active = active;
+            Some(new_count)
+        });
 
         // Phase 8 R-G2: Focus tick에만 세션 평균 누적.
         // phase transition 블록 이후에 확인하여 wake tick에서 전이가 발생한 경우를 제외한다.

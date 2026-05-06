@@ -8,7 +8,6 @@ import type { LiveState, Phase } from "../score";
 type Ctx = {
   phase: Phase;
   total: number;
-  db: number;
   state: LiveState;
   noiseLoudActive: boolean;
 };
@@ -16,21 +15,18 @@ type Ctx = {
 const idleCtx: Ctx = {
   phase: "idle",
   total: 0,
-  db: 50,
   state: "calm",
   noiseLoudActive: false,
 };
 const focusHighCtx: Ctx = {
   phase: "focus",
   total: 90,
-  db: 50,
   state: "focused",
   noiseLoudActive: false,
 };
 const noiseLoudCtx: Ctx = {
   phase: "idle",
   total: 0,
-  db: 90,
   state: "calm",
   noiseLoudActive: true,
 };
@@ -124,11 +120,10 @@ describe("usePhrase", () => {
   });
 
   // Phase 11 신규 케이스: hysteresis 미충족 (1~4초 누적 중) 시 idle 유지.
-  it("Phase 11 (FR-7): phase=idle, db=90, noiseLoudActive=false → bucket='idle', potatoState='calm'", () => {
+  it("Phase 11 (FR-7): phase=idle, noiseLoudActive=false → bucket='idle', potatoState='calm' (db 무관)", () => {
     const ctx: Ctx = {
       phase: "idle",
       total: 0,
-      db: 90,
       state: "calm",
       noiseLoudActive: false,
     };
@@ -139,11 +134,10 @@ describe("usePhrase", () => {
     unmount();
   });
 
-  it("Phase 11 (MA-1): phase=idle, db=50, noiseLoudActive=true → bucket='noiseLoud', potatoState='covering' (db 무관)", () => {
+  it("Phase 11 (MA-1): phase=idle, noiseLoudActive=true → bucket='noiseLoud', potatoState='covering'", () => {
     const ctx: Ctx = {
       phase: "idle",
       total: 0,
-      db: 50,
       state: "calm",
       noiseLoudActive: true,
     };
@@ -181,7 +175,6 @@ describe("usePhrase", () => {
     const discardedCtx: Ctx = {
       phase: "discarded",
       total: 0,
-      db: 50,
       state: "calm",
       noiseLoudActive: false,
     };
