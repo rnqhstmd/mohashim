@@ -107,10 +107,19 @@ describe("grass.ts — gridLevel (BR-G1, Phase 12 ANALYSIS.md §10-1 표)", () =
     expect(gridLevel(0, 0, 100)).toBe(2);
   });
 
-  it("AC-4: sessions 1~2, todos 무관 → 1", async () => {
+  it("AC-4: sessions 1~2, todos<3 → 1", async () => {
     const { gridLevel } = await import("../grass");
     expect(gridLevel(1, 90, 0)).toBe(1);
-    expect(gridLevel(2, 50, 100)).toBe(1);
+    expect(gridLevel(1, 50, 2)).toBe(1);
+    expect(gridLevel(2, 0, 0)).toBe(1);
+    expect(gridLevel(2, 100, 2)).toBe(1);
+  });
+
+  it("AC-4b (PR #13 리뷰): sessions 1~2, todos≥3 → 2 (todos 단조 비감소)", async () => {
+    // sessions=0/todos=3 → 2 였으므로 sessions=1/todos=3에서 1로 떨어지면 역전.
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(1, 0, 3)).toBe(2);
+    expect(gridLevel(2, 50, 100)).toBe(2);
   });
 
   it("AC-5: sessions 3~5, avg<60 → 2", async () => {

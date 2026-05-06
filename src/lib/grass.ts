@@ -51,6 +51,8 @@ export type MonthData = {
  *
  * ANALYSIS.md §10-1 표 적용. 주요 변경:
  * - sessions=0이어도 todo 완료가 있으면 레벨 1~2 부여 (BR-1: 최대 레벨 2까지).
+ * - sessions 1~2도 todos≥3이면 레벨 2 보장 (PR #13 리뷰: sessions=0/todos=3 → 2 vs
+ *   sessions=1/todos=3 → 1 역전 방지. todos에 대한 단조 비감소 보장).
  * - sessions≥6은 점수 미달이어도 최소 레벨 3 보장 (H-5 역전 방지).
  *
  * `todos` 인자는 default 0 — 기존 호출자(레거시) 호환.
@@ -66,8 +68,11 @@ export function gridLevel(
     if (todos >= 1) return 1;
     return 0;
   }
-  // sessions 1~2: todo 무관 레벨 1.
-  if (sessions <= 2) return 1;
+  // sessions 1~2: 기본 레벨 1, todos≥3이면 2 보장 (todos 단조 비감소, PR #13 리뷰).
+  if (sessions <= 2) {
+    if (todos >= 3) return 2;
+    return 1;
+  }
   // sessions ≥ 6: H-5 역전 방지 — 점수 낮아도 최소 3 보장.
   if (sessions >= 6) return avg >= 70 ? 4 : 3;
   // sessions 3~5.
