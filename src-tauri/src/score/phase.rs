@@ -45,7 +45,7 @@ pub enum GraceState {
 }
 
 /// 5단계 라이브 상태 (BR-1).
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum LiveState {
     Focused,
@@ -77,6 +77,22 @@ pub fn grace_from(seconds_idle: u64, work: u8) -> GraceState {
         GraceState::Active
     } else {
         GraceState::Looking
+    }
+}
+
+/// DEC-6: phase=Idle이면 db_ema 기준 Calm/Stressed override.
+/// Focus/Break/Complete/Discarded는 state_from_total 결과 그대로.
+/// 임계값 80.0은 score::NOISE_LOUD_THRESHOLD_DB와 일치 (BR-noise-80).
+pub fn final_tray_state(state: LiveState, phase: Phase, db_ema: f32) -> LiveState {
+    match phase {
+        Phase::Idle => {
+            if db_ema <= 80.0 {
+                LiveState::Calm
+            } else {
+                LiveState::Stressed
+            }
+        }
+        _ => state,
     }
 }
 
@@ -126,5 +142,45 @@ mod tests {
         assert_eq!(Phase::from_u8(5), Phase::Idle);
         assert_eq!(Phase::from_u8(99), Phase::Idle);
         assert_eq!(Phase::from_u8(255), Phase::Idle);
+    }
+
+    #[test]
+    fn ac_t18_idle_below_threshold_calm() {
+        assert_eq!(
+            final_tray_state(LiveState::Stressed, Phase::Idle, 79.9),
+            LiveState::Calm
+        );
+    }
+
+    #[test]
+    fn ac_t19_idle_at_threshold_calm() {
+        assert_eq!(
+            final_tray_state(LiveState::Stressed, Phase::Idle, 80.0),
+            LiveState::Calm
+        );
+    }
+
+    #[test]
+    fn ac_t20_idle_above_threshold_stressed() {
+        assert_eq!(
+            final_tray_state(LiveState::Calm, Phase::Idle, 80.1),
+            LiveState::Stressed
+        );
+    }
+
+    #[test]
+    fn ac_t21_focus_no_override() {
+        assert_eq!(
+            final_tray_state(LiveState::Focused, Phase::Focus, 90.0),
+            LiveState::Focused
+        );
+    }
+
+    #[test]
+    fn break_no_override_when_loud() {
+        assert_eq!(
+            final_tray_state(LiveState::Calm, Phase::Break, 95.0),
+            LiveState::Calm
+        );
     }
 }

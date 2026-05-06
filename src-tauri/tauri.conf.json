@@ -16,7 +16,7 @@
         "label": "main",
         "title": "모하심",
         "width": 320,
-        "height": 460,
+        "height": 470,
         "resizable": false,
         "decorations": false,
         "transparent": true,
@@ -35,6 +35,9 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.png"
+    ],
+    "resources": [
+      "icons/tray/**/*"
     ],
     "macOS": {
       "infoPlist": "Info.plist"

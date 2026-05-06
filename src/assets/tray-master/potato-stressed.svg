@@ -1,0 +1,18 @@
+<!-- stressed -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22">
+  <line x1="11" y1="7.4" x2="11" y2="6.2" stroke="#2b2520" stroke-width="0.2" stroke-linecap="round"/>
+  <path d="M 11 6.4 Q 10.1 5.5 10.6 4.7 Q 11 5.5 11 6.4 Z"
+    fill="#BDBDBD" stroke="#2b2520" stroke-width="0.2"
+    transform="rotate(-100 11 6.4) translate(0 0.6)"/>
+  <path d="M 11 6.4 Q 11.9 5.5 11.4 4.7 Q 11 5.5 11 6.4 Z"
+    fill="#BDBDBD" stroke="#2b2520" stroke-width="0.2"
+    transform="rotate(100 11 6.4) translate(0 0.6)"/>
+  <ellipse cx="11" cy="12.5" rx="6.5" ry="5.8"
+    fill="#f4d160" stroke="#2b2520" stroke-width="0.25"/>
+  <line x1="8.6" y1="11.5" x2="9.7" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
+  <line x1="9.7" y1="11.5" x2="8.6" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
+  <line x1="12.3" y1="11.5" x2="13.4" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
+  <line x1="13.4" y1="11.5" x2="12.3" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
+  <circle cx="11" cy="13.7" r="0.45" fill="none" stroke="#2b2520" stroke-width="0.25"/>
+  <path d="M 14.3 7.6 Q 14.1 8.3 14.5 8.3 Q 14.7 8.1 14.3 7.6 Z" fill="#7aa3e6"/>
+</svg>
