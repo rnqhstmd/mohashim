@@ -10,7 +10,7 @@
 | ID | 항목 | 상태 | PR | 비고 |
 |----|------|------|----|------|
 | FR-1 | 평상시 모드(Idle): 투두 관리 + 소음 모니터링만, 키보드/마우스 추적 OFF | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | score::tick에서 phase 무관 work/noise 산출 |
-| FR-2 | 평상시 80dB 초과 시 소음 경고 멘트 노출 | ⬜ | [#4 부분](https://github.com/rnqhstmd/mohashim/pull/4) | 인프라(IDLE_NOISE_LOUD_TICKS 카운터)만. 멘트 출력은 character 도메인 |
+| FR-2 | 평상시 80dB 초과 시 소음 경고 멘트 노출 | ✅ | [#11](https://github.com/rnqhstmd/mohashim/pull/11) | Phase 11 — 5초 hysteresis 진입 정책 + character noiseLoud 버킷 wiring (apply_noise_loud_hysteresis 순수 함수, ScoreSnapshot.noise_loud, store_phase 내장 reset). EMA(~1초)+5초=약 6초 안정화 |
 | FR-3 | 평상시 우측 상단 상태 텍스트 (7개 중 무작위 1개, 이모티콘 없음) | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | useIdleChipLabel 8초 회전 + ModeChip |
 | FR-4 | 집중 모드: 사용자 설정 집중+휴식 = 1 세션, 하이브리드 측정 ON | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | focus_start command + tick 자동 전환 (Focus → Break → Complete) |
 | FR-5 | 집중 모드 우측 상단 상태 텍스트 = "집중 중" 고정 | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | ModeChip phase=focus → "집중 중" + mhpulse |
