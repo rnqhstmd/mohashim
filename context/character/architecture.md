@@ -80,15 +80,23 @@ reducer/seed 추적을 제거하고 useState 두 개로 단순화한다.
 
 ```ts
 const [phrase, setPhrase] = useState<string>(() => pickPhrase(currentBucket));
-useEffect(() => setPhrase(pickPhrase(currentBucket)), [currentBucket]);          // bucket 변경 시 즉시
+const [prevBucket, setPrevBucket] = useState<BucketKey>(currentBucket);
+
+// bucket 변경 시 렌더링 중 상태 조정 (1-render lag 회피, PR #9 리뷰 반영)
+if (currentBucket !== prevBucket) {
+  setPrevBucket(currentBucket);
+  setPhrase(pickPhrase(currentBucket));
+}
+
 useEffect(() => {
   const h = setInterval(() => setPhrase(pickPhrase(currentBucket)), PHRASE_ROTATE_MS);
   return () => clearInterval(h);
-}, [currentBucket]);                                                              // 8s 회전, bucket 변경 시 재시작
+}, [currentBucket]);  // 8s 회전, bucket 변경 시 재시작
 ```
 
-- StrictMode lazy init 이중 호출은 결과만 보존되므로 사용자 노출 영향 없음 (가정)
+- StrictMode lazy init 이중 호출은 결과만 보존되므로 사용자 노출 영향 없음
 - bucket 변경 시 8s interval이 재시작되어 새 버킷 첫 멘트가 8초 동안 유지
+- React 권장 패턴 ["Adjusting state when a prop changes"](https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes) — `useEffect` 비동기 갱신은 1-render lag(배경/표정은 새 bucket인데 phrase는 이전 bucket)을 일으키므로 렌더링 중 동기 조정으로 변경 (PR #9 gemini-code-assist 리뷰)
 
 ### DiscardModal — 모듈 1회 평가 (PR #9 결정)
 

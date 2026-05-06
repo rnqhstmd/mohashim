@@ -61,13 +61,17 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
     [safePhase, safeTotal, safeDb]
   );
 
-  // lazy init: 첫 렌더에서 currentBucket 기준 멘트 1개 산출. 이후는 useEffect로 갱신.
+  // lazy init: 첫 렌더에서 currentBucket 기준 멘트 1개 산출.
   const [phrase, setPhrase] = useState<string>(() => pickPhrase(currentBucket));
+  const [prevBucket, setPrevBucket] = useState<BucketKey>(currentBucket);
 
   // bucket 변경 시 즉시 새 버킷 첫 멘트로 갱신 (FR-2, BR-2).
-  useEffect(() => {
+  // useEffect 대신 렌더링 중 상태를 조정하여 1-render lag(stale phrase 노출)을 방지한다.
+  // React 가이드 "Adjusting state when a prop changes" 패턴.
+  if (currentBucket !== prevBucket) {
+    setPrevBucket(currentBucket);
     setPhrase(pickPhrase(currentBucket));
-  }, [currentBucket]);
+  }
 
   // 8초마다 같은 버킷 내에서 멘트 회전 (FR-3, BR-1). bucket 변경 시 interval 재시작하여
   // 새 버킷 첫 멘트가 8초 동안 유지되도록 currentBucket을 deps에 포함.
