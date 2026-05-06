@@ -11,6 +11,9 @@ import { createTodo, toggleDone } from "../todos";
 import type { Todo } from "../storage";
 
 afterEach(() => {
+  // PR #10 리뷰 반영: useFakeTimers/setSystemTime 누수 방어.
+  // assertion 실패 시 fake timer가 다음 테스트로 누수되지 않도록 항상 real timer 복구.
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 

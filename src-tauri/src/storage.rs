@@ -183,10 +183,11 @@ pub fn yearly_cleanup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     }
 
     // 1. sessions: 키 prefix(YYYY-) 비교.
-    // 파싱 실패 항목은 보존 (Q2 결정) — 비규격 키의 의도치 않은 삭제 방지.
+    // 파싱 실패 항목은 보존 (Q2 결정). 타입 불일치(비객체) 시에도 store.set 자체를 skip하여
+    // 외부 편집/손상 데이터를 빈 객체로 덮어쓰는 데이터 손실을 방지한다 (PR #10 리뷰 반영).
     let sessions_raw = store.get("sessions").unwrap_or(json!({}));
     let mut deleted_sessions: u32 = 0;
-    let cleaned_sessions = if let Some(map) = sessions_raw.as_object() {
+    if let Some(map) = sessions_raw.as_object() {
         let mut new_map = serde_json::Map::new();
         for (k, v) in map.iter() {
             let key_year_opt = k.get(0..4).and_then(|s| s.parse::<u32>().ok());
@@ -200,17 +201,15 @@ pub fn yearly_cleanup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
                 }
             }
         }
-        Value::Object(new_map)
-    } else {
-        json!({})
-    };
-    store.set("sessions", cleaned_sessions);
+        store.set("sessions", Value::Object(new_map));
+    }
+    // else: 비객체(외부 손상)는 set 자체를 skip하여 원본 보존.
 
     // 2. session_logs: date 필드 연도 비교.
-    // 파싱 실패 항목은 보존 (Q2 결정) — 비규격 date의 의도치 않은 삭제 방지.
+    // 파싱 실패 항목은 보존 (Q2 결정). 타입 불일치(비배열) 시 set skip — 동일 보존 정책.
     let logs_raw = store.get("session_logs").unwrap_or(json!([]));
     let mut deleted_logs: u32 = 0;
-    let cleaned_logs = if let Some(arr) = logs_raw.as_array() {
+    if let Some(arr) = logs_raw.as_array() {
         let kept: Vec<Value> = arr
             .iter()
             .filter(|log| {
@@ -229,34 +228,37 @@ pub fn yearly_cleanup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             })
             .cloned()
             .collect();
-        Value::Array(kept)
-    } else {
-        json!([])
-    };
-    store.set("session_logs", cleaned_logs);
+        store.set("session_logs", Value::Array(kept));
+    }
+    // else: 비배열은 보존.
 
     // 3. todos: done=true 전체 삭제 (BR-5, DEC-10-6).
-    let todos_raw = store.get("todos").unwrap_or(json!([]));
+    // gemini-code-assist HIGH 리뷰 반영: last == 0(첫 업데이트, last_cleanup_year 키 부재)
+    // 케이스에서는 todos 정리를 skip하여 현재 연도 완료 데이터 손실을 차단한다.
+    // last > 0(이전 정리 기록 존재 = 명시적 연도 전환 확인)일 때만 일괄 삭제 수행.
+    // 비배열 타입 불일치 시에도 set skip — 데이터 보존 정책 일관 (PR #10 리뷰 반영).
     let mut deleted_todos: u32 = 0;
-    let cleaned_todos = if let Some(arr) = todos_raw.as_array() {
-        let kept: Vec<Value> = arr
-            .iter()
-            .filter(|t| {
-                let done = t.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
-                if done {
-                    deleted_todos += 1;
-                    false
-                } else {
-                    true
-                }
-            })
-            .cloned()
-            .collect();
-        Value::Array(kept)
-    } else {
-        json!([])
-    };
-    store.set("todos", cleaned_todos);
+    if last > 0 {
+        let todos_raw = store.get("todos").unwrap_or(json!([]));
+        if let Some(arr) = todos_raw.as_array() {
+            let kept: Vec<Value> = arr
+                .iter()
+                .filter(|t| {
+                    let done = t.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if done {
+                        deleted_todos += 1;
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect();
+            store.set("todos", Value::Array(kept));
+        }
+        // else: 비배열은 보존.
+    }
+    // last == 0: 첫 업데이트 시 todos 정리 skip — 다음 연도 전환에서 정상 동작.
 
     // 4. last_cleanup_year 갱신.
     store.set("last_cleanup_year", json!(current_year));
