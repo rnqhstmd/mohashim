@@ -86,6 +86,7 @@ export function createTodo(text: string, tag: string | null, loc: string | null)
     tag,
     loc,
     active: false,
+    completedAt: null,
   };
 }
 
@@ -101,7 +102,14 @@ export function toggleDone(todos: readonly Todo[], id: string): Todo[] {
 
   const updated = todos.map((t) =>
     t.id === id
-      ? { ...t, done: !t.done, active: t.done ? t.active : false }
+      ? {
+          ...t,
+          done: !t.done,
+          active: t.done ? t.active : false,
+          // FR-1, AC-1/2: 미완료(false)→완료 전환 시 ISO 8601 UTC `Z` 기록.
+          // 완료(true)→미완료 롤백 시 null. (DEC-10-4: timezone 무관 — yearly_cleanup은 done 비교만)
+          completedAt: t.done ? null : new Date().toISOString(),
+        }
       // ↑ t.done은 토글 전 값. 미완료(false)→완료 전환 시 active=false 강제 (BR-2).
       //   완료(true)→미완료 롤백 시 active 보존(이미 false였을 것이므로 무해).
       : t

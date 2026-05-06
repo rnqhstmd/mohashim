@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ContributionGraph } from "./ContributionGraph";
 import { ShareCard } from "./ShareCard";
 import {
@@ -27,6 +27,9 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const shareRef = useRef<SVGSVGElement>(null);
+  // Phase 10 AC-17: 이전 월 버튼 경계는 올해 1월(= -getMonth()). mount 1회 산출.
+  // 자정 경계 부정확은 본 Phase 수용 — 재mount/재기동 시 자가 회복.
+  const minOffset = useMemo(() => -new Date().getMonth(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +113,7 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
           data={data}
           monthOffset={monthOffset}
           onMonthChange={setMonthOffset}
+          minOffset={minOffset}
         />
       </div>
 

@@ -50,6 +50,11 @@ pub fn run() {
             if let Err(err) = timer::auto_discard_on_boot(app.handle()) {
                 eprintln!("[mohashim] timer auto_discard_on_boot failed: {err}");
             }
+            // Phase 10 FR-7: 연도 자동 정리. 동일 연도 재기동 no-op (AC-16).
+            // power::start 이전에 실행 — sessions/session_logs/todos 정리 후 score::tick 시작.
+            if let Err(err) = storage::yearly_cleanup(app.handle()) {
+                eprintln!("[mohashim] yearly_cleanup failed: {err}");
+            }
             if let Err(err) = power::start(app.handle()) {
                 eprintln!("[mohashim] power start failed: {err}");
             }
