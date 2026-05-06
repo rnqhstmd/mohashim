@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const inMemory = new Map<string, unknown>();
+const writeImageMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -21,8 +22,13 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   },
 }));
 
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
+  writeImage: writeImageMock,
+}));
+
 beforeEach(() => {
   inMemory.clear();
+  writeImageMock.mockReset();
   vi.resetModules();
 });
 
@@ -206,5 +212,170 @@ describe("grass.ts — 폴백 정규화 (BR-G8)", () => {
       expect(c.sessions).toBe(0);
     }
     expect(md.totalSessions).toBe(0);
+  });
+});
+
+// ---------- 합성 파이프라인 테스트 (FR-18) ----------
+
+describe("grass.ts — composeShareCard (SVG→PNG)", () => {
+  let drawImageMock: ReturnType<typeof vi.fn>;
+  let toBlobMock: ReturnType<typeof vi.fn>;
+  let getContextMock: ReturnType<typeof vi.fn>;
+  let originalCreateElement: typeof document.createElement;
+
+  beforeEach(() => {
+    drawImageMock = vi.fn();
+    toBlobMock = vi.fn();
+    getContextMock = vi.fn(() => ({ drawImage: drawImageMock }));
+
+    // canvas 엘리먼트를 mock canvas로 대체
+    originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "canvas") {
+        return {
+          width: 0,
+          height: 0,
+          getContext: getContextMock,
+          toBlob: toBlobMock,
+        } as unknown as HTMLCanvasElement;
+      }
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("정상 경로: SVG → PNG Blob 반환", async () => {
+    const expectedBlob = new Blob(["png-data"], { type: "image/png" });
+    toBlobMock.mockImplementation(
+      (cb: (blob: Blob | null) => void) => void cb(expectedBlob)
+    );
+
+    // decode()를 즉시 resolve하는 Image mock
+    const imgMock = { src: "", decode: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(globalThis, "Image").mockImplementation(() => imgMock as unknown as HTMLImageElement);
+
+    const { composeShareCard, SHARE_CARD_SIZE } = await import("../grass");
+
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const blob = await composeShareCard(svgEl);
+
+    expect(blob).toBe(expectedBlob);
+    expect(getContextMock).toHaveBeenCalledWith("2d");
+    expect(drawImageMock).toHaveBeenCalledWith(
+      imgMock,
+      0,
+      0,
+      SHARE_CARD_SIZE,
+      SHARE_CARD_SIZE
+    );
+    expect(toBlobMock).toHaveBeenCalledWith(expect.any(Function), "image/png");
+  });
+
+  it("UTF-8 안전성: 한글 포함 SVG 직렬화 후 dataUrl이 base64로 인코딩됨", async () => {
+    const expectedBlob = new Blob(["png-data"], { type: "image/png" });
+    toBlobMock.mockImplementation(
+      (cb: (blob: Blob | null) => void) => void cb(expectedBlob)
+    );
+
+    let capturedSrc = "";
+    const imgMock = {
+      get src() {
+        return capturedSrc;
+      },
+      set src(v: string) {
+        capturedSrc = v;
+      },
+      decode: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(globalThis, "Image").mockImplementation(
+      () => imgMock as unknown as HTMLImageElement
+    );
+
+    const { composeShareCard } = await import("../grass");
+
+    // 한글 텍스트 포함 SVG
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.textContent = "잔디 자랑하기";
+    svgEl.appendChild(text);
+
+    await composeShareCard(svgEl);
+
+    // data URL이 base64 인코딩된 svg+xml임을 검증
+    expect(capturedSrc).toMatch(/^data:image\/svg\+xml;base64,/);
+    const base64 = capturedSrc.replace("data:image/svg+xml;base64,", "");
+    // base64 → binary → UTF-8 decode 가 올바른 값을 복원해야 함
+    const decoded = new TextDecoder().decode(
+      Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    );
+    expect(decoded).toContain("잔디 자랑하기");
+  });
+
+  it("toBlob 실패: blob=null일 때 reject", async () => {
+    toBlobMock.mockImplementation(
+      (cb: (blob: Blob | null) => void) => void cb(null)
+    );
+
+    const imgMock = { src: "", decode: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(globalThis, "Image").mockImplementation(
+      () => imgMock as unknown as HTMLImageElement
+    );
+
+    const { composeShareCard } = await import("../grass");
+
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    await expect(composeShareCard(svgEl)).rejects.toThrow("canvas.toBlob 실패");
+  });
+
+  it("canvas 2d 컨텍스트 미지원: getContext가 null 반환 시 throw", async () => {
+    getContextMock.mockReturnValue(null);
+
+    const imgMock = { src: "", decode: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(globalThis, "Image").mockImplementation(
+      () => imgMock as unknown as HTMLImageElement
+    );
+
+    const { composeShareCard } = await import("../grass");
+
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    await expect(composeShareCard(svgEl)).rejects.toThrow(
+      "canvas 2d 컨텍스트 미지원"
+    );
+  });
+});
+
+describe("grass.ts — copyShareCardToClipboard (클립보드)", () => {
+  it("정상 경로: Blob → Uint8Array로 writeImage 호출", async () => {
+    writeImageMock.mockResolvedValue(undefined);
+    const { copyShareCardToClipboard } = await import("../grass");
+
+    const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG 헤더
+    // jsdom의 Blob은 arrayBuffer()를 지원하지 않으므로 mock 사용
+    const mockBlob = {
+      arrayBuffer: vi.fn().mockResolvedValue(data.buffer),
+    } as unknown as Blob;
+
+    await copyShareCardToClipboard(mockBlob);
+
+    expect(writeImageMock).toHaveBeenCalledTimes(1);
+    const arg = writeImageMock.mock.calls[0][0];
+    expect(arg).toBeInstanceOf(Uint8Array);
+    expect(Array.from(arg)).toEqual(Array.from(data));
+  });
+
+  it("클립보드 거부: writeImage가 reject하면 에러 전파", async () => {
+    const clipboardError = new Error("클립보드 권한 거부");
+    writeImageMock.mockRejectedValue(clipboardError);
+    const { copyShareCardToClipboard } = await import("../grass");
+
+    const mockBlob = {
+      arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+    } as unknown as Blob;
+    await expect(copyShareCardToClipboard(mockBlob)).rejects.toThrow(
+      "클립보드 권한 거부"
+    );
   });
 });
