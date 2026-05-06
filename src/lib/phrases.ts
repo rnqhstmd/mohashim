@@ -108,7 +108,12 @@ export function __pickPhraseFromArray(
 export function pickPhrase(bucket: BucketKey): string {
   const arr = POTATO_PHRASES[bucket];
   if (arr.length === 0) return "";
-  return arr[Math.floor(Math.random() * arr.length)];
+  // Math.random spy가 1.0 또는 NaN을 반환하면 인덱스가 범위 밖이 될 수 있다.
+  // [0, arr.length-1] 구간으로 clamp하고, 그래도 undefined라면 첫 원소로 폴백.
+  const r = Math.random();
+  const raw = Number.isFinite(r) ? Math.floor(r * arr.length) : 0;
+  const idx = Math.max(0, Math.min(raw, arr.length - 1));
+  return arr[idx] ?? arr[0];
 }
 
 export const VALID_POTATO_STATES: ReadonlySet<PotatoState> = new Set([

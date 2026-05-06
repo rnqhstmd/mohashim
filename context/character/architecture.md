@@ -100,7 +100,7 @@ useEffect(() => {
 
 ### DiscardModal — 모듈 1회 평가 (PR #9 결정)
 
-`DiscardModal`은 score-tick으로 emit되지 않으므로 `usePhrase`를 거치지 않고 `pickPhrase("discarded")`로 첫 멘트를 정적 렌더한다. 모듈 로드 시 1회만 `Math.random`이 평가되어 같은 앱 실행 세션 내에서 동일 멘트를 반복 노출한다 — 의도된 정책 (사용자 결정 — 모달 멘트는 세션 내 고정).
+`DiscardModal`은 score-tick으로 emit되지 않으므로 `usePhrase`를 거치지 않는다. `pickPhrase("discarded")`를 모듈 로드 시 1회만 호출하여 `Math.random`을 1번 평가한 결과를 모듈 수명 동안 보존한다. 같은 앱 실행 세션 내에서는 동일 멘트가 반복 노출된다 — 의도된 정책 (사용자 결정 — 모달 멘트는 세션 내 고정).
 
 ### mapPhaseToPotatoState (FR-22 / FR-23 유틸)
 

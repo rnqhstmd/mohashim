@@ -106,7 +106,9 @@ export type SetOptions = {
   save?: boolean;
 };
 
-export async function set<K extends Exclude<keyof StoreSchema, "active_phase" | "sessions">>(
+export async function set<
+  K extends Exclude<keyof StoreSchema, "active_phase" | "sessions" | "auto_launch_enabled">
+>(
   key: K,
   value: StoreSchema[K],
   options: SetOptions = {}
@@ -130,6 +132,21 @@ export async function getOnboardingCompleted(): Promise<boolean> {
 
 export async function setOnboardingCompleted(value: boolean): Promise<void> {
   await set("onboarding_completed", value);
+}
+
+/**
+ * 자동 실행 상태 read.
+ *
+ * `auto_launch_enabled`는 store와 OS LaunchAgent 두 시스템에 분산되어 있어 단일 진실 소스가
+ * 부재한다. Rust `set_auto_launch` IPC가 store + OS API를 함께 갱신하는 단일 writer이므로,
+ * 프론트엔드는 일반 `set()` 경로 대신 본 wrapper만 사용한다 (set 제너릭에서 키 제외됨).
+ */
+export async function getAutoLaunch(): Promise<boolean> {
+  return invoke<boolean>("get_auto_launch");
+}
+
+export async function setAutoLaunch(enabled: boolean): Promise<void> {
+  await invoke("set_auto_launch", { enabled });
 }
 
 /**
