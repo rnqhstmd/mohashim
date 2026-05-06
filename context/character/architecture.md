@@ -54,24 +54,45 @@ function selectBucket({ phase, total, db }: Ctx): keyof typeof POTATO_PHRASES {
 }
 ```
 
-### pickPhrase + 빈 배열 / NaN 가드
+### pickPhrase — Math.random 인덱스 (PR #9)
 
 ```ts
-/** @internal — 빈 배열 가드 검증용. 운영 호출자는 pickPhrase만 사용. */
-function __pickPhraseFromArray(arr: readonly string[], seed: number): string {
-  if (arr.length === 0) return "";                       // 빈 배열 가드 (NaN 체크보다 먼저)
-  const s = Number.isFinite(seed) ? seed : 0;            // NaN/Infinity 폴백 → arr[0] 보장
-  return arr[Math.floor(Math.abs(s)) % arr.length];      // Math.floor로 정수 정규화 — fractional seed에도 안전
+function pickPhrase(bucket: BucketKey): string {
+  const arr = POTATO_PHRASES[bucket];
+  return arr.length === 0 ? "" : arr[Math.floor(Math.random() * arr.length)];
 }
 
-function pickPhrase(bucket: BucketKey, seed: number): string {
-  return __pickPhraseFromArray(POTATO_PHRASES[bucket], seed);
+/** @internal — 빈 배열 가드 검증용. 시그니처 보존 (BR-2). */
+function __pickPhraseFromArray(arr: readonly string[], seed: number): string {
+  // 기존 시그니처 그대로 유지하여 단위 테스트 (`__pickPhraseFromArray — 빈 배열 / 단일 원소`) 통과 보장.
+  // 운영 호출자는 새 `pickPhrase(bucket)`만 사용한다.
 }
 ```
 
-- seed는 phase/total/timestamp 등에서 도출 (UI 깜빡임 방지를 위해 빠르게 변하지 않도록)
-- 같은 버킷 내 중복은 seed 회전으로 자연 분산
-- BR-3 (seed=0 → arr[0], seed 음수 → Math.abs, fractional seed → Math.floor 정수화, NaN/Infinity → 0 폴백, 빈 배열 → `""`)는 모두 `__pickPhraseFromArray`에서 보장. 운영 호출자가 가드 깜빡해도 안전.
+- `pickPhrase`는 단일 인자 `bucket`만 받는다 (seed 인자 제거)
+- 인덱스는 `Math.floor(Math.random() * arr.length)` — 매 호출마다 새 랜덤
+- 빈 배열 가드는 미래 회귀 방어를 위해 보존 (DEC-9-3)
+- 결정성 검증은 `vi.spyOn(Math, "random").mockReturnValue(...)`로 테스트에서 보장
+
+### usePhrase — useState 단순화 (PR #9 / DEC-9-10)
+
+reducer/seed 추적을 제거하고 useState 두 개로 단순화한다.
+
+```ts
+const [phrase, setPhrase] = useState<string>(() => pickPhrase(currentBucket));
+useEffect(() => setPhrase(pickPhrase(currentBucket)), [currentBucket]);          // bucket 변경 시 즉시
+useEffect(() => {
+  const h = setInterval(() => setPhrase(pickPhrase(currentBucket)), PHRASE_ROTATE_MS);
+  return () => clearInterval(h);
+}, [currentBucket]);                                                              // 8s 회전, bucket 변경 시 재시작
+```
+
+- StrictMode lazy init 이중 호출은 결과만 보존되므로 사용자 노출 영향 없음 (가정)
+- bucket 변경 시 8s interval이 재시작되어 새 버킷 첫 멘트가 8초 동안 유지
+
+### DiscardModal — 모듈 1회 평가 (PR #9 결정)
+
+`DiscardModal`은 score-tick으로 emit되지 않으므로 `usePhrase`를 거치지 않고 `pickPhrase("discarded")`로 첫 멘트를 정적 렌더한다. 모듈 로드 시 1회만 `Math.random`이 평가되어 같은 앱 실행 세션 내에서 동일 멘트를 반복 노출한다 — 의도된 정책 (사용자 결정 — 모달 멘트는 세션 내 고정).
 
 ### mapPhaseToPotatoState (FR-22 / FR-23 유틸)
 

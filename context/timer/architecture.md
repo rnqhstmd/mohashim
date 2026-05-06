@@ -45,14 +45,17 @@
 ## 진행 중 알림 차단
 
 ```rust
-fn send_break_start_notification() {
-    if PHASE.load() != Phase::Focus { return; } // 다른 phase면 무시
+fn send_notification(app, title, body) {
+    if PHASE.load() != Phase::Focus { return; }                       // 진행 중 차단
+    if !storage::get_notifications_enabled(app) { return; }           // 사용자 토글 (PR #9)
     notification::send(...);
 }
 ```
 
 - Focus 진행 중에는 어떤 알림도 발송 X
 - 휴식 시작·세션 완료 알림은 Rust에서 발송 (WebView가 닫혀 있어도 동작)
+- `notifications_enabled = false`이면 OS 알림 미발송. 단 카운트다운/세션 totals 적재(`append_session_record`)는 별도 경로라 영향 없음 (BR-6, PR #9)
+- `get_notifications_enabled<R>`는 `storage.rs`에 헬퍼로 존재. 누락/실패 시 default `true` (안전 측 기본값 — 기존 사용자 알림 발송 흐름 보존)
 
 ## 팝업 UI 구성
 
