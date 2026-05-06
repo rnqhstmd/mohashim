@@ -183,7 +183,7 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         };
         let duration_mins = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES) as u32;
         let id = format!("sl-{}-{}", end_ms, avg);
-        if let Err(e) = crate::storage::append_session_log(
+        let log_ok = match crate::storage::append_session_log(
             app,
             &id,
             &date_str,
@@ -192,12 +192,21 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
             duration_mins,
             avg,
         ) {
-            eprintln!("[mohashim] append_session_log failed: {e}");
-        }
-        // 3. 단일 save 원자화 (DEC-10-8): sessions/session_logs 부분 일관성 회피.
-        if let Ok(store) = app.store(STORE_FILE) {
-            if let Err(e) = store.save() {
-                eprintln!("[mohashim] on_complete_consumed save failed: {e}");
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("[mohashim] append_session_log failed: {e}");
+                false
+            }
+        };
+        // 3. 단일 save 원자화 (DEC-10-8): log 성공 시에만 save 호출.
+        // log 실패 시 save를 skip하여 sessions/session_logs 부분 일관성을 회피한다 —
+        // 두 적재가 모두 in-memory 성공한 경우에만 disk persist. log 실패 시 sessions
+        // in-memory 변경은 다음 store load 시 폐기되어 자연 회복 (Q1 정책 일관 확장).
+        if log_ok {
+            if let Ok(store) = app.store(STORE_FILE) {
+                if let Err(e) = store.save() {
+                    eprintln!("[mohashim] on_complete_consumed save failed: {e}");
+                }
             }
         }
     }
