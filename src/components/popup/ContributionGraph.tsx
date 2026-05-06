@@ -83,8 +83,11 @@ function Cell({ cell }: { cell: DayCell }) {
   return (
     <div
       title={tooltip}
+      role="img"
+      aria-label={tooltip}
+      tabIndex={0}
       style={{ backgroundColor: GRASS_COLORS[cell.level] }}
-      className="aspect-square rounded-sm transition-transform hover:scale-110 hover:border hover:border-ink hover:shadow-sm"
+      className="aspect-square rounded-sm transition-transform hover:scale-110 hover:border hover:border-ink hover:shadow-sm focus:scale-110 focus:border focus:border-ink focus:shadow-sm focus:outline-none"
     />
   );
 }

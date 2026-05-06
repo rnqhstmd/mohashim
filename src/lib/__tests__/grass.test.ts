@@ -180,7 +180,7 @@ describe("grass.ts — getMonthSessions (D-G4 월별 달력)", () => {
     expect(todayCell!.level).toBe(3); // sessions 3~5 + avg≥60
   });
 
-  it("totalSessions/avgScore 가중 평균 계산 정확", async () => {
+  it("totalSessions/avgScore 가중 평균 계산 정확 (legacy: sum 미존재, avg*sessions 폴백)", async () => {
     const { getMonthSessions, formatDate } = await import("../grass");
     const today = new Date();
     const day1 = formatDate(today);
@@ -197,6 +197,29 @@ describe("grass.ts — getMonthSessions (D-G4 월별 달력)", () => {
     expect(md.totalSessions).toBe(5);
     // 가중 평균 = (80*2 + 60*3) / 5 = (160 + 180) / 5 = 68
     expect(md.avgScore).toBe(68);
+  });
+
+  it("totalSessions/avgScore: sum 필드 사용 시 avg 반올림 누적 오류 없음", async () => {
+    const { getMonthSessions, formatDate } = await import("../grass");
+    const today = new Date();
+    const day1 = formatDate(today);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const day2 = formatDate(yesterday);
+
+    // day1: sessions=2, scores=[0,1] → avg=round(1/2)=1(반올림), sum=1
+    // day2: sessions=1, scores=[0]   → avg=0, sum=0
+    // 진짜 전체 평균 = round((0+1+0)/3) = round(1/3) = 0
+    // avg*sessions 방식은 round(1*2 + 0*1) / 3 = round(2/3) = 1 (오류)
+    inMemory.set("sessions", {
+      [day1]: { date: day1, sessions: 2, avg: 1, sum: 1 },
+      [day2]: { date: day2, sessions: 1, avg: 0, sum: 0 },
+    });
+
+    const md = await getMonthSessions(0);
+    expect(md.totalSessions).toBe(3);
+    // sum 필드 사용: (1 + 0) / 3 = round(0.33) = 0
+    expect(md.avgScore).toBe(0);
   });
 });
 

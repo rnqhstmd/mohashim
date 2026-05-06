@@ -125,10 +125,8 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         let live = state_from_total(total);
         let grace = grace_from(idle, work);
 
-        // Phase 8 R-G2: Focus tick에만 세션 평균 누적.
-        if matches!(current_phase(), Phase::Focus) {
-            crate::score::shared::accumulate_session_score(total as u32);
-        }
+        // Phase 8 R-G2: Focus tick 세션 평균 누적은 phase transition 이후에 수행하여
+        // wake tick에서 전이가 발생한 경우를 제외한다 (아래 phase 분기 후 phase_at_emit 조건 확인).
 
         // 3) phase 분기 (FR-4a/4b, AC-3 Complete 1-tick).
         let phase_at_emit;
@@ -170,6 +168,12 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         // FR-2 / BR-noise-80: Idle 상태에서 NOISE_LOUD_THRESHOLD_DB 초과 tick 카운터 (멘트 출력은 후속 character 도메인).
         if matches!(phase_at_emit, Phase::Idle) && db > NOISE_LOUD_THRESHOLD_DB {
             crate::score::shared::IDLE_NOISE_LOUD_TICKS.fetch_add(1, Relaxed);
+        }
+
+        // Phase 8 R-G2: Focus tick에만 세션 평균 누적.
+        // phase transition 블록 이후에 확인하여 wake tick에서 전이가 발생한 경우를 제외한다.
+        if phase_at_emit == Phase::Focus {
+            crate::score::shared::accumulate_session_score(total as u32);
         }
 
         let snap = ScoreSnapshot {

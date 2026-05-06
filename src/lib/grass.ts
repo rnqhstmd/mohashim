@@ -83,7 +83,7 @@ export async function getMonthSessions(monthOffset: number): Promise<MonthData> 
   }
   // 1일 ~ 말일
   let totalSessions = 0;
-  let avgWeightedSum = 0;
+  let totalScoreSum = 0;
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(year, monthIdx, day);
     const dateStr = formatDate(d);
@@ -100,7 +100,8 @@ export async function getMonthSessions(monthOffset: number): Promise<MonthData> 
     });
     if (!isFuture) {
       totalSessions += s;
-      avgWeightedSum += a * s;
+      // `sum` 필드 우선 사용. 미존재(레거시 레코드)는 avg*sessions으로 근사.
+      totalScoreSum += rec?.sum ?? a * s;
     }
   }
   // trailing blank — 7의 배수
@@ -108,7 +109,7 @@ export async function getMonthSessions(monthOffset: number): Promise<MonthData> 
     cells.push({ date: null, sessions: 0, avg: 0, level: 0, isFuture: false });
   }
 
-  const avgScore = totalSessions > 0 ? Math.round(avgWeightedSum / totalSessions) : 0;
+  const avgScore = totalSessions > 0 ? Math.round(totalScoreSum / totalSessions) : 0;
   return { monthOffset, year, month: monthIdx + 1, cells, totalSessions, avgScore };
 }
 

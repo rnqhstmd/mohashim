@@ -23,6 +23,7 @@ export type SessionRecord = {
   date: string;     // 'YYYY-MM-DD' (로컬 시간대)
   sessions: number; // 그 날 완료 세션 수
   avg: number;      // 그 날 평균 집중 점수 (0~100)
+  sum?: number;     // 그 날 누적 점수 합계 (avg 역산 오류 방지용 내부 필드)
 };
 export type ActivePhase = "idle" | "focus" | "break";
 
@@ -230,10 +231,12 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
     const e = entry as Record<string, unknown>;
     const sessions = typeof e.sessions === "number" && e.sessions >= 0 ? e.sessions : 0;
     const avg = typeof e.avg === "number" && e.avg >= 0 && e.avg <= 100 ? e.avg : 0;
+    const sum = typeof e.sum === "number" && e.sum >= 0 ? e.sum : undefined;
     result[date] = {
       date: typeof e.date === "string" ? e.date : date,
       sessions,
       avg,
+      ...(sum !== undefined ? { sum } : {}),
     };
   }
   return result;

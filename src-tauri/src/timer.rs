@@ -152,15 +152,18 @@ fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(
         serde_json::Map::new()
     };
 
-    let (new_sessions, new_avg) = if let Some(e) = map.get(&today).and_then(|v| v.as_object()) {
-        let old_sessions = e.get("sessions").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let old_avg = e.get("avg").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let (new_sessions, new_avg, new_sum) = if let Some(e) = map.get(&today).and_then(|v| v.as_object()) {
+        let old_sessions = e.get("sessions").and_then(|v| v.as_u64()).unwrap_or(0);
+        // `sum` 필드 우선 사용. 레거시 레코드(sum 미존재)는 avg*sessions으로 역산 (호환성).
+        let old_sum = e.get("sum").and_then(|v| v.as_u64()).unwrap_or_else(|| {
+            e.get("avg").and_then(|v| v.as_u64()).unwrap_or(0).saturating_mul(old_sessions)
+        });
         let s = old_sessions + 1;
-        let avg_num = old_avg as u64 * old_sessions as u64 + score as u64;
-        let avg = (avg_num + (s as u64 / 2)) / s as u64;
-        (s, avg as u32)
+        let total_sum = old_sum + score as u64;
+        let avg = (total_sum + s / 2) / s; // 반올림 평균
+        (s as u32, avg as u32, total_sum)
     } else {
-        (1u32, score)
+        (1u32, score, score as u64)
     };
 
     map.insert(
@@ -169,6 +172,7 @@ fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(
             "date": today,
             "sessions": new_sessions,
             "avg": new_avg,
+            "sum": new_sum,
         }),
     );
     store.set("sessions", Value::Object(map));
