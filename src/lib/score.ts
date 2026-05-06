@@ -20,6 +20,7 @@ export type ScoreSnapshot = {
   grace: Grace;
   phase: Phase;
   timeLeft: number;
+  noiseLoud: boolean;
 };
 
 export const SCORE_TICK_EVENT = "score-tick";
