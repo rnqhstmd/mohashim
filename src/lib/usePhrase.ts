@@ -9,7 +9,13 @@ import {
 import type { LiveState, Phase } from "./score";
 
 export type UsePhraseInput =
-  | { phase: Phase; total: number; db: number; state: LiveState }
+  | {
+      phase: Phase;
+      total: number;
+      db: number;
+      state: LiveState;
+      noiseLoudActive: boolean;
+    }
   | null;
 
 export type UsePhraseOutput = {
@@ -21,11 +27,18 @@ export type UsePhraseOutput = {
 /** 멘트 회전 주기 (BR-1: 8초). score-tick(1Hz)마다 멘트가 바뀌지 않도록 분리. */
 export const PHRASE_ROTATE_MS = 8000;
 
-const FALLBACK_INPUT: { phase: Phase; total: number; db: number; state: LiveState } = {
+const FALLBACK_INPUT: {
+  phase: Phase;
+  total: number;
+  db: number;
+  state: LiveState;
+  noiseLoudActive: boolean;
+} = {
   phase: "idle",
   total: 0,
   db: 0,
   state: "calm",
+  noiseLoudActive: false,
 };
 
 /**
@@ -54,11 +67,18 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
   const safeTotal = Math.max(0, Math.min(100, safeCtx.total));
   const safeDb = safeCtx.db; // db는 score.ts에서 NaN 방어된 상태로 가정.
   const safeState = safeCtx.state;
+  const safeNoiseLoudActive = safeCtx.noiseLoudActive;
 
   // 매 렌더의 bucket 산출.
   const currentBucket = useMemo(
-    () => selectBucket({ phase: safePhase, total: safeTotal, db: safeDb }),
-    [safePhase, safeTotal, safeDb]
+    () =>
+      selectBucket({
+        phase: safePhase,
+        total: safeTotal,
+        db: safeDb,
+        noiseLoudActive: safeNoiseLoudActive,
+      }),
+    [safePhase, safeTotal, safeDb, safeNoiseLoudActive]
   );
 
   // lazy init: 첫 렌더에서 currentBucket 기준 멘트 1개 산출.
@@ -87,10 +107,15 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
   const potatoState = useMemo(
     () =>
       mapPhaseToPotatoState(
-        { phase: safePhase, total: safeTotal, db: safeDb },
+        {
+          phase: safePhase,
+          total: safeTotal,
+          db: safeDb,
+          noiseLoudActive: safeNoiseLoudActive,
+        },
         safeState
       ),
-    [safePhase, safeTotal, safeDb, safeState]
+    [safePhase, safeTotal, safeDb, safeNoiseLoudActive, safeState]
   );
 
   return { bucket: currentBucket, phrase, potatoState };

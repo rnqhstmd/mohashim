@@ -41,9 +41,12 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   const total = snap?.total ?? 0;
   const db = snap?.db ?? 0;
   const engineState = snap?.state ?? "calm";
+  const noiseLoudActive = snap?.noiseLoud ?? false;
 
   const { phrase, potatoState } = usePhrase(
-    snap ? { phase, total, db, state: engineState } : null
+    snap
+      ? { phase, total, db, state: engineState, noiseLoudActive }
+      : null
   );
 
   const toastQueue = useToastQueue();

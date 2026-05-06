@@ -5,20 +5,34 @@ import { usePhrase } from "../usePhrase";
 import { POTATO_PHRASES } from "../phrases";
 import type { LiveState, Phase } from "../score";
 
-type Ctx = { phase: Phase; total: number; db: number; state: LiveState };
+type Ctx = {
+  phase: Phase;
+  total: number;
+  db: number;
+  state: LiveState;
+  noiseLoudActive: boolean;
+};
 
-const idleCtx: Ctx = { phase: "idle", total: 0, db: 50, state: "calm" };
+const idleCtx: Ctx = {
+  phase: "idle",
+  total: 0,
+  db: 50,
+  state: "calm",
+  noiseLoudActive: false,
+};
 const focusHighCtx: Ctx = {
   phase: "focus",
   total: 90,
   db: 50,
   state: "focused",
+  noiseLoudActive: false,
 };
 const noiseLoudCtx: Ctx = {
   phase: "idle",
   total: 0,
   db: 90,
   state: "calm",
+  noiseLoudActive: true,
 };
 
 let mockRandom: MockInstance<() => number>;
@@ -102,11 +116,42 @@ describe("usePhrase", () => {
     expect(result.current.potatoState).toBe("calm");
   });
 
-  it("noiseLoud: db>80 시 bucket='noiseLoud', potatoState='covering'", () => {
+  it("noiseLoud: noiseLoudActive=true 시 bucket='noiseLoud', potatoState='covering'", () => {
     const { result } = renderHook(() => usePhrase(noiseLoudCtx));
     expect(result.current.bucket).toBe("noiseLoud");
     expect(result.current.phrase).toBe(POTATO_PHRASES.noiseLoud[0]);
     expect(result.current.potatoState).toBe("covering");
+  });
+
+  // Phase 11 신규 케이스: hysteresis 미충족 (1~4초 누적 중) 시 idle 유지.
+  it("Phase 11 (FR-7): phase=idle, db=90, noiseLoudActive=false → bucket='idle', potatoState='calm'", () => {
+    const ctx: Ctx = {
+      phase: "idle",
+      total: 0,
+      db: 90,
+      state: "calm",
+      noiseLoudActive: false,
+    };
+    const { result, unmount } = renderHook(() => usePhrase(ctx));
+    expect(result.current.bucket).toBe("idle");
+    expect(result.current.phrase).toBe(POTATO_PHRASES.idle[0]);
+    expect(result.current.potatoState).toBe("calm");
+    unmount();
+  });
+
+  it("Phase 11 (MA-1): phase=idle, db=50, noiseLoudActive=true → bucket='noiseLoud', potatoState='covering' (db 무관)", () => {
+    const ctx: Ctx = {
+      phase: "idle",
+      total: 0,
+      db: 50,
+      state: "calm",
+      noiseLoudActive: true,
+    };
+    const { result, unmount } = renderHook(() => usePhrase(ctx));
+    expect(result.current.bucket).toBe("noiseLoud");
+    expect(result.current.phrase).toBe(POTATO_PHRASES.noiseLoud[0]);
+    expect(result.current.potatoState).toBe("covering");
+    unmount();
   });
 
   it("cleanup: unmount 후 setInterval 미발화 (clearInterval 호출 검증)", () => {
@@ -138,6 +183,7 @@ describe("usePhrase", () => {
       total: 0,
       db: 50,
       state: "calm",
+      noiseLoudActive: false,
     };
     const { result, unmount } = renderHook(() => usePhrase(discardedCtx));
     expect(result.current.bucket).toBe("idle");

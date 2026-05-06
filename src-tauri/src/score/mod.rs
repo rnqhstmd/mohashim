@@ -16,12 +16,10 @@ use crate::permissions::{self, PermissionStatus};
 use crate::power;
 use crate::score::phase::{final_tray_state, grace_from, state_from_total, LiveState, Phase};
 use crate::score::shared::{
-    current_phase, load_db_ema, seconds_idle, store_time_left, time_left_secs, AX_GRANTED,
-    EMIT_ERR_COUNT, MIC_GRANTED, SCORE_STARTED, START_AT,
+    apply_noise_loud_hysteresis, current_phase, load_db_ema, seconds_idle, store_time_left,
+    time_left_secs, AX_GRANTED, EMIT_ERR_COUNT, IDLE_NOISE_LOUD_TICKS, MIC_GRANTED, SCORE_STARTED,
+    START_AT,
 };
-
-/// FR-2 / BR-noise-80: Idle 상태에서 시끄럽다(loud) 판단 임계값(dB).
-const NOISE_LOUD_THRESHOLD_DB: f32 = 80.0;
 use crate::score::state::ScoreSnapshot;
 use crate::score::{noise::noise_score, work::work_score};
 use crate::timer;
@@ -166,10 +164,13 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // FR-2 / BR-noise-80: Idle 상태에서 NOISE_LOUD_THRESHOLD_DB 초과 tick 카운터 (멘트 출력은 후속 character 도메인).
-        if matches!(phase_at_emit, Phase::Idle) && db > NOISE_LOUD_THRESHOLD_DB {
-            crate::score::shared::IDLE_NOISE_LOUD_TICKS.fetch_add(1, Relaxed);
-        }
+        // Phase 11 FR-7~9 / BR-3~5: noiseLoud hysteresis 진입 산출.
+        // load → 순수 함수 → store 패턴. phase_at_emit이 Idle 외이거나 db ≤ 80이면
+        // (0, false)로 즉시 리셋된다. NOISE_LOUD_HYSTERESIS_TICKS(=5) 도달 시 active=true.
+        let prev_loud_ticks = IDLE_NOISE_LOUD_TICKS.load(Relaxed);
+        let (new_loud_ticks, noise_loud_active) =
+            apply_noise_loud_hysteresis(phase_at_emit, db, prev_loud_ticks);
+        IDLE_NOISE_LOUD_TICKS.store(new_loud_ticks, Relaxed);
 
         // Phase 8 R-G2: Focus tick에만 세션 평균 누적.
         // phase transition 블록 이후에 확인하여 wake tick에서 전이가 발생한 경우를 제외한다.
@@ -192,6 +193,7 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             grace,
             phase: phase_at_emit,
             time_left: time_left_for_emit,
+            noise_loud: noise_loud_active,
         };
 
         if let Err(e) = app.emit("score-tick", &snap) {
