@@ -32,6 +32,7 @@ export type StoreSchema = {
   focus_minutes: number;
   break_minutes: number;
   notifications_enabled: boolean;
+  auto_launch_enabled: boolean;
   todos: Todo[];
   work_tags: WorkTag[];
   locations: Location[];
@@ -46,6 +47,7 @@ export const STORE_DEFAULTS: StoreSchema = {
   focus_minutes: 25,
   break_minutes: 5,
   notifications_enabled: true,
+  auto_launch_enabled: false,
   todos: [],
   work_tags: [],
   locations: [],
@@ -245,7 +247,7 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
 /**
  * 사용자 데이터 전체 초기화. Rust `reset_all` 커맨드를 호출한다.
  *
- * Rust 측에서 atomic 강제 → store clear → 9키 default 시드 순으로 처리한다.
+ * Rust 측에서 atomic 강제 → store clear → 10키 default 시드 순으로 처리한다.
  * 실패 시 에러를 호출자에게 재전파하여 상위(SettingsScreen)가 onResetDone 미호출 등
  * 후속 처리를 결정할 수 있도록 한다.
  */

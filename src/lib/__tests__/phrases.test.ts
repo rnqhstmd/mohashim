@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   POTATO_PHRASES,
   selectBucket,
   pickPhrase,
   __pickPhraseFromArray,
   mapPhaseToPotatoState,
+  type BucketKey,
 } from "../phrases";
 import type { PotatoState } from "../phrases";
+
+afterEach(() => {
+  // spy 누수 차단: 다음 it/describe로 Math.random stub이 새지 않도록.
+  vi.restoreAllMocks();
+});
 
 describe("selectBucket — 버킷 분기 (AC-1~AC-12, BR-2)", () => {
   it("AC-1: phase=idle, db=75 → 'idle'", () => {
@@ -76,15 +82,43 @@ describe("selectBucket — 버킷 분기 (AC-1~AC-12, BR-2)", () => {
   });
 });
 
-describe("pickPhrase — 결정성 (AC-13~AC-14)", () => {
-  it("AC-13: pickPhrase('idle', 0) === POTATO_PHRASES.idle[0]", () => {
-    expect(pickPhrase("idle", 0)).toBe(POTATO_PHRASES.idle[0]);
+describe("pickPhrase — Math.random spy 결정성 (AC-1, AC-2)", () => {
+  it("AC-1 (BR-1): Math.random=0 → idle[0] (첫 원소)", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    expect(pickPhrase("idle")).toBe(POTATO_PHRASES.idle[0]);
   });
 
-  it("AC-14: pickPhrase('idle', -5) === POTATO_PHRASES.idle[5 % length]", () => {
-    expect(pickPhrase("idle", -5)).toBe(
-      POTATO_PHRASES.idle[5 % POTATO_PHRASES.idle.length]
-    );
+  it("AC-1 (BR-1): Math.random=0.5 → idle[floor(0.5 * length)] (중간 원소)", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const expectedIdx = Math.floor(0.5 * POTATO_PHRASES.idle.length);
+    expect(pickPhrase("idle")).toBe(POTATO_PHRASES.idle[expectedIdx]);
+  });
+
+  it("AC-2 (BR-1): Math.random=lastIdx/length → idle[lastIdx] (마지막 원소)", () => {
+    // length 비의존: lastIdx / length는 length 변경과 무관하게
+    // floor((lastIdx/length) * length) === lastIdx를 보장.
+    const lastIdx = POTATO_PHRASES.idle.length - 1;
+    vi.spyOn(Math, "random").mockReturnValue(lastIdx / POTATO_PHRASES.idle.length);
+    expect(pickPhrase("idle")).toBe(POTATO_PHRASES.idle[lastIdx]);
+  });
+});
+
+describe("pickPhrase — 빈 배열 가드 (회귀 방지, DEC-9-3)", () => {
+  it("8개 버킷 모두 string 반환 (length>0이므로 비어있지 않음)", () => {
+    const buckets: BucketKey[] = [
+      "idle",
+      "focusHigh",
+      "focusLow",
+      "focusBroken",
+      "break",
+      "sessionComplete",
+      "noiseLoud",
+      "discarded",
+    ];
+    for (const bucket of buckets) {
+      expect(typeof pickPhrase(bucket)).toBe("string");
+      expect(pickPhrase(bucket)).not.toBe("");
+    }
   });
 });
 
@@ -108,7 +142,7 @@ describe("POTATO_PHRASES — 원문 보존 (AC-15, AC-15a, AC-15b, BR-1)", () =>
   });
 });
 
-describe("__pickPhraseFromArray — 빈 배열 / 단일 원소 (AC-21, BR-3)", () => {
+describe("__pickPhraseFromArray — 빈 배열 / 단일 원소 (AC-21, BR-2, BR-3)", () => {
   it("빈 배열 + seed=0 → ''", () => {
     expect(__pickPhraseFromArray([], 0)).toBe("");
   });
@@ -137,49 +171,6 @@ describe("__pickPhraseFromArray — 빈 배열 / 단일 원소 (AC-21, BR-3)", (
     expect(() => __pickPhraseFromArray([], 0)).not.toThrow();
     expect(() => __pickPhraseFromArray([], -5)).not.toThrow();
     expect(() => __pickPhraseFromArray([], NaN)).not.toThrow();
-  });
-});
-
-describe("pickPhrase — fractional seed 정수화 (Math.floor)", () => {
-  it("seed=0.5 → idle[0] (Math.floor(0.5)=0)", () => {
-    expect(pickPhrase("idle", 0.5)).toBe(POTATO_PHRASES.idle[0]);
-  });
-
-  it("seed=1.7 → idle[1] (Math.floor(1.7)=1)", () => {
-    expect(pickPhrase("idle", 1.7)).toBe(POTATO_PHRASES.idle[1]);
-  });
-
-  it("seed=2.9 → idle[2] (Math.floor(2.9)=2)", () => {
-    expect(pickPhrase("idle", 2.9)).toBe(POTATO_PHRASES.idle[2]);
-  });
-
-  it("seed=-1.5 → idle[1] (Math.abs=1.5 → Math.floor=1)", () => {
-    expect(pickPhrase("idle", -1.5)).toBe(POTATO_PHRASES.idle[1]);
-  });
-
-  it("__pickPhraseFromArray 단일 원소 + fractional seed → 그 원소", () => {
-    expect(__pickPhraseFromArray(["only"], 0.5)).toBe("only");
-    expect(__pickPhraseFromArray(["only"], 7.7)).toBe("only");
-  });
-
-  it("fractional seed에서 undefined 반환 없음 (회귀 방지)", () => {
-    expect(pickPhrase("idle", 0.5)).not.toBeUndefined();
-    expect(pickPhrase("focusHigh", 3.14)).not.toBeUndefined();
-    expect(typeof pickPhrase("noiseLoud", 1.999)).toBe("string");
-  });
-});
-
-describe("pickPhrase — NaN/Infinity seed 폴백 (Q2)", () => {
-  it("seed=NaN → idle[0]", () => {
-    expect(pickPhrase("idle", NaN)).toBe(POTATO_PHRASES.idle[0]);
-  });
-
-  it("seed=Infinity → idle[0]", () => {
-    expect(pickPhrase("idle", Infinity)).toBe(POTATO_PHRASES.idle[0]);
-  });
-
-  it("seed=-Infinity → idle[0]", () => {
-    expect(pickPhrase("idle", -Infinity)).toBe(POTATO_PHRASES.idle[0]);
   });
 });
 

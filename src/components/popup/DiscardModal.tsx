@@ -9,10 +9,10 @@ type DiscardModalProps = {
 };
 
 // BR-6: discarded는 score-tick으로 emit되지 않으므로 usePhrase를 거치지 않고
-// pickPhrase("discarded", 0)로 첫 멘트를 정적 렌더한다 (seed=0 고정).
-// pickPhrase는 순수 함수이고 POTATO_PHRASES는 정적이라 모듈 수준 호출 안전.
+// pickPhrase("discarded")로 첫 멘트를 정적 렌더한다. POTATO_PHRASES는 정적이라
+// 모듈 수준 호출 안전 (Math.random은 모듈 로드 시 1회만 평가됨).
 // 향후 phrases.ts가 동적 로딩 대상이 되면 컴포넌트 내부 useMemo로 이동.
-const discardedPhrase = pickPhrase("discarded", 0);
+const discardedPhrase = pickPhrase("discarded");
 
 /**
  * Discard 확인 모달 — 진행 중 세션 폐기 의사 확인.

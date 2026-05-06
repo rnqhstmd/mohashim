@@ -95,8 +95,20 @@ export function __pickPhraseFromArray(
   return arr[Math.floor(Math.abs(s)) % arr.length];
 }
 
-export function pickPhrase(bucket: BucketKey, seed: number): string {
-  return __pickPhraseFromArray(POTATO_PHRASES[bucket], seed);
+/**
+ * 버킷에서 랜덤하게 멘트 1개를 선택한다 (FR-1, BR-1, DEC-9-3).
+ *
+ * 본 함수는 호출 시점의 `Math.random()`으로 인덱스를 결정한다 — 결정성이 필요한
+ * 테스트는 `vi.spyOn(Math, "random")`으로 Math.random을 stub한다.
+ * 빈 배열은 `""`을 반환한다 (DEC-9-3 가드 보존).
+ *
+ * `__pickPhraseFromArray`(seed 기반)는 시그니처/구현을 그대로 유지하여 빈 배열/단일
+ * 원소 회귀 테스트를 보존한다 (BR-2).
+ */
+export function pickPhrase(bucket: BucketKey): string {
+  const arr = POTATO_PHRASES[bucket];
+  if (arr.length === 0) return "";
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 export const VALID_POTATO_STATES: ReadonlySet<PotatoState> = new Set([
