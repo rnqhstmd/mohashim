@@ -1,7 +1,12 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type ToastKind = "complete" | "sleep_discard" | "info";
+export type ToastKind =
+  | "complete"
+  | "sleep_discard"
+  | "info"
+  | "share_ok"      // Phase 8: 잔디 자랑하기 복사 성공
+  | "share_fail";   // Phase 8: 잔디 자랑하기 복사 실패
 export type ToastMessage = { id: string; kind: ToastKind; text: string };
 
 export const TOAST_EVENT = "toast";
@@ -9,7 +14,13 @@ export const TOAST_DURATION_MS = 3000;
 
 type ToastInput = { kind: ToastKind; text: string };
 
-const TOAST_KINDS: readonly ToastKind[] = ["complete", "sleep_discard", "info"];
+const TOAST_KINDS: readonly ToastKind[] = [
+  "complete",
+  "sleep_discard",
+  "info",
+  "share_ok",
+  "share_fail",
+];
 
 /**
  * IPC payload 런타임 검증 — Rust → JS toast 이벤트의 payload 형태가

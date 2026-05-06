@@ -8,6 +8,7 @@
     "core:window:default",
     "core:event:default",
     "store:default",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "clipboard-manager:allow-write-image"
   ]
 }

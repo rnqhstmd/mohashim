@@ -9,6 +9,7 @@ import { ModeChip } from "./ModeChip";
 import { SettingsScreen } from "./SettingsScreen";
 import { ToastContainer } from "./Toast";
 import { TodosTab } from "./TodosTab";
+import { GrassTab } from "./GrassTab";
 
 type MainScreenProps = {
   onResetDone: () => void;
@@ -90,7 +91,10 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
         {tab === "settings" ? (
           <SettingsScreen onResetDone={onResetDone} />
         ) : tab === "grass" ? (
-          <PlaceholderTab name="잔디" />
+          <GrassTab
+            key={tab}
+            onShareToast={(kind, text) => pushToast({ kind, text })}
+          />
         ) : (
           <TodosTab
             key={tab}
@@ -108,10 +112,3 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   );
 }
 
-function PlaceholderTab({ name }: { name: string }) {
-  return (
-    <div className="flex flex-1 items-center justify-center text-sm text-deep/40">
-      {name} (후속 Phase)
-    </div>
-  );
-}

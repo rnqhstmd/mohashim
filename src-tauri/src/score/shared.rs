@@ -42,6 +42,37 @@ pub static WAKE_FLAG: AtomicBool = AtomicBool::new(false);
 /// 본 Phase는 카운터 증가만 수행 — 실제 멘트 출력은 후속 character 도메인.
 pub static IDLE_NOISE_LOUD_TICKS: AtomicU64 = AtomicU64::new(0);
 
+/// 세션 점수 누적 합 (Focus 진행 중 매초 work+noise를 더함).
+/// Focus 시작 시 0으로 리셋. Complete 1-tick에서 평균 산출 후 다시 0.
+pub static SESSION_SCORE_SUM: AtomicU64 = AtomicU64::new(0);
+
+/// 세션 점수 누적 카운트. 평균 = SUM / COUNT.
+pub static SESSION_TICK_COUNT: AtomicU32 = AtomicU32::new(0);
+
+/// Focus 시작 시 호출. 누적 변수를 0으로 리셋.
+pub fn reset_session_totals() {
+    SESSION_SCORE_SUM.store(0, std::sync::atomic::Ordering::Release);
+    SESSION_TICK_COUNT.store(0, std::sync::atomic::Ordering::Release);
+}
+
+/// 매 Focus tick에 호출. work+noise 순간값을 누적.
+pub fn accumulate_session_score(score: u32) {
+    SESSION_SCORE_SUM.fetch_add(score as u64, std::sync::atomic::Ordering::AcqRel);
+    SESSION_TICK_COUNT.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+}
+
+/// Complete 1-tick에서 호출. 세션 평균을 반환하고 누적 변수를 리셋.
+/// COUNT가 0이면 0 반환 (Focus 진입 직후 즉시 Discarded 등 엣지).
+pub fn snapshot_and_reset_session_avg() -> u32 {
+    let sum = SESSION_SCORE_SUM.swap(0, std::sync::atomic::Ordering::AcqRel);
+    let count = SESSION_TICK_COUNT.swap(0, std::sync::atomic::Ordering::AcqRel) as u64;
+    if count == 0 {
+        0
+    } else {
+        ((sum + count / 2) / count) as u32
+    }
+}
+
 /// START_AT 기준 ms 경과. START_AT 미초기화 시 0 반환.
 pub fn now_ms() -> u64 {
     match START_AT.get() {
