@@ -121,9 +121,15 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
 /// Phase 8 R-G1: 세션 평균을 산출하여 sessions 키에 직접 적재한다.
 /// Rust 단일 writer 정책 (active_phase 패턴 동일). 적재 실패는 swallow — UI에 영향 없음.
 pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
+    if current_phase() != Phase::Complete {
+        return;
+    }
+
     let avg = snapshot_and_reset_session_avg();
-    if let Err(e) = append_session_record(app, avg) {
-        eprintln!("[mohashim] append_session_record failed: {e}");
+    if current_phase() == Phase::Complete {
+        if let Err(e) = append_session_record(app, avg) {
+            eprintln!("[mohashim] append_session_record failed: {e}");
+        }
     }
     store_phase(Phase::Idle);
     store_time_left(0);
