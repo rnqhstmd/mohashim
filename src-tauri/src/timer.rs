@@ -223,6 +223,11 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// Phase 10 DEC-10-8: store.set만 수행하고 store.save()는 호출자(`on_complete_consumed`)가
 /// session_logs 적재와 묶어 단일 save로 원자화한다. sessions/session_logs 부분 일관성 회피.
+///
+/// Phase 12 GAP fix: 기존 레코드의 `todos_completed` 필드를 보존한다 — 같은 날 todo 체크
+/// (storage::record_todo_completion) 후 세션 완료 시 이전에 적재된 todos_completed가
+/// 0으로 덮어써지면 잔디 데이터가 손실되므로, 순수 함수 `apply_session_record`로 분리하여
+/// 기존 객체 위에 sessions/avg/sum/date만 덮어쓰는 머지 정책을 적용한다.
 fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(), String> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let store = app
@@ -235,32 +240,51 @@ fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(
         serde_json::Map::new()
     };
 
-    let (new_sessions, new_avg, new_sum) = if let Some(e) = map.get(&today).and_then(|v| v.as_object()) {
+    apply_session_record(&mut map, &today, score);
+    store.set("sessions", Value::Object(map));
+    // save는 호출자가 단일 처리 (DEC-10-8).
+    Ok(())
+}
+
+/// sessions[date] 갱신 순수 함수 — 세션 완료 1회분의 sessions/avg/sum 갱신만 수행하고
+/// 기존 `todos_completed`는 보존한다 (Phase 12 GAP fix).
+///
+/// `storage::apply_todo_delta`의 머지 정책과 대칭: 한 writer는 자기 책임 필드만 갱신하고
+/// 상대 writer 필드는 보존하여 두 경로(세션 완료 / todo 체크)가 같은 날에 공존할 수 있도록 한다.
+pub(crate) fn apply_session_record(
+    sessions: &mut serde_json::Map<String, Value>,
+    date: &str,
+    score: u32,
+) {
+    let existing = sessions.get(date).and_then(|v| v.as_object()).cloned();
+    let (new_sessions, new_avg, new_sum, todos_completed) = if let Some(ref e) = existing {
         let old_sessions = e.get("sessions").and_then(|v| v.as_u64()).unwrap_or(0);
         // `sum` 필드 우선 사용. 레거시 레코드(sum 미존재)는 avg*sessions으로 역산 (호환성).
         let old_sum = e.get("sum").and_then(|v| v.as_u64()).unwrap_or_else(|| {
-            e.get("avg").and_then(|v| v.as_u64()).unwrap_or(0).saturating_mul(old_sessions)
+            e.get("avg")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .saturating_mul(old_sessions)
         });
         let s = old_sessions + 1;
         let total_sum = old_sum + score as u64;
         let avg = (total_sum + s / 2) / s; // 반올림 평균
-        (s as u32, avg as u32, total_sum)
+        // 기존 todos_completed 보존 (없으면 None).
+        let todos = e.get("todos_completed").and_then(|v| v.as_u64());
+        (s as u32, avg as u32, total_sum, todos)
     } else {
-        (1u32, score, score as u64)
+        (1u32, score, score as u64, None)
     };
 
-    map.insert(
-        today.clone(),
-        json!({
-            "date": today,
-            "sessions": new_sessions,
-            "avg": new_avg,
-            "sum": new_sum,
-        }),
-    );
-    store.set("sessions", Value::Object(map));
-    // save는 호출자가 단일 처리 (DEC-10-8).
-    Ok(())
+    let mut next = serde_json::Map::new();
+    next.insert("date".into(), json!(date));
+    next.insert("sessions".into(), json!(new_sessions));
+    next.insert("avg".into(), json!(new_avg));
+    next.insert("sum".into(), json!(new_sum));
+    if let Some(t) = todos_completed {
+        next.insert("todos_completed".into(), json!(t));
+    }
+    sessions.insert(date.to_string(), Value::Object(next));
 }
 
 /// 슬립 grace 초과 자동 Discarded (DEC-10b, FR-toast-sleep, AC-9).
@@ -381,5 +405,108 @@ fn send_notification<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
 fn emit_toast<R: Runtime>(app: &AppHandle<R>, kind: &str, text: &str) {
     if let Err(e) = app.emit("toast", json!({ "kind": kind, "text": text })) {
         eprintln!("[mohashim] toast emit failed: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_session_record;
+    use serde_json::json;
+
+    /// Phase 12 GAP fix: 기존 todos_completed=N 상태에서 세션 완료 적재 시 N 보존.
+    #[test]
+    fn apply_session_record_preserves_existing_todos_completed() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 0,
+                "avg": 0,
+                "sum": 0,
+                "todos_completed": 3,
+            }),
+        );
+        apply_session_record(&mut sessions, "2026-05-06", 80);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .expect("레코드 존재");
+        // sessions/avg/sum은 정상 갱신.
+        assert_eq!(entry.get("sessions"), Some(&json!(1)));
+        assert_eq!(entry.get("avg"), Some(&json!(80)));
+        assert_eq!(entry.get("sum"), Some(&json!(80)));
+        // todos_completed는 기존 값 유지.
+        assert_eq!(entry.get("todos_completed"), Some(&json!(3)));
+        assert_eq!(entry.get("date"), Some(&json!("2026-05-06")));
+    }
+
+    /// 기존 sessions=N + todos_completed=M 상태에서 세션 +1 시 둘 다 정합 갱신.
+    #[test]
+    fn apply_session_record_merges_with_existing_session_and_todos() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 2,
+                "avg": 60,
+                "sum": 120,
+                "todos_completed": 5,
+            }),
+        );
+        apply_session_record(&mut sessions, "2026-05-06", 90);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("sessions"), Some(&json!(3)));
+        // (120 + 90 + 3/2) / 3 = (210 + 1) / 3 = 70.
+        assert_eq!(entry.get("avg"), Some(&json!(70)));
+        assert_eq!(entry.get("sum"), Some(&json!(210)));
+        assert_eq!(entry.get("todos_completed"), Some(&json!(5)));
+    }
+
+    /// 기존 레코드 부재 시 정상 신규 생성 — todos_completed 필드는 미존재.
+    #[test]
+    fn apply_session_record_creates_new_record_without_todos_field() {
+        let mut sessions = serde_json::Map::new();
+        apply_session_record(&mut sessions, "2026-05-06", 75);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .expect("신규 레코드 생성");
+        assert_eq!(entry.get("sessions"), Some(&json!(1)));
+        assert_eq!(entry.get("avg"), Some(&json!(75)));
+        assert_eq!(entry.get("sum"), Some(&json!(75)));
+        // todos_completed 미존재 (None) — todo 체크 경로 미진입 정상 케이스.
+        assert!(entry.get("todos_completed").is_none());
+        assert_eq!(entry.get("date"), Some(&json!("2026-05-06")));
+    }
+
+    /// 레거시 레코드(sum 필드 부재)에서 avg*sessions로 역산 + todos_completed 보존.
+    #[test]
+    fn apply_session_record_legacy_sum_fallback_preserves_todos() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 2,
+                "avg": 50,
+                // sum 필드 부재 — avg*sessions = 100 로 역산.
+                "todos_completed": 2,
+            }),
+        );
+        apply_session_record(&mut sessions, "2026-05-06", 70);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("sessions"), Some(&json!(3)));
+        // (100 + 70 + 3/2) / 3 = (170 + 1) / 3 = 57.
+        assert_eq!(entry.get("avg"), Some(&json!(57)));
+        assert_eq!(entry.get("sum"), Some(&json!(170)));
+        assert_eq!(entry.get("todos_completed"), Some(&json!(2)));
     }
 }
