@@ -32,8 +32,9 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-describe("grass.ts — gridLevel (BR-G1, AC-G7~G14)", () => {
-  it("AC-G7: gridLevel(0, _) === 0", async () => {
+describe("grass.ts — gridLevel (BR-G1, Phase 12 ANALYSIS.md §10-1 표)", () => {
+  // ---------- 기존 회귀 (Phase 8~10) — Phase 12 표로 갱신 ----------
+  it("AC-G7: gridLevel(0, _, todos=0) === 0", async () => {
     const { gridLevel } = await import("../grass");
     expect(gridLevel(0, 0)).toBe(0);
     expect(gridLevel(0, 100)).toBe(0);
@@ -66,9 +67,10 @@ describe("grass.ts — gridLevel (BR-G1, AC-G7~G14)", () => {
     expect(gridLevel(6, 70)).toBe(4);
   });
 
-  it("AC-G13: gridLevel(6, 69) === 2", async () => {
+  // Phase 12 H-5 역전 해소: sessions≥6은 점수 미달이어도 최소 레벨 3 보장.
+  it("AC-G13 (Phase 12 갱신): gridLevel(6, 69) === 3 — 역전 방지", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(6, 69)).toBe(2);
+    expect(gridLevel(6, 69)).toBe(3);
   });
 
   it("AC-G14: gridLevel(5, 70) === 3 (sessions 3~5 + avg≥60)", async () => {
@@ -84,6 +86,73 @@ describe("grass.ts — gridLevel (BR-G1, AC-G7~G14)", () => {
   it("Lv4 경계: sessions=10 + avg=100 → 4", async () => {
     const { gridLevel } = await import("../grass");
     expect(gridLevel(10, 100)).toBe(4);
+  });
+
+  // ---------- Phase 12 신규 (PRD AC-1~AC-9 + BR-1) ----------
+  it("AC-1: sessions=0, todos=0 → 0", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(0, 0, 0)).toBe(0);
+  });
+
+  it("AC-2: sessions=0, todos≥1 → 1", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(0, 0, 1)).toBe(1);
+    expect(gridLevel(0, 0, 2)).toBe(1);
+  });
+
+  it("AC-3: sessions=0, todos≥3 → 2", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(0, 0, 3)).toBe(2);
+    expect(gridLevel(0, 0, 5)).toBe(2);
+    expect(gridLevel(0, 0, 100)).toBe(2);
+  });
+
+  it("AC-4: sessions 1~2, todos 무관 → 1", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(1, 90, 0)).toBe(1);
+    expect(gridLevel(2, 50, 100)).toBe(1);
+  });
+
+  it("AC-5: sessions 3~5, avg<60 → 2", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(3, 59, 0)).toBe(2);
+    expect(gridLevel(5, 0, 0)).toBe(2);
+  });
+
+  it("AC-6: sessions 3~5, avg≥60 → 3", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(3, 60, 0)).toBe(3);
+    expect(gridLevel(5, 100, 0)).toBe(3);
+  });
+
+  it("AC-7: sessions≥6, avg<70 → 3 (역전 방지)", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(6, 69, 0)).toBe(3);
+    expect(gridLevel(10, 50, 0)).toBe(3);
+    expect(gridLevel(100, 0, 0)).toBe(3);
+  });
+
+  it("AC-8: sessions≥6, avg≥70 → 4", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(6, 70, 0)).toBe(4);
+    expect(gridLevel(10, 100, 0)).toBe(4);
+  });
+
+  it("AC-9: H-5 역전 부재 — 동일 avg에서 sessions 단조 비감소", async () => {
+    const { gridLevel } = await import("../grass");
+    for (let avg = 0; avg <= 100; avg += 10) {
+      let prev = -1;
+      for (const s of [0, 1, 2, 3, 4, 5, 6, 10, 50]) {
+        const lvl = gridLevel(s, avg, 0);
+        expect(lvl).toBeGreaterThanOrEqual(prev);
+        prev = lvl;
+      }
+    }
+  });
+
+  it("BR-1: todo 단독은 최대 레벨 2까지만 (정체성 보존)", async () => {
+    const { gridLevel } = await import("../grass");
+    expect(gridLevel(0, 0, 1000)).toBe(2);
   });
 });
 
@@ -197,6 +266,35 @@ describe("grass.ts — getMonthSessions (D-G4 월별 달력)", () => {
     expect(md.totalSessions).toBe(5);
     // 가중 평균 = (80*2 + 60*3) / 5 = (160 + 180) / 5 = 68
     expect(md.avgScore).toBe(68);
+  });
+
+  it("Phase 12 FR-5/FR-6: todos_completed가 DayCell.todos에 채워지고 gridLevel에 반영", async () => {
+    const { getMonthSessions, formatDate } = await import("../grass");
+    const todayStr = formatDate(new Date());
+    // sessions=0 + todos_completed=3 → 새 표 기준 레벨 2 (BR-1).
+    inMemory.set("sessions", {
+      [todayStr]: { date: todayStr, sessions: 0, avg: 0, todos_completed: 3 },
+    });
+
+    const md = await getMonthSessions(0);
+    const todayCell = md.cells.find((c) => c.date === todayStr);
+    expect(todayCell).toBeDefined();
+    expect(todayCell!.sessions).toBe(0);
+    expect(todayCell!.todos).toBe(3);
+    expect(todayCell!.level).toBe(2);
+  });
+
+  it("Phase 12 FR-6: todos_completed 미존재 레거시 레코드는 todos=0 폴백", async () => {
+    const { getMonthSessions, formatDate } = await import("../grass");
+    const todayStr = formatDate(new Date());
+    inMemory.set("sessions", {
+      [todayStr]: { date: todayStr, sessions: 1, avg: 50 },
+    });
+
+    const md = await getMonthSessions(0);
+    const todayCell = md.cells.find((c) => c.date === todayStr);
+    expect(todayCell!.todos).toBe(0);
+    expect(todayCell!.level).toBe(1); // sessions=1 → 1.
   });
 
   it("totalSessions/avgScore: sum 필드 사용 시 avg 반올림 누적 오류 없음", async () => {

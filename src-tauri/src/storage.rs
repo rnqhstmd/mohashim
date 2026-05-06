@@ -281,6 +281,106 @@ pub fn yearly_cleanup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
+/// Todo 완료/롤백 시 sessions[date] 엔트리의 todos_completed 필드를 갱신하는 순수 로직 (Phase 12 FR-2/3).
+///
+/// `delta`: +1(record) 또는 -1(undo). 결과 카운트는 0 미만으로 떨어지지 않도록 saturating 처리.
+/// 레코드 미존재 + delta>0: 신규 레코드 생성 (sessions=0, avg=0, sum=0, todos_completed=delta).
+/// 레코드 미존재 + delta≤0: no-op — 음수 카운트 방지 (BR-3).
+///
+/// 외부 손상 데이터로 sessions 키가 비객체인 경우, 호출자가 빈 객체로 시작하도록 한다.
+pub(crate) fn apply_todo_delta(
+    sessions: &mut serde_json::Map<String, Value>,
+    date: &str,
+    delta: i32,
+) {
+    let existing = sessions.get(date).and_then(|v| v.as_object()).cloned();
+    match existing {
+        Some(obj) => {
+            let old_count = obj
+                .get("todos_completed")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let new_count = if delta >= 0 {
+                old_count.saturating_add(delta as u64)
+            } else {
+                old_count.saturating_sub((-delta) as u64)
+            };
+            // 기존 필드(sessions, avg, sum, date)는 보존.
+            let mut next = obj.clone();
+            next.insert("todos_completed".into(), json!(new_count));
+            // date 필드 누락 시 키와 동일하게 채움 (정합성).
+            if !next.contains_key("date") {
+                next.insert("date".into(), json!(date));
+            }
+            sessions.insert(date.to_string(), Value::Object(next));
+        }
+        None => {
+            if delta <= 0 {
+                // 레코드 없음 + undo: no-op (BR-3).
+                return;
+            }
+            let mut new_obj = serde_json::Map::new();
+            new_obj.insert("date".into(), json!(date));
+            new_obj.insert("sessions".into(), json!(0));
+            new_obj.insert("avg".into(), json!(0));
+            new_obj.insert("sum".into(), json!(0));
+            new_obj.insert("todos_completed".into(), json!(delta as u64));
+            sessions.insert(date.to_string(), Value::Object(new_obj));
+        }
+    }
+}
+
+/// Todo 완료 카운트 +1 (Phase 12 FR-2).
+///
+/// sessions[date].todos_completed += 1. 레코드 미존재 시 신규 생성 (sessions=0, avg=0, sum=0).
+/// store save 후 `todo-completion` 이벤트 emit (FR-7, AC-12, AC-14).
+/// Rust 단일 writer 정책 유지 (BR-2).
+#[tauri::command]
+pub async fn record_todo_completion<R: Runtime>(
+    app: AppHandle<R>,
+    date: String,
+) -> Result<(), String> {
+    update_sessions_todo(&app, &date, 1)?;
+    app.emit("todo-completion", json!({ "date": date }))
+        .map_err(|e| format!("todo-completion emit failed: {e}"))
+}
+
+/// Todo 완료 롤백 카운트 -1 (Phase 12 FR-3).
+///
+/// sessions[date].todos_completed = max(0, current - 1). 레코드 미존재 시 no-op.
+/// store save 후 `todo-completion` 이벤트 emit.
+#[tauri::command]
+pub async fn undo_todo_completion<R: Runtime>(
+    app: AppHandle<R>,
+    date: String,
+) -> Result<(), String> {
+    update_sessions_todo(&app, &date, -1)?;
+    app.emit("todo-completion", json!({ "date": date }))
+        .map_err(|e| format!("todo-completion emit failed: {e}"))
+}
+
+/// record/undo 공통 store 갱신 — apply_todo_delta 적용 후 save.
+fn update_sessions_todo<R: Runtime>(
+    app: &AppHandle<R>,
+    date: &str,
+    delta: i32,
+) -> Result<(), String> {
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|e| format!("store open failed: {e}"))?;
+    let raw = store.get("sessions").unwrap_or(json!({}));
+    // 외부 편집/손상으로 비객체일 경우, 빈 객체로 시작하여 todo 적재 후 정상 형태로 복원.
+    let mut map = raw
+        .as_object()
+        .cloned()
+        .unwrap_or_else(serde_json::Map::new);
+    apply_todo_delta(&mut map, date, delta);
+    store.set("sessions", Value::Object(map));
+    store
+        .save()
+        .map_err(|e| format!("store save failed: {e}"))
+}
+
 /// SessionLog in-memory append (Phase 10 FR-4, DEC-10-8).
 ///
 /// store.set만 수행하고 store.save()는 호출자가 묶음 단일 호출한다 — sessions 키 적재와
@@ -368,4 +468,176 @@ pub async fn set_auto_launch<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Re
         manager.disable()
     };
     res.map_err(|e| format!("autolaunch toggle failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_todo_delta;
+    use serde_json::{json, Value};
+
+    /// AC-10 (PRD): 레코드 미존재 + record(+1) → 신규 레코드 생성 (sessions=0, avg=0, sum=0, todos_completed=1).
+    #[test]
+    fn apply_todo_delta_creates_new_record_on_record() {
+        let mut sessions = serde_json::Map::new();
+        apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .expect("새 레코드 생성");
+        assert_eq!(entry.get("sessions"), Some(&json!(0)));
+        assert_eq!(entry.get("avg"), Some(&json!(0)));
+        assert_eq!(entry.get("sum"), Some(&json!(0)));
+        assert_eq!(entry.get("todos_completed"), Some(&json!(1)));
+        assert_eq!(entry.get("date"), Some(&json!("2026-05-06")));
+    }
+
+    /// AC-10: 기존 레코드에서 record(+1) → todos_completed += 1, 다른 필드 보존.
+    #[test]
+    fn apply_todo_delta_increments_existing_record() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 4,
+                "avg": 75,
+                "sum": 300,
+                "todos_completed": 2,
+            }),
+        );
+        apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .expect("기존 레코드 유지");
+        assert_eq!(entry.get("sessions"), Some(&json!(4)));
+        assert_eq!(entry.get("avg"), Some(&json!(75)));
+        assert_eq!(entry.get("sum"), Some(&json!(300)));
+        assert_eq!(entry.get("todos_completed"), Some(&json!(3)));
+    }
+
+    /// 기존 레코드에 todos_completed 필드 부재 시 0에서 시작.
+    #[test]
+    fn apply_todo_delta_initializes_missing_field_on_existing() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 1,
+                "avg": 50,
+            }),
+        );
+        apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("todos_completed"), Some(&json!(1)));
+        // 기존 필드 보존.
+        assert_eq!(entry.get("sessions"), Some(&json!(1)));
+        assert_eq!(entry.get("avg"), Some(&json!(50)));
+    }
+
+    /// AC-11: undo로 0 미만이 되지 않음 (saturating_sub).
+    #[test]
+    fn apply_todo_delta_undo_clamps_at_zero() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 0,
+                "avg": 0,
+                "sum": 0,
+                "todos_completed": 0,
+            }),
+        );
+        apply_todo_delta(&mut sessions, "2026-05-06", -1);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("todos_completed"), Some(&json!(0)));
+    }
+
+    /// AC-11: 정상 undo는 -1.
+    #[test]
+    fn apply_todo_delta_undo_decrements() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "date": "2026-05-06",
+                "sessions": 0,
+                "avg": 0,
+                "sum": 0,
+                "todos_completed": 3,
+            }),
+        );
+        apply_todo_delta(&mut sessions, "2026-05-06", -1);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("todos_completed"), Some(&json!(2)));
+    }
+
+    /// 레코드 미존재 + undo: no-op (BR-3, 음수 카운트 차단).
+    #[test]
+    fn apply_todo_delta_undo_on_missing_is_noop() {
+        let mut sessions = serde_json::Map::new();
+        apply_todo_delta(&mut sessions, "2026-05-06", -1);
+        assert!(sessions.get("2026-05-06").is_none());
+    }
+
+    /// 신규 레코드 생성 시 date 키와 entry.date 필드가 일치.
+    #[test]
+    fn apply_todo_delta_existing_without_date_field_fills_it() {
+        let mut sessions = serde_json::Map::new();
+        sessions.insert(
+            "2026-05-06".into(),
+            json!({
+                "sessions": 1,
+                "avg": 80,
+                "sum": 80,
+            }),
+        );
+        apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("date"), Some(&json!("2026-05-06")));
+        assert_eq!(entry.get("todos_completed"), Some(&json!(1)));
+    }
+
+    /// 다중 record 누적 — 4회 호출 후 todos_completed=4.
+    #[test]
+    fn apply_todo_delta_multi_record_accumulates() {
+        let mut sessions = serde_json::Map::new();
+        for _ in 0..4 {
+            apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        }
+        let entry = sessions
+            .get("2026-05-06")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(entry.get("todos_completed"), Some(&json!(4)));
+    }
+
+    /// 다른 날짜는 독립적으로 누적.
+    #[test]
+    fn apply_todo_delta_isolates_dates() {
+        let mut sessions = serde_json::Map::new();
+        apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        apply_todo_delta(&mut sessions, "2026-05-07", 1);
+        apply_todo_delta(&mut sessions, "2026-05-06", 1);
+        let day6 = sessions.get("2026-05-06").and_then(|v| v.as_object()).unwrap();
+        let day7 = sessions.get("2026-05-07").and_then(|v| v.as_object()).unwrap();
+        assert_eq!(day6.get("todos_completed"), Some(&json!(2)));
+        assert_eq!(day7.get("todos_completed"), Some(&json!(1)));
+        // 음 unused 변수 경고 회피.
+        let _: &Value = sessions.get("2026-05-06").unwrap();
+    }
 }

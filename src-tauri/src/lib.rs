@@ -34,6 +34,8 @@ pub fn run() {
             storage::reset_all,
             storage::get_auto_launch,
             storage::set_auto_launch,
+            storage::record_todo_completion,
+            storage::undo_todo_completion,
         ])
         .setup(|app| {
             // setup 순서: storage 시드 → boot discard → power observer → tray → score.
