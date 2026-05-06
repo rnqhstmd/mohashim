@@ -12,7 +12,26 @@ type ContributionGraphProps = {
   onHover?: (idx: number | null) => void;
   hoveredIdx?: number | null;
   hideNav?: boolean;
+  /**
+   * Phase 10 FR-17, AC-17, BR-6: 이전 월 버튼 비활성화 경계 (음수 또는 0).
+   * monthOffset이 minOffset 이하이면 이전 월 버튼 disabled. undefined면 비활성화하지 않음 (하위 호환).
+   */
+  minOffset?: number;
 };
+
+/**
+ * 이전 월 버튼 disabled 판정 (DEC-10-5).
+ *
+ * BR-6 하위 호환: minOffset이 undefined면 항상 활성화 (false).
+ * 경계: monthOffset <= minOffset일 때 disabled (예: minOffset=-4, monthOffset=-4 → true).
+ */
+export function shouldDisablePrev(
+  monthOffset: number,
+  minOffset: number | undefined
+): boolean {
+  if (minOffset === undefined) return false;
+  return monthOffset <= minOffset;
+}
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
@@ -30,7 +49,9 @@ export function ContributionGraph({
   monthOffset,
   onMonthChange,
   hideNav = false,
+  minOffset,
 }: ContributionGraphProps) {
+  const prevDisabled = shouldDisablePrev(monthOffset, minOffset);
   return (
     <div className="flex flex-col gap-2">
       {!hideNav && (
@@ -38,8 +59,9 @@ export function ContributionGraph({
           <button
             type="button"
             onClick={() => onMonthChange(monthOffset - 1)}
+            disabled={prevDisabled}
             aria-label="이전 달"
-            className="px-2 py-1 text-sm text-deep"
+            className="px-2 py-1 text-sm text-deep disabled:text-deep/20"
           >
             ←
           </button>

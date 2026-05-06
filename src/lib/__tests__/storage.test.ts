@@ -135,8 +135,8 @@ describe("storage", () => {
     const mod = await import("../storage");
     const result = await mod.getTodos();
     expect(result).toEqual([
-      { id: "t1", text: "구버전", done: false, tag: null, loc: null, active: false },
-      { id: "t2", text: "완료", done: true, tag: null, loc: null, active: false },
+      { id: "t1", text: "구버전", done: false, tag: null, loc: null, active: false, completedAt: null },
+      { id: "t2", text: "완료", done: true, tag: null, loc: null, active: false, completedAt: null },
     ]);
   });
 
@@ -189,6 +189,99 @@ describe("storage", () => {
     await mod.set("active_phase", "focus");
     // 런타임 회피로 호출했을 때도 store가 받기는 하지만, 정상 경로에서는 컴파일 에러로 차단됨.
     // 본 테스트는 타입 가드의 존재만 확인 (@ts-expect-error 미발생 시 테스트 실패).
+    expect(true).toBe(true);
+  });
+
+  // ---------- Phase 10 데이터 모델 확장 ----------
+
+  it("AC-5 (FR-10): STORE_DEFAULTS에 session_logs=[], last_cleanup_year=0 신규 키 포함", async () => {
+    const mod = await import("../storage");
+    expect(mod.STORE_DEFAULTS.session_logs).toEqual([]);
+    expect(mod.STORE_DEFAULTS.last_cleanup_year).toBe(0);
+  });
+
+  it("AC-5: get('session_logs') / get('last_cleanup_year') 부재 시 default 반환", async () => {
+    const mod = await import("../storage");
+    await expect(mod.get("session_logs")).resolves.toEqual([]);
+    await expect(mod.get("last_cleanup_year")).resolves.toBe(0);
+  });
+
+  it("AC-3 (FR-1): getTodos completedAt 폴백 — 부재 시 null", async () => {
+    inMemory.set("todos", [
+      { id: "t1", text: "구버전", done: false },
+      { id: "t2", text: "완료", done: true },
+    ]);
+    const mod = await import("../storage");
+    const result = await mod.getTodos();
+    expect(result[0].completedAt).toBeNull();
+    expect(result[1].completedAt).toBeNull();
+  });
+
+  it("AC-3 (FR-1): getTodos completedAt 폴백 — 문자열 보존", async () => {
+    inMemory.set("todos", [
+      { id: "t1", text: "완료기록", done: true, completedAt: "2026-05-06T12:00:00.000Z" },
+    ]);
+    const mod = await import("../storage");
+    const result = await mod.getTodos();
+    expect(result[0].completedAt).toBe("2026-05-06T12:00:00.000Z");
+  });
+
+  it("AC-3: getTodos completedAt 폴백 — 비문자열은 null", async () => {
+    inMemory.set("todos", [
+      { id: "t1", text: "잘못된형식", done: true, completedAt: 12345 },
+    ]);
+    const mod = await import("../storage");
+    const result = await mod.getTodos();
+    expect(result[0].completedAt).toBeNull();
+  });
+
+  it("AC-7 (FR-4): getSessionLogs — 비배열은 빈 배열로 폴백", async () => {
+    inMemory.set("session_logs", { not: "array" });
+    const mod = await import("../storage");
+    await expect(mod.getSessionLogs()).resolves.toEqual([]);
+  });
+
+  it("AC-7: getSessionLogs — 정상 배열은 그대로 반환", async () => {
+    const log = {
+      id: "sl-123-80",
+      date: "2026-05-06",
+      start_at: "2026-05-06T12:00:00+09:00",
+      end_at: "2026-05-06T12:25:00+09:00",
+      duration_mins: 25,
+      score: 80,
+      todos_done: [],
+    };
+    inMemory.set("session_logs", [log]);
+    const mod = await import("../storage");
+    await expect(mod.getSessionLogs()).resolves.toEqual([log]);
+  });
+
+  it("AC-10: getLastCleanupYear — 부재/비숫자는 0 폴백", async () => {
+    const mod = await import("../storage");
+    await expect(mod.getLastCleanupYear()).resolves.toBe(0);
+    inMemory.set("last_cleanup_year", "2025");
+    vi.resetModules();
+    const mod2 = await import("../storage");
+    await expect(mod2.getLastCleanupYear()).resolves.toBe(0);
+  });
+
+  it("AC-10: getLastCleanupYear — 숫자값 보존", async () => {
+    inMemory.set("last_cleanup_year", 2026);
+    const mod = await import("../storage");
+    await expect(mod.getLastCleanupYear()).resolves.toBe(2026);
+  });
+
+  it("BR-1: set은 session_logs 키를 컴파일 타임에 차단", async () => {
+    const mod = await import("../storage");
+    // @ts-expect-error session_logs는 Rust 단일 writer (BR-1) — set 시그니처에서 Exclude됨
+    await mod.set("session_logs", []);
+    expect(true).toBe(true);
+  });
+
+  it("FR-7: set은 last_cleanup_year 키를 컴파일 타임에 차단", async () => {
+    const mod = await import("../storage");
+    // @ts-expect-error last_cleanup_year는 Rust 단일 writer — set 시그니처에서 Exclude됨
+    await mod.set("last_cleanup_year", 2026);
     expect(true).toBe(true);
   });
 });

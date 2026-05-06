@@ -4,6 +4,9 @@
 //! 한 곳에 집약한다. **`active_phase` 스토어 키의 write는 본 모듈에서만 수행**한다 —
 //! Rust 단일 writer 정책으로 race 차단 (MUST-1).
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_notification::NotificationExt;
@@ -15,6 +18,16 @@ use crate::score::shared::{
     store_time_left,
 };
 use crate::storage::{ACTIVE_PHASE_KEY, STORE_FILE};
+
+/// Focus 세션 시작 시각 (Unix epoch ms). Phase 10 FR-4 SessionLog `start_at` 기록용 (DEC-10-1).
+///
+/// cleanup 4경로:
+/// - on_complete_consumed: `swap(0, AcqRel)` — start 값 회수 후 0으로 리셋.
+/// - discard_session / auto_discard_on_boot / on_sleep_overflow_discard: `store(0, Release)`.
+/// - reset_runtime_state: `store(0, Release)` — reset_all 후 stale 차단.
+///
+/// BR-2: focus_start의 Idle 가드 통과 후에만 갱신되므로, 비Idle 재호출은 stale 시각을 덮어쓰지 않는다.
+pub static FOCUS_START_AT_MS: AtomicU64 = AtomicU64::new(0);
 
 /// 슬립 grace 기준 (BR-sleep-1, DEC-10a/b). wall-clock 경과 ≤ 180s: 세션 유지.
 pub const SLEEP_GRACE_SECS: u64 = 180;
@@ -52,6 +65,12 @@ pub async fn focus_start<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let minutes = read_minutes(&app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
     // Phase 8 R-G2: Focus 시작 시 누적 점수 리셋.
     reset_session_totals();
+    // Phase 10 FR-4 (BR-2): Idle 가드 통과 후 Focus 시작 시각 기록. 비Idle 재호출은 위 early return으로 차단.
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    FOCUS_START_AT_MS.store(now_ms, Ordering::Release);
     store_phase(Phase::Focus);
     store_time_left(minutes.saturating_mul(60));
     write_active_phase(&app, "focus");
@@ -69,6 +88,8 @@ pub async fn discard_session<R: Runtime>(app: AppHandle<R>) -> Result<(), String
             store_phase(Phase::Idle);
             store_time_left(0);
             write_active_phase(&app, "idle");
+            // Phase 10 DEC-10-7: Discarded 경로 cleanup. SessionLog 미적재.
+            FOCUS_START_AT_MS.store(0, Ordering::Release);
         }
         _ => {}
     }
@@ -124,13 +145,63 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     if current_phase() != Phase::Complete {
         return;
     }
+    // 외부 가드(위)에서 Phase::Complete 진입이 보장되므로 내부 재검사 불필요.
+    // DEC-10-8: snapshot_and_reset_session_avg()는 부수효과(누적값 리셋)가 있으므로
+    // 외부 가드를 변경할 때 비정상 경로에서 호출되지 않도록 주의.
 
     let avg = snapshot_and_reset_session_avg();
-    if current_phase() == Phase::Complete {
-        if let Err(e) = append_session_record(app, avg) {
-            eprintln!("[mohashim] append_session_record failed: {e}");
+    // 1. sessions 적재 (in-memory only, DEC-10-8).
+    if let Err(e) = append_session_record(app, avg) {
+        eprintln!("[mohashim] append_session_record failed: {e}");
+        // record 실패 시 session_logs도 적재하지 않고 store.save도 호출하지 않는다.
+        // sessions와 session_logs 부분 일관성을 회피한다 (Q1 결정).
+        // 후속 phase 처리(store_phase Idle 등)는 그대로 수행 — phase 정상 복귀 보장.
+        // FOCUS_START_AT_MS도 cleanup하여 stale 시각이 남지 않도록 한다 (DEC-10-7).
+        FOCUS_START_AT_MS.store(0, Ordering::Release);
+    } else {
+        // 2. SessionLog 적재 (FR-4, DEC-10-2/3, DEC-10-7 swap cleanup).
+        let start_ms = FOCUS_START_AT_MS.swap(0, Ordering::AcqRel);
+        let end_local = chrono::Local::now();
+        let end_at_iso = end_local.to_rfc3339();
+        let date_str = end_local.format("%Y-%m-%d").to_string();
+        // timestamp_millis()는 i64 — Unix epoch 이전(현실 거의 없음) 음수 가능.
+        // FOCUS_START_AT_MS와 동일하게 u64로 통일 (음수는 0으로 가드).
+        let end_ms = end_local.timestamp_millis().max(0) as u64;
+        // start_ms == 0이면 cleanup 후 재진입 또는 timestamp_millis_opt 변환 실패.
+        // end_at_iso로 폴백하면 start_at == end_at이 되어 duration_mins(설정값)와
+        // (end_at - start_at)이 불일치한다 — 본 Phase 수용 edge case (PRD 미명시,
+        // 비정상 경로). Phase 13 상세 조회 도입 시 정합 정책 재검토.
+        let start_at_iso = if start_ms > 0 {
+            use chrono::TimeZone;
+            chrono::Local
+                .timestamp_millis_opt(start_ms as i64)
+                .single()
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|| end_at_iso.clone())
+        } else {
+            end_at_iso.clone()
+        };
+        let duration_mins = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES) as u32;
+        let id = format!("sl-{}-{}", end_ms, avg);
+        if let Err(e) = crate::storage::append_session_log(
+            app,
+            &id,
+            &date_str,
+            &start_at_iso,
+            &end_at_iso,
+            duration_mins,
+            avg,
+        ) {
+            eprintln!("[mohashim] append_session_log failed: {e}");
+        }
+        // 3. 단일 save 원자화 (DEC-10-8): sessions/session_logs 부분 일관성 회피.
+        if let Ok(store) = app.store(STORE_FILE) {
+            if let Err(e) = store.save() {
+                eprintln!("[mohashim] on_complete_consumed save failed: {e}");
+            }
         }
     }
+    // record 실패 여부와 무관하게 phase 정상 복귀 보장 (Q1).
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
@@ -140,6 +211,9 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// 같은 날짜 키가 이미 있으면 sessions++ + 가중 평균 갱신. 없으면 신규 1회 레코드.
 /// 자정 경계는 chrono::Local 기준 — 23:55 시작 → 00:05 Complete 시 익일 적재.
+///
+/// Phase 10 DEC-10-8: store.set만 수행하고 store.save()는 호출자(`on_complete_consumed`)가
+/// session_logs 적재와 묶어 단일 save로 원자화한다. sessions/session_logs 부분 일관성 회피.
 fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(), String> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let store = app
@@ -176,7 +250,7 @@ fn append_session_record<R: Runtime>(app: &AppHandle<R>, score: u32) -> Result<(
         }),
     );
     store.set("sessions", Value::Object(map));
-    store.save().map_err(|e| format!("store save failed: {e}"))?;
+    // save는 호출자가 단일 처리 (DEC-10-8).
     Ok(())
 }
 
@@ -185,6 +259,8 @@ pub fn on_sleep_overflow_discard<R: Runtime>(app: &AppHandle<R>) {
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
+    // Phase 10 DEC-10-7: Discarded 경로 cleanup. SessionLog 미적재.
+    FOCUS_START_AT_MS.store(0, Ordering::Release);
     emit_toast(
         app,
         "sleep_discard",
@@ -205,6 +281,9 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
     let active = value.as_str().unwrap_or("idle");
     if active == "focus" || active == "break" {
         write_active_phase(app, "idle");
+        // Phase 10 DEC-10-7: 부트 시점 자동 Discarded cleanup. in-memory atomic은 default 0이지만,
+        // 미래에 부트 시 atomic을 미리 로드하더라도 안전하도록 명시 리셋.
+        FOCUS_START_AT_MS.store(0, Ordering::Release);
     }
     Ok(())
 }
@@ -215,6 +294,8 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
 pub fn reset_runtime_state() {
     store_phase(Phase::Idle);
     store_time_left(0);
+    // Phase 10 DEC-10-7: reset_all 후 stale FOCUS_START_AT_MS 차단.
+    FOCUS_START_AT_MS.store(0, Ordering::Release);
 }
 
 // =====================================================================

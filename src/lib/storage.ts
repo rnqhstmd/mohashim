@@ -16,6 +16,12 @@ export type Todo = {
   tag: string | null;
   loc: string | null;
   active: boolean;
+  /**
+   * 완료 시각 (FR-1, DEC-10-4). 미완료/미설정 시 null.
+   * JS `new Date().toISOString()` UTC `Z` 포맷 — yearly_cleanup 정리 기준은 `done` 단순 비교이므로
+   * timezone 무관. Phase 12 grass 집계용으로 도입.
+   */
+  completedAt: string | null;
 };
 export type WorkTag = { id: string; emoji: string; label: string; color: string };
 export type Location = { id: string; emoji: string; label: string; color: string };
@@ -24,6 +30,24 @@ export type SessionRecord = {
   sessions: number; // 그 날 완료 세션 수
   avg: number;      // 그 날 평균 집중 점수 (0~100)
   sum?: number;     // 그 날 누적 점수 합계 (avg 역산 오류 방지용 내부 필드)
+  /**
+   * 그 날 완료 todo 개수 (FR-2). Phase 12에서 채워진다 — 본 Phase는 타입만 확장.
+   */
+  todos_completed?: number;
+};
+/**
+ * Focus 세션 단위 로그 (FR-4). Rust 단일 writer (BR-1) — TS는 read-only.
+ * id 포맷: `sl-{end_at_unix_ms}-{score}` (DEC-10-2).
+ * 시각: chrono::Local::to_rfc3339() (DEC-10-3, offset 명시).
+ */
+export type SessionLog = {
+  id: string;
+  date: string;          // 'YYYY-MM-DD' Local
+  start_at: string;      // RFC3339 with offset
+  end_at: string;        // RFC3339 with offset
+  duration_mins: number;
+  score: number;         // 0~100
+  todos_done: string[];  // 본 Phase 항상 [] (Phase 12 todo ID 적재)
 };
 export type ActivePhase = "idle" | "focus" | "break";
 
@@ -38,6 +62,8 @@ export type StoreSchema = {
   locations: Location[];
   sessions: Record<string, SessionRecord>;
   active_phase: ActivePhase;
+  session_logs: SessionLog[];
+  last_cleanup_year: number;
 };
 
 export const STORE_FILE = ".store.json";
@@ -53,6 +79,8 @@ export const STORE_DEFAULTS: StoreSchema = {
   locations: [],
   sessions: {},
   active_phase: "idle",
+  session_logs: [],
+  last_cleanup_year: 0,
 };
 
 type StoreInstance = Awaited<ReturnType<typeof Store.load>>;
@@ -106,8 +134,24 @@ export type SetOptions = {
   save?: boolean;
 };
 
+/**
+ * 스토어 키 set. Rust 단일 writer 키(`active_phase`, `sessions`, `auto_launch_enabled`,
+ * `session_logs`, `last_cleanup_year`)는 제너릭 Exclude로 컴파일 타임 차단된다.
+ *
+ * **단, TS 타입 차단은 런타임 보장이 아니다** — `ensureStore()`로 획득한 `storeInstance`를
+ * 통해 `store.set(key, value)`을 직접 호출하면 차단되지 않는다. `storeInstance`는 모듈
+ * private이므로 외부 우회는 불가능하나, 모듈 내부 신규 코드 추가 시 단일 writer 키를
+ * 직접 쓰지 않도록 주의. 단일 writer 키 변경은 반드시 Rust IPC를 경유한다.
+ */
 export async function set<
-  K extends Exclude<keyof StoreSchema, "active_phase" | "sessions" | "auto_launch_enabled">
+  K extends Exclude<
+    keyof StoreSchema,
+    | "active_phase"
+    | "sessions"
+    | "auto_launch_enabled"
+    | "session_logs"
+    | "last_cleanup_year"
+  >
 >(
   key: K,
   value: StoreSchema[K],
@@ -196,6 +240,7 @@ export async function getTodos(): Promise<Todo[]> {
     tag: typeof t?.tag === "string" ? t.tag : null,
     loc: typeof t?.loc === "string" ? t.loc : null,
     active: !!t?.active,
+    completedAt: typeof t?.completedAt === "string" ? t.completedAt : null,
   }));
 }
 
@@ -262,9 +307,28 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
 }
 
 /**
+ * 세션 로그 read-only 헬퍼 (FR-4). session_logs 키의 writer는 Rust 단일 (BR-1).
+ * 비배열 잔존 데이터는 빈 배열로 폴백.
+ */
+export async function getSessionLogs(): Promise<SessionLog[]> {
+  const raw = await get("session_logs");
+  if (!Array.isArray(raw)) return [];
+  return raw as SessionLog[];
+}
+
+/**
+ * 마지막 yearly_cleanup 실행 연도 read-only 헬퍼 (FR-7, AC-16).
+ * 부재/타입 불일치 시 0 폴백 — 첫 실행 또는 reset_all 직후로 간주된다.
+ */
+export async function getLastCleanupYear(): Promise<number> {
+  const raw = await get("last_cleanup_year");
+  return typeof raw === "number" ? raw : 0;
+}
+
+/**
  * 사용자 데이터 전체 초기화. Rust `reset_all` 커맨드를 호출한다.
  *
- * Rust 측에서 atomic 강제 → store clear → 10키 default 시드 순으로 처리한다.
+ * Rust 측에서 atomic 강제 → store clear → 12키 default 시드 순으로 처리한다.
  * 실패 시 에러를 호출자에게 재전파하여 상위(SettingsScreen)가 onResetDone 미호출 등
  * 후속 처리를 결정할 수 있도록 한다.
  */
