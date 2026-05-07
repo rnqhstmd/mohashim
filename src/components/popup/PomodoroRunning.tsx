@@ -66,13 +66,13 @@ export function PomodoroRunning({
           <SpeechBubble text={phrase} />
         </div>
       </div>
-      <span className="text-5xl font-extrabold tabular-nums tracking-tight text-deepNavy">
+      <span className="text-5xl font-extrabold tabular-nums tracking-tight text-ink">
         {formatMmSs(timeLeft)}
       </span>
       <button
         type="button"
         onClick={() => setShowDiscard(true)}
-        className="mt-2 inline-flex items-center rounded-full border-[1.5px] border-ink bg-paperWarm px-3 py-1 text-xs font-bold text-ink shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform active:translate-x-[1.5px] active:translate-y-[1.5px] active:shadow-none"
+        className="mt-2 inline-flex items-center rounded-2xl border-[1.5px] border-ink/10 bg-transparent px-4 py-1.5 text-xs font-medium text-ink/55 transition-colors hover:border-ink/20 hover:text-ink/75"
       >
         그만하기
       </button>

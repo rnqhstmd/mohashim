@@ -14,16 +14,17 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 /**
  * 하단 탭 바 — 3개 탭 (todos/grass/settings).
  *
- * 활성 탭은 deep 배경 pill, 비활성 탭은 deep/60 텍스트.
+ * Mohashim Design.html 정렬: 활성 탭은 deepNavy 8% tint pill + deepNavy bold 텍스트,
+ * 비활성 탭은 transparent + MUTED 톤. borderTop 없이 padding으로 분리한다.
  */
 export function BottomTabBar({ tab, onChange }: BottomTabBarProps) {
   return (
-    <nav className="relative z-10 flex justify-around border-t border-ink/10 bg-paperWarm/90 p-2 backdrop-blur-sm">
+    <nav className="relative z-10 flex gap-1 px-3 pb-2.5 pt-1.5">
       {TABS.map((item) => {
         const isActive = item.id === tab;
         const className = isActive
-          ? "rounded-full bg-deepNavy px-3 py-1 text-sm font-bold text-white shadow-[1px_1px_0_0_#2b2520]"
-          : "px-3 py-1 text-sm font-medium text-deep/60 hover:text-deep";
+          ? "flex-1 rounded-[10px] bg-deepNavy/10 py-1.5 text-[10px] font-extrabold text-deepNavy"
+          : "flex-1 rounded-[10px] bg-transparent py-1.5 text-[10px] font-semibold text-deep/55 transition-colors hover:text-deep/80";
         return (
           <button
             key={item.id}
