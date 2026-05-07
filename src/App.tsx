@@ -11,7 +11,6 @@ import {
   canEnterMain,
   getPermissionStatus,
   openPermissionSettings,
-  requestAccessibilityPermission,
   requestMicrophonePermission,
   type PermissionKind,
   type PermissionState,
@@ -109,17 +108,26 @@ function App() {
     };
   }, []);
 
+  // Phase 21: 마이크 카드 안의 "권한 요청" 버튼 전용. 시스템 다이얼로그를 트리거.
+  const handleRequestMic = async () => {
+    if (isConsenting) return;
+    setIsConsenting(true);
+    try {
+      await requestMicrophonePermission();
+      const next = await getPermissionStatus();
+      setPermissions(next);
+    } finally {
+      setIsConsenting(false);
+    }
+  };
+
+  // Phase 21: 최하단 "시작하기" 버튼은 둘 다 granted일 때만 활성화돼서 호출됨.
+  // 권한 재확인 후 onboarding_completed 플래그 설정 → MainScreen 전환.
   const handleConsent = async () => {
     if (isConsenting) return;
     setIsConsenting(true);
     try {
-      const mic = await requestMicrophonePermission();
-      if (mic !== "granted") {
-        const next = await getPermissionStatus();
-        setPermissions(next);
-        return;
-      }
-      await requestAccessibilityPermission();
+      // 최신 권한 상태 재조회 (방어적 — focus listener와 별개로 한 번 더).
       const next = await getPermissionStatus();
       setPermissions(next);
       if (canEnterMain(next)) {
@@ -156,6 +164,7 @@ function App() {
           permissions={permissions}
           isConsenting={isConsenting}
           onConsent={handleConsent}
+          onRequestMic={handleRequestMic}
           onOpenSettings={handleOpenSettings}
         />
       )}

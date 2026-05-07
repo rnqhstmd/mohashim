@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- 전체 캔버스를 solid cream으로 채움 — macOS가 squircle mask 자동 적용 -->
-  <rect width="1024" height="1024" fill="#fef3d8"/>
+  <!-- 1024 squircle (Apple HIG cornerRadius 22.65%) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="#fef3d8"/>
 
-  <!-- Potato 손그림 (popup.jsx line 287 MohashimAppIcon scale 4 정렬) -->
+  <!-- Potato 손그림 (popup.jsx line 287 MohashimAppIcon scale 4) -->
   <g transform="translate(112, 100) scale(4)">
     <!-- 새싹 stem -->
     <path d="M100 38 Q99.5 28 100 22" stroke="#5a3d1f" stroke-width="2.5" fill="none" stroke-linecap="round"/>

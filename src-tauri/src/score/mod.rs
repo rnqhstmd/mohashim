@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::audio;
+#[cfg(not(target_os = "macos"))]
 use crate::input;
 use crate::permissions::{self, PermissionStatus};
 use crate::power;
@@ -52,8 +53,20 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         }
     }
     if ax {
+        // Phase 21 핫픽스: rdev 0.5의 macOS 버그 (TSMGetInputSourceProperty가
+        // 백그라운드 스레드에서 호출되어 dispatch_assert_queue_fail → abort).
+        // macOS에서는 input 리스너를 임시 비활성화하여 크래시를 막는다.
+        // 결과: seconds_idle=0 폴백 → work=80 항상 유지 (자리비움 감지 비활성).
+        // 후속 작업: NSEvent.addGlobalMonitorForEvents로 교체.
+        #[cfg(not(target_os = "macos"))]
         if let Err(e) = input::start() {
             eprintln!("[mohashim] input start failed: {e}");
+        }
+        #[cfg(target_os = "macos")]
+        {
+            eprintln!(
+                "[mohashim] macOS: rdev input listener disabled (Phase 21 hotfix; rdev 0.5 TSM thread bug)"
+            );
         }
     }
 

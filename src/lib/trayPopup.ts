@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   availableMonitors,
   getCurrentWindow,
-  PhysicalPosition,
+  LogicalPosition,
 } from "@tauri-apps/api/window";
 
 /**
@@ -108,75 +108,50 @@ export async function attachTrayClickListener(
   os: TargetOs,
 ): Promise<() => void> {
   const win = getCurrentWindow();
+  // Phase 21: Rust(tray.rs)가 visibility(show/hide) 토글을 담당한다. JS는 위치
+  // 정밀화만 담당 — Rust가 default 위치에 잠시 띄운 직후 JS가 정확한 트레이
+  // 아이콘 아래 좌표로 setPosition. 두 측이 같은 동작을 하지 않도록 분리하여
+  // race/double-toggle 회피.
   const unlisten = await listen<TrayClickPayload>(
     "tray-click",
     async (event) => {
       try {
-        console.log("[mohashim] tray-click received", event.payload);
-        const isVisible = await win.isVisible();
-        console.log("[mohashim] window isVisible=", isVisible);
-        if (isVisible) {
-          await win.hide();
-          return;
-        }
         const monitors = await availableMonitors();
         let monitor = pickMonitorForPoint(
           monitors,
           event.payload.x,
           event.payload.y,
         );
-        // Phase 21 사용자 피드백: 팝업 안 뜸 — pickMonitorForPoint 매칭 실패 시
-        // primary monitor로 강제 폴백 (이전: setPosition 없이 그냥 show만 호출 →
-        // 윈도우가 이전 좌표(off-screen 가능)에 그대로 머무름).
-        if (!monitor) {
-          monitor = monitors[0];
-          console.warn(
-            "[mohashim] tray-click monitor 매칭 실패 — monitors[0] 폴백",
-          );
-        }
-        const sf = monitor?.scaleFactor ?? 2;
-        const popupPhysical: PopupGeometryPhysical = {
-          width: Math.round(320 * sf),
-          height: Math.round(470 * sf),
-        };
+        if (!monitor) monitor = monitors[0];
+        if (!monitor) return;
 
-        let targetX: number;
-        let targetY: number;
-        if (monitor) {
-          const monB: MonitorBoundsPhysical = {
-            x: monitor.position.x,
-            y: monitor.position.y,
-            width: monitor.size.width,
-            height: monitor.size.height,
-          };
-          const { x, y } = computePopupPosition(
-            event.payload,
-            popupPhysical,
-            monB,
-            os,
-          );
-          targetX = x;
-          targetY = y;
+        const sf = monitor.scaleFactor;
+        // tray-click payload는 physical 좌표. 모니터 정보 + sf로 logical 좌표 계산.
+        const iconCenterXPhys = event.payload.x + event.payload.iconWidth / 2;
+        const iconCenterXLogical = iconCenterXPhys / sf;
+        const iconBottomYPhys = event.payload.y + event.payload.iconHeight;
+        const iconTopYPhys = event.payload.y;
+        const monLeftLogical = monitor.position.x / sf;
+        const monTopLogical = monitor.position.y / sf;
+        const monRightLogical = monLeftLogical + monitor.size.width / sf;
+        const monBottomLogical = monTopLogical + monitor.size.height / sf;
+
+        const popupW = 320;
+        const popupH = 470;
+        // 꼬리(tail)가 logical x=22~30 부근이라 popup 좌상단은 iconCenter - (320-26)
+        // ≈ iconCenter - 294. 단, 화면 밖으로 나가지 않도록 clamp.
+        let x = Math.round(iconCenterXLogical - (popupW - 26));
+        let y: number;
+        if (os === "macos") {
+          y = Math.round(iconBottomYPhys / sf);
         } else {
-          // 어떤 모니터도 없으면 (0,0) — 보호적 폴백.
-          targetX = 0;
-          targetY = 0;
+          y = Math.round(iconTopYPhys / sf - popupH);
         }
-        console.log(
-          `[mohashim] tray-click setPosition x=${targetX} y=${targetY} sf=${sf}`,
-        );
-        await win.setPosition(new PhysicalPosition(targetX, targetY));
-        await win.show();
-        await win.setFocus();
+        x = Math.max(monLeftLogical, Math.min(monRightLogical - popupW, x));
+        y = Math.max(monTopLogical, Math.min(monBottomLogical - popupH, y));
+        await win.setPosition(new LogicalPosition(x, y));
       } catch (e) {
-        console.error("[mohashim] tray-click handler failed", e);
-        // 마지막 시도: 좌표 무시하고 그냥 show — 최소한 어딘가에는 뜨도록.
-        try {
-          await win.show();
-          await win.setFocus();
-        } catch (ee) {
-          console.error("[mohashim] fallback show failed", ee);
-        }
+        console.error("[mohashim] tray-click position adjust failed", e);
       }
     },
   );

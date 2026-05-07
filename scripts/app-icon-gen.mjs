@@ -1,16 +1,14 @@
 #!/usr/bin/env node
-// Mohashim 앱 아이콘 생성기 (Phase 21 사용자 피드백).
+// Mohashim 앱 아이콘 생성기 (Phase 21).
 //
-// 핵심: macOS Big Sur+는 .app 아이콘에 시스템 squircle mask를 자동 적용한다.
-// SVG 안에 자체 squircle path를 그리고 corners를 transparent로 두면, macOS가
-// 그 transparent 영역에 default 회색 backdrop을 덧칠하여 "이중 squircle" 형태로
-// 보이는 버그가 발생한다 (사용자 스크린샷 #6 — 뒤 회색 squircle + 앞 cream squircle).
+// 핵심 결정 (이중 squircle 버그 회피):
+//   - 단순 솔리드 사각형 → macOS가 default backdrop 덧칠 → 이중 squircle.
+//   - 단순 transparent corners + 자체 squircle path → 동일 이중 형태.
+//   - 해결: Apple HIG에 가까운 cornerRadius로 rounded rect 그려서 macOS의
+//     squircle mask와 거의 일치시키고, transparent corners를 두지 않는다.
 //
-// 해결: 전체 1024×1024 캔버스를 solid cream으로 채우고 squircle path는 그리지 않는다.
-// macOS가 시스템 mask를 입혀 깔끔한 단일 squircle 형태로 렌더된다.
-//
-// 출력:
-//   - src-tauri/icons/32x32.png / 128x128.png / 128x128@2x.png / icon.png
+// 1024×1024 캔버스. 디자인의 cream squircle을 rx=ry=232 (≈ 22.65%)로 그려
+// Apple Big Sur+ 시스템 squircle과 시각적으로 매칭.
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -28,13 +26,14 @@ const OUTLINE = "#5a3d1f";
 const CHEEK = "#f9c4b0";
 const SPROUT = "#7dc89a";
 
-// 1024x1024 viewBox. squircle path 미사용 — 전체 캔버스 solid cream 배경 → macOS가
-// 자동으로 squircle mask 적용. Potato는 디자인 시안 좌표 (translate 112,100 + scale 4).
+// Apple HIG macOS app icon은 1024 캔버스 + 824 visible squircle (100px padding)
+// 또는 1024 캔버스에 cornerRadius ≈ 22.65% (≈232) rounded rect로 그릴 수 있다.
+// 사용자 시각 검증으로 후자가 macOS rendering과 자연스럽게 호환됨.
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- 전체 캔버스를 solid cream으로 채움 — macOS가 squircle mask 자동 적용 -->
-  <rect width="1024" height="1024" fill="${BG}"/>
+  <!-- 1024 squircle (Apple HIG cornerRadius 22.65%) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="${BG}"/>
 
-  <!-- Potato 손그림 (popup.jsx line 287 MohashimAppIcon scale 4 정렬) -->
+  <!-- Potato 손그림 (popup.jsx line 287 MohashimAppIcon scale 4) -->
   <g transform="translate(112, 100) scale(4)">
     <!-- 새싹 stem -->
     <path d="M100 38 Q99.5 28 100 22" stroke="${OUTLINE}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
@@ -76,9 +75,9 @@ async function main() {
   await genPng(512, path.join(ICON_DIR, "icon.png"));
 
   await fs.writeFile(path.join(ICON_DIR, "icon.svg"), SVG);
-  console.log(`  icon.svg saved for debugging`);
+  console.log(`  icon.svg saved`);
 
-  console.log("[app-icon-gen] done. Run `npm run tauri build` to bundle into .app.");
+  console.log("[app-icon-gen] done.");
 }
 
 main().catch((err) => {

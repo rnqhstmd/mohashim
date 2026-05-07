@@ -112,78 +112,28 @@ fn sync_autolaunch<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     res.map_err(|e| format!("autolaunch sync failed: {e}"))
 }
 
-/// 신규 인스톨 첫 부팅 시 메인 윈도우 자동 노출 (FR-14, DEC-9-5, DEC-9-9).
+/// 신규 인스톨 첫 부팅 시 트레이 클릭 유도 (Phase 21 사용자 피드백 반영).
 ///
-/// `onboarding_completed=true`(기존 사용자)면 즉시 return — 부팅 시 윈도우가 자동으로
-/// 떠오르지 않도록 한다 (FR-15). false 또는 누락(신규 인스톨) 시 `attempt_show`를
-/// 호출해 None 폴백 재시도 1회까지 시도한다 (DEC-9-6). store open 실패 시
-/// `get_onboarding_completed`가 default `false`를 반환하므로 conservative fallback으로
-/// 윈도우 노출을 시도해 신규 인스톨 첫 부팅의 영구 invisible 위험을 차단한다.
+/// 기존 동작: 윈도우를 화면 우상단에 자동 노출.
+/// 문제: 트레이 아이콘 실제 위치는 클릭 이벤트로만 알 수 있어, 자동 노출 좌표가
+/// 늘 추정값. 사용자가 "메뉴바의 아이콘 하단"을 기대하지만 멀게 떨어져 보임.
+///
+/// 새 동작: 윈도우를 띄우지 않고 토스트 알림으로 트레이 클릭 안내.
+/// 사용자가 트레이 아이콘 클릭 → tray-click event → 정확한 위치로 표시.
+/// 표준 macOS 트레이 앱 패턴 (Bartender, Stats, Rectangle 등 동일).
 fn show_window_for_onboarding<R: Runtime>(app: &AppHandle<R>) {
     let onboarded = storage::get_onboarding_completed(app);
     if onboarded {
         return;
     }
-    attempt_show(app.clone(), 1);
-}
-
-/// 메인 윈도우 핸들 획득 후 위치 보정 → show + set_focus. None일 때 100ms 후 1회 재시도 (DEC-9-6).
-///
-/// 위치 보정 (Phase 21 사용자 피드백): 트레이 click이 일어나기 전(첫 부팅 onboarding)에는
-/// `tray-click` 이벤트가 아직 emit되지 않아 trayPopup.ts의 setPosition이 트리거되지 않는다.
-/// 결과적으로 Tauri 기본 "화면 중앙"에 윈도우가 떠 사용자 경험과 어긋남. 트레이 아이콘 정확
-/// 위치는 클릭 전까지 알 수 없으므로 OS별 트레이 영역 근사 위치로 미리 배치한다:
-///
-/// - macOS: 메뉴바 우상단 (x = right - width - 20, y = 32)
-/// - Windows / 기타: 작업표시줄 우하단 (x = right - width - 20, y = bottom - height - 50)
-///
-/// 사용자가 트레이 아이콘을 처음 클릭하면 trayPopup.ts의 정확한 위치 계산으로 재배치된다.
-fn attempt_show<R: Runtime>(app: AppHandle<R>, retries_left: u32) {
-    if let Some(window) = app.get_webview_window("main") {
-        if let Some(monitor) = window.primary_monitor().ok().flatten() {
-            let pos = monitor.position();
-            let size = monitor.size();
-            let sf = monitor.scale_factor();
-            let popup_w_phys = (320.0 * sf).round() as i32;
-            let popup_h_phys = (470.0 * sf).round() as i32;
-            let margin_x = (20.0 * sf).round() as i32;
-            let (x, y) = if cfg!(target_os = "macos") {
-                let menubar_y = (32.0 * sf).round() as i32;
-                (
-                    pos.x + size.width as i32 - popup_w_phys - margin_x,
-                    pos.y + menubar_y,
-                )
-            } else {
-                let taskbar_h = (50.0 * sf).round() as i32;
-                (
-                    pos.x + size.width as i32 - popup_w_phys - margin_x,
-                    pos.y + size.height as i32 - popup_h_phys - taskbar_h,
-                )
-            };
-            if let Err(e) = window.set_position(tauri::PhysicalPosition::new(x, y)) {
-                eprintln!("[mohashim] show_window: set_position failed: {e}");
-            }
-        } else {
-            eprintln!("[mohashim] show_window: primary_monitor unavailable, using default center position");
-        }
-        if let Err(e) = window.show() {
-            eprintln!("[mohashim] show_window: window.show failed: {e}");
-        }
-        if let Err(e) = window.set_focus() {
-            eprintln!("[mohashim] show_window: window.set_focus failed: {e}");
-        }
-        return;
-    }
-    if retries_left == 0 {
-        eprintln!(
-            "[mohashim] show_window_for_onboarding: main window unavailable after retry"
-        );
-        return;
-    }
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        attempt_show(app, retries_left - 1);
-    });
+    // 알림 권한이 있으면 안내 알림 송출. 없으면 silent (트레이 아이콘 자체가 indicator).
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("모하심이 시작되었어요")
+        .body("메뉴바 우상단의 부실감자 아이콘을 클릭해 시작해주세요!")
+        .show();
 }
 
 /// 메인 윈도우 X 클릭(CloseRequested) 시 종료 차단 + hide (FR-18, BR-5, BR-7).

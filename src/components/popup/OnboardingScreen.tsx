@@ -11,6 +11,7 @@ type OnboardingScreenProps = {
   permissions: PermissionState;
   isConsenting: boolean;
   onConsent: () => void;
+  onRequestMic: () => void;
   onOpenSettings: (kind: PermissionKind) => void;
 };
 
@@ -66,9 +67,11 @@ type PermissionCardProps = {
   title: string;
   description: string;
   status: PermissionStatus;
-  kind: PermissionKind;
+  /** 카드 내부 액션 버튼 라벨 (granted 시 미노출). null이면 액션 버튼 자체 미노출. */
+  actionLabel?: string | null;
+  /** 액션 버튼 클릭 시 호출. */
+  onAction?: () => void;
   extraHint?: string;
-  onOpenSettings: (kind: PermissionKind) => void;
 };
 
 function PermissionCard({
@@ -76,16 +79,11 @@ function PermissionCard({
   title,
   description,
   status,
-  kind,
+  actionLabel,
+  onAction,
   extraHint,
-  onOpenSettings,
 }: PermissionCardProps) {
-  // 마이크: BR-6 — 거절된 경우에만 deep link 노출.
-  // 접근성: C2 — 다이얼로그 트리거가 없으므로 not_determined/denied 모두 deep link 안내.
-  const showDeepLink =
-    kind === "microphone"
-      ? status === "denied"
-      : status === "denied" || status === "not_determined";
+  const showAction = status !== "granted" && actionLabel && onAction;
   return (
     <div className="w-full rounded-[12px] border-[1.5px] border-ink bg-paperWarm px-3 py-2 shadow-[1.5px_1.5px_0_0_#2b2520]">
       <div className="flex items-center gap-2.5">
@@ -95,7 +93,7 @@ function PermissionCard({
         >
           {icon}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold leading-tight">
               {title}
@@ -107,76 +105,79 @@ function PermissionCard({
           </p>
         </div>
       </div>
-      {extraHint && showDeepLink && (
+      {extraHint && status !== "granted" && (
         <p className="mt-1.5 text-[9.5px] leading-snug text-ink/55">
           {extraHint}
         </p>
       )}
-      {showDeepLink && (
+      {showAction && (
         <button
           type="button"
-          onClick={() => onOpenSettings(kind)}
-          className="mt-1.5 text-[10px] font-bold text-deepNavy underline decoration-deepNavy/40 underline-offset-2 hover:decoration-deepNavy"
+          onClick={onAction}
+          className="mt-2 inline-flex w-full items-center justify-center rounded-lg border-[1.5px] border-ink bg-deepNavy px-3 py-1.5 text-[10.5px] font-extrabold text-paperWarm shadow-[1px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
         >
-          시스템 설정에서 허용하기
+          {actionLabel}
         </button>
       )}
     </div>
   );
 }
 
+/**
+ * 권한 카드 + 시작하기 버튼.
+ *
+ * Phase 21 사용자 피드백 반영:
+ *   - 마이크 권한 요청 버튼은 마이크 카드 안에 분리 (별도 액션).
+ *   - 접근성 권한 deep link도 카드 안에.
+ *   - 최하단 시작하기 버튼은 둘 다 granted 시에만 활성.
+ */
 export function OnboardingScreen({
   permissions,
   isConsenting,
   onConsent,
+  onRequestMic,
   onOpenSettings,
 }: OnboardingScreenProps) {
   const accessibilityHint =
-    "다이얼로그가 표시되지 않습니다. 시스템 환경설정 → 개인정보 보호 → 손쉬운 사용에서 모하심 체크를 추가하세요.";
+    "다이얼로그가 표시되지 않아요. 시스템 설정 → 손쉬운 사용에서 모하심 체크.";
 
-  // Phase 20 사용자 피드백: 시작 버튼이 항상 동일한 라벨로 보이고, 권한이 거절된
-  // 상태에서 클릭해도 침묵 종료하므로 "왜 안 되지" 혼란이 발생. 권한 상태에 따라
-  // 라벨/활성 상태를 동기화한다.
-  //
-  // - mic granted + accessibility granted: 시작하기 (활성, 실제 진입)
-  // - mic not_determined: 마이크 권한 허용 요청 (활성 — 클릭 시 시스템 다이얼로그)
-  // - mic denied: 비활성 — 카드의 deep link로 시스템 설정 안내
-  // - accessibility != granted: 비활성 — 카드의 deep link 안내
   const micGranted = permissions.mic === "granted";
-  const micNotDetermined = permissions.mic === "not_determined";
   const accessibilityGranted = permissions.accessibility === "granted";
   const allGranted = micGranted && accessibilityGranted;
 
-  let primaryLabel: string;
-  let primaryDisabled: boolean;
-  let primaryHint: string | null = null;
-  if (isConsenting) {
-    primaryLabel = "권한 요청 중...";
-    primaryDisabled = true;
-  } else if (allGranted) {
-    primaryLabel = "시작하기";
-    primaryDisabled = false;
-  } else if (micNotDetermined) {
-    primaryLabel = "마이크 권한 허용 요청";
-    primaryDisabled = false;
-  } else if (!micGranted) {
-    primaryLabel = "마이크 권한이 거절되었어요";
-    primaryDisabled = true;
-    primaryHint = "위 카드의 \"시스템 설정에서 허용하기\"를 눌러 마이크 권한을 켜주세요.";
-  } else {
-    // mic granted, accessibility !granted
-    primaryLabel = "접근성 권한을 켜주세요";
-    primaryDisabled = true;
-    primaryHint =
-      "시스템 설정 → 손쉬운 사용에서 모하심을 추가/체크한 뒤 앱을 재시작하면 자동 인식돼요.";
+  // 마이크 카드 액션:
+  //   not_determined: 권한 요청 (시스템 다이얼로그 트리거)
+  //   denied: 시스템 설정 deep-link
+  let micActionLabel: string | null = null;
+  let micAction: (() => void) | null = null;
+  if (permissions.mic === "not_determined") {
+    micActionLabel = "마이크 권한 허용 요청";
+    micAction = onRequestMic;
+  } else if (permissions.mic === "denied") {
+    micActionLabel = "시스템 설정에서 허용하기";
+    micAction = () => onOpenSettings("microphone");
   }
+
+  // 접근성 카드 액션:
+  //   not_granted: 항상 시스템 설정 deep-link (다이얼로그 트리거 없음).
+  let accessibilityActionLabel: string | null = null;
+  let accessibilityAction: (() => void) | null = null;
+  if (!accessibilityGranted) {
+    accessibilityActionLabel = "시스템 설정에서 허용하기";
+    accessibilityAction = () => onOpenSettings("accessibility");
+  }
+
+  // 최하단 시작하기 버튼:
+  //   둘 다 granted: 활성 → onConsent 호출 → setOnboardingCompleted → MainScreen 진입.
+  //   else: 비활성.
+  const startDisabled = !allGranted || isConsenting;
+  const startLabel = isConsenting ? "권한 요청 중..." : "시작하기";
 
   return (
     <div
       className="relative flex h-[460px] w-[320px] flex-col items-center overflow-hidden rounded-[18px] bg-paperBg px-4 pb-3 pt-3.5 font-pretendard text-ink"
       style={NOTE_PAPER_BG}
     >
-      {/* Mohashim Design.html line 1642-1646: 옅은 도트 오버레이로 친근한 깊이감 */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -204,17 +205,17 @@ export function OnboardingScreen({
             title="마이크 권한"
             description="음량(dB)만 측정 — 녹음 안 해요"
             status={permissions.mic}
-            kind="microphone"
-            onOpenSettings={onOpenSettings}
+            actionLabel={micActionLabel}
+            onAction={micAction ?? undefined}
           />
           <PermissionCard
             icon="⌨️"
             title="접근성 권한"
             description="입력 발생 여부만 — 키 내용 안 봐요"
             status={permissions.accessibility}
-            kind="accessibility"
             extraHint={accessibilityHint}
-            onOpenSettings={onOpenSettings}
+            actionLabel={accessibilityActionLabel}
+            onAction={accessibilityAction ?? undefined}
           />
         </div>
       </div>
@@ -222,18 +223,12 @@ export function OnboardingScreen({
       <button
         type="button"
         onClick={onConsent}
-        disabled={primaryDisabled}
+        disabled={startDisabled}
         className="relative z-10 mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border-[1.8px] border-ink bg-ink py-3 text-[13px] font-extrabold tracking-tight text-paperWarm shadow-[2px_3px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[3px_5px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_2px_0_0_rgba(40,30,20,0.18)] disabled:cursor-not-allowed disabled:border-ink/30 disabled:bg-ink/30 disabled:text-paperWarm/80 disabled:shadow-none disabled:hover:translate-y-0"
       >
-        <span>{primaryLabel}</span>
-        {allGranted && !isConsenting && <span aria-hidden>→</span>}
+        <span>{startLabel}</span>
+        {!startDisabled && <span aria-hidden>→</span>}
       </button>
-
-      {primaryHint && (
-        <p className="relative z-10 mt-2 max-w-[280px] text-center text-[10px] font-semibold leading-snug text-ink/55">
-          {primaryHint}
-        </p>
-      )}
 
       <p className="relative z-10 mt-2 text-[10px] font-semibold text-ink/45">
         모든 정보는 PC에만 저장돼요

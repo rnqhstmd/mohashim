@@ -90,7 +90,6 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             use tauri::tray::{MouseButton, MouseButtonState};
             // FR-E1: 클릭 위치를 PhysicalPosition으로 변환 후 tray-click emit.
-            // hide/show 토글은 React 측이 인계받음 (사용자 결정: 토글 유지).
             // 좌클릭 + Up(release) 상태만 처리 — Down/Up 모두 emit 시 중복 토글 방지.
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
@@ -100,7 +99,41 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             } = event
             {
                 let app = tray.app_handle();
+                eprintln!("[mohashim] tray clicked, emitting tray-click");
                 emit_tray_click(app, &rect);
+                // Phase 21 사용자 피드백: 트레이 클릭해도 팝업 안 뜸. Rust 측에서
+                // 가시성을 직접 보장한다. JS listener(trayPopup.ts)는 위치 정밀화만
+                // 담당 (toggle 로직 제거됨, 충돌 방지).
+                //
+                // 동작:
+                //   visible=true   → hide (토글로 닫기 — 가벼운 dismiss)
+                //   visible=false  → show + set_focus (창 띄우기)
+                //   is_visible 에러 → 보호적으로 show 시도
+                //
+                // 위치 보정: JS가 emit된 tray-click 이벤트를 받아 setPosition 호출.
+                // setPosition은 hidden/visible 무관하게 동작하므로 Rust show보다
+                // 늦게 와도 정상 적용 (창이 잠시 default 위치에 떴다가 이동할 수
+                // 있으나 사용자에게는 거의 즉시 정렬).
+                if let Some(win) = app.get_webview_window("main") {
+                    match win.is_visible() {
+                        Ok(true) => {
+                            eprintln!("[mohashim] window visible → hide");
+                            let _ = win.hide();
+                        }
+                        Ok(false) => {
+                            eprintln!("[mohashim] window hidden → show");
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                        Err(e) => {
+                            eprintln!("[mohashim] is_visible err: {e} → fallback show");
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                } else {
+                    eprintln!("[mohashim] main window unavailable on tray click");
+                }
             }
         })
         .build(app)?;
@@ -216,6 +249,10 @@ pub fn apply_icon<R: Runtime>(
 }
 
 /// FR-C1, C2, C3, BR-T3, BR-T4: title을 직접 받아 갱신. 호출자가 prev_title 비교 후 호출.
+///
+/// Phase 21 사용자 피드백: 세션 포기 시 메뉴바 타이머가 안 사라지는 버그.
+/// Tauri 2의 `set_title(None)`이 일부 환경에서 이전 title을 그대로 남기는 경우가
+/// 있어, None은 빈 문자열로 명시적 clear한다.
 pub fn apply_title<R: Runtime>(
     app: &AppHandle<R>,
     title: Option<&str>,
@@ -223,7 +260,8 @@ pub fn apply_title<R: Runtime>(
     let tray = app
         .tray_by_id("main")
         .ok_or_else(|| "tray 'main' not found".to_string())?;
-    tray.set_title(title)
+    let normalized = title.unwrap_or("");
+    tray.set_title(Some(normalized))
         .map_err(|e| format!("set_title failed: {e}"))
 }
 

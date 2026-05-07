@@ -22,12 +22,15 @@ import { TodoItem } from "./TodoItem";
 import { PomodoroCard } from "./PomodoroCard";
 import { FocusStartButton } from "./FocusStartButton";
 import { TimerDetailScreen } from "./TimerDetailScreen";
+import { NoiseMeter } from "./NoiseMeter";
 
 type TodosTabProps = {
   phase: Phase;
   timeLeft: number;
   potatoState: PotatoState;
   phrase: string;
+  /** Phase 21: 캐릭터 카드 아래 NoiseMeter dB 표시. */
+  db: number;
   onFocusStart: () => Promise<void>;
 };
 
@@ -49,6 +52,7 @@ export function TodosTab({
   timeLeft,
   potatoState,
   phrase,
+  db,
   onFocusStart,
 }: TodosTabProps) {
   const [todos, setTodosState] = useState<Todo[]>([]);
@@ -211,6 +215,12 @@ export function TodosTab({
           onStart={onFocusStart}
         />
       )}
+
+      {/* Phase 21 사용자 피드백: 캐릭터 카드(PomodoroCard/FocusStartButton) 아래에
+          dB 측정 UI. 평상시/집중 모두에서 환경 노이즈 인지. */}
+      <div className="border-b border-ink/10 bg-paperWarm/60 px-3 py-1.5 backdrop-blur-[1px]">
+        <NoiseMeter db={db} size="sm" />
+      </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex flex-1 flex-col gap-2 overflow-y-auto">

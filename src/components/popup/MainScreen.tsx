@@ -10,7 +10,6 @@ import { SettingsScreen } from "./SettingsScreen";
 import { ToastContainer } from "./Toast";
 import { TodosTab } from "./TodosTab";
 import { GrassTab } from "./GrassTab";
-import { NoiseMeter } from "./NoiseMeter";
 
 type MainScreenProps = {
   onResetDone: () => void;
@@ -111,11 +110,6 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           stripe + warm vignette를 모두 포함한다. 별도 grain 오버레이 SVG는 제거 (디자인 NOTE_BG 통합).
           z-30 ModeChip / z-40 Toast / z-50 Modal 레이어 순서 그대로 유지. */}
       <ModeChip phase={phase} />
-      {/* Phase 21: dB 측정 UI 상단 고정 노출. ModeChip(z-30, top-3 right-3)과 겹치지
-          않도록 우측에 90px 여백을 둔다. 평상시/집중 모드 모두에서 환경 노이즈 인지. */}
-      <div className="relative z-10 px-3 pl-3 pr-[100px] pt-3">
-        <NoiseMeter db={db} size="sm" />
-      </div>
       <main className="flex flex-1 flex-col overflow-hidden">
         {tab === "settings" ? (
           <SettingsScreen onResetDone={onResetDone} />
@@ -128,6 +122,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
             timeLeft={timeLeft}
             potatoState={potatoState}
             phrase={phrase}
+            db={db}
             onFocusStart={handleFocusStart}
           />
         )}
