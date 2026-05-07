@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::time::Duration;
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use tauri::{AppHandle, Runtime};
@@ -5,11 +8,18 @@ use tauri::{AppHandle, Runtime};
 use crate::score::ema::{rms_to_db, update_ema};
 use crate::score::shared::{load_db_ema, store_db_ema};
 
+/// Phase 15 H-3 (FR-1): cpal Stream 콜백 에러 신호.
+///
+/// `on_stream_error` (fn 포인터, capture 불가)가 모듈 레벨 atomic을 set한다.
+/// `run_audio_session`이 1Hz 폴링 루프에서 이 플래그를 감지하면 stream을 drop하고
+/// `run_audio_loop`의 outer reconnect 루프로 복귀한다 (FR-2).
+pub static AUDIO_STREAM_ERROR: AtomicBool = AtomicBool::new(false);
+
 /// 오디오 캡처 스레드 기동 (FR-9, MUST-2).
 ///
-/// `mohashim-audio` 스레드 안에서 cpal Stream을 보유하고 `thread::park()`로 영구 대기한다.
-/// Stream(!Send)은 스레드 수명 동안만 살아있으며, 이 스레드가 사라지면 함께 drop된다.
-/// 빌드/장치/스트림 에러 발생 시 eprintln 후 스레드 종료 → db_ema=0.0 폴백 (BR-6).
+/// `mohashim-audio` 스레드 안에서 outer reconnect 루프(`run_audio_loop`)를 돌린다.
+/// Phase 15 H-3 (FR-2/3): session 실패 시 지수 백오프(1→2→4→8→16→30초 상한)로 재시도.
+/// 마이크 분리/재연결 등 일시적 실패에서 앱 재시작 없이 자동 복구한다.
 ///
 /// `app` 인자는 후속 Phase에서 80dB 경고 emit 용으로 보존한다.
 pub fn start<R: Runtime>(_app: AppHandle<R>) -> Result<(), String> {
@@ -22,14 +32,36 @@ pub fn start<R: Runtime>(_app: AppHandle<R>) -> Result<(), String> {
         .map_err(|e| format!("audio thread spawn failed: {e}"))
 }
 
+/// Phase 15 H-3 (FR-2/3): outer reconnect 루프 + 지수 백오프.
+///
+/// session 실패(=true) 시 백오프 후 재시도. 정상 종료(=false)는 안전장치 (실제로는 발생 안 함).
+/// 백오프: 1→2→4→8→16→30초 상한 (BR-2: CPU 부하 vs 복구 지연 균형).
 fn run_audio_loop() {
+    let mut backoff_secs: u64 = 1;
+    loop {
+        AUDIO_STREAM_ERROR.store(false, Relaxed);
+        let session_failed = run_audio_session();
+        if !session_failed {
+            break;
+        }
+        eprintln!("[mohashim] audio retry in {}s", backoff_secs);
+        std::thread::sleep(Duration::from_secs(backoff_secs));
+        backoff_secs = (backoff_secs * 2).min(30);
+    }
+}
+
+/// 단일 오디오 세션 실행. 반환값: true=실패(재시도 필요), false=정상 종료.
+///
+/// stream 변수는 함수 내에서 보유되며 함수 종료(return) 시 자동 drop된다.
+/// FR-4 (BR-6 정합): 실패/재시도 진입 시 `db_ema = 0.0` 보장 (마이크 끊김 = 무음).
+fn run_audio_session() -> bool {
     let host = cpal::default_host();
     let device = match host.default_input_device() {
         Some(d) => d,
         None => {
             eprintln!("[mohashim] no default input device");
             store_db_ema(0.0);
-            return;
+            return true;
         }
     };
     let config = match device.default_input_config() {
@@ -37,13 +69,13 @@ fn run_audio_loop() {
         Err(e) => {
             eprintln!("[mohashim] default_input_config failed: {e}");
             store_db_ema(0.0);
-            return;
+            return true;
         }
     };
     let sample_format = config.sample_format();
     let stream_cfg: cpal::StreamConfig = config.clone().into();
 
-    // err_cb: cpal Stream 콜백 에러는 eprintln + db_ema=0.0 폴백 (BR-6).
+    // err_cb: cpal Stream 콜백 에러는 eprintln + db_ema=0.0 폴백 (BR-6) + AUDIO_STREAM_ERROR set (FR-1).
     // fn 포인터로 정의하여 캡처 없는 정적 함수임을 의도 명시.
     let stream_result = match sample_format {
         SampleFormat::I16 => device.build_input_stream(
@@ -67,7 +99,7 @@ fn run_audio_loop() {
         other => {
             eprintln!("[mohashim] unsupported sample format: {other:?}");
             store_db_ema(0.0);
-            return;
+            return true;
         }
     };
 
@@ -76,31 +108,36 @@ fn run_audio_loop() {
         Err(e) => {
             eprintln!("[mohashim] build_input_stream failed: {e}");
             store_db_ema(0.0);
-            return;
+            return true;
         }
     };
 
     if let Err(e) = stream.play() {
         eprintln!("[mohashim] stream.play failed: {e}");
         store_db_ema(0.0);
-        return;
+        return true;
     }
 
-    // Stream(!Send/!Sync)은 이 스레드가 살아있는 동안만 콜백 발화.
-    // spurious wakeup 방어: park가 깨어나도 loop로 다시 park → Stream 살아있는 상태 유지.
-    // stream 변수는 이 함수 종료 시 drop되지만, 본 loop는 영원히 돌아 도달하지 않는다.
+    // Phase 15 H-3 (FR-2/4): 1Hz 폴링으로 AUDIO_STREAM_ERROR 감지.
+    // 신호 발생 시 stream(_stream_guard)을 함수 종료로 drop → outer 루프가 재시도.
     let _stream_guard = stream;
     loop {
-        std::thread::park();
+        std::thread::sleep(Duration::from_secs(1));
+        if AUDIO_STREAM_ERROR.load(Relaxed) {
+            store_db_ema(0.0);
+            return true;
+        }
     }
 }
 
-/// cpal Stream 콜백 에러 핸들러 (BR-6).
+/// cpal Stream 콜백 에러 핸들러 (BR-6, Phase 15 FR-1).
 ///
 /// 캡처 없는 fn 포인터로 정의하여 의도(정적 함수, 상태 비공유)를 명시한다.
+/// AUDIO_STREAM_ERROR atomic을 set하여 session 폴링 루프가 stream drop + 재시도하도록 신호.
 fn on_stream_error(e: cpal::StreamError) {
     eprintln!("[mohashim] cpal stream error: {e}");
     store_db_ema(0.0);
+    AUDIO_STREAM_ERROR.store(true, Relaxed);
 }
 
 /// i16 PCM → 정규화 RMS → dB → EMA 갱신.

@@ -113,7 +113,7 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
   return (
     <div
       ref={panelRef}
-      className="mt-3 rounded-md border border-deep/10 bg-white p-3 shadow-md transition-transform"
+      className="mt-3 rounded-md border border-deep/10 bg-white p-3 shadow-md animate-slide-up"
       role="dialog"
       aria-label="날짜 상세"
     >

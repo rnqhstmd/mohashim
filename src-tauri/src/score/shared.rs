@@ -255,11 +255,21 @@ fn buffer() -> &'static Mutex<Vec<String>> {
     SESSION_TODOS_DONE.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+/// Phase 15 FR-8 / BR-3: push_todo id 길이 상한 (보안 정합).
+///
+/// 정상 todo.id는 timestamp + random suffix로 ~30자. 256자 초과는 abnormal로 간주하여
+/// push 거부. phase 가드보다 먼저 적용 (early return으로 dup 검사 우회).
+pub const MAX_TODO_ID_LEN: usize = 256;
+
 /// FR-14 / BR-7: phase가 Focus|Break일 때만 todo_id를 push. 중복 차단(set 의미).
 ///
-/// 반환값: push 성공 시 true, phase 가드 실패 또는 중복 차단 시 false.
+/// 반환값: push 성공 시 true, 길이 가드/phase 가드 실패 또는 중복 차단 시 false.
+/// Phase 15 FR-8: id가 MAX_TODO_ID_LEN 초과 시 즉시 false (phase 가드보다 우선).
 /// Idle/Discarded/Complete 진입 시 호출 → 가드 false 반환 (AC-15).
 pub fn push_todo(id: &str) -> bool {
+    if id.len() > MAX_TODO_ID_LEN {
+        return false;
+    }
     if !matches!(current_phase(), Phase::Focus | Phase::Break) {
         return false;
     }
@@ -710,6 +720,41 @@ mod tests {
         // 후속 drain + Idle 복귀 시뮬레이션.
         let drained = drain_todos();
         assert_eq!(drained, vec!["t1".to_string()]);
+        store_phase(Phase::Idle);
+        assert!(snapshot_todos().is_empty());
+    }
+
+    // ---------- Phase 15 FR-7 / FR-8 — 이월 폴리싱 테스트 ----------
+
+    #[test]
+    #[serial]
+    fn push_todo_rejects_oversized_id() {
+        // Phase 15 FR-8 / AC-7 / BR-3: 256자 초과 id는 abnormal로 push 거부.
+        // phase 가드를 통과해도 길이 가드가 우선 차단 (early return).
+        store_phase(Phase::Focus);
+        clear_todos();
+        let oversized = "a".repeat(257);
+        assert!(!push_todo(&oversized));
+        assert_eq!(snapshot_todos().len(), 0);
+        // 경계: 정확히 256자는 통과.
+        let boundary = "b".repeat(256);
+        assert!(push_todo(&boundary));
+        assert_eq!(snapshot_todos().len(), 1);
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn discard_clears_session_buffer() {
+        // Phase 15 FR-7 / AC-6: discard 경로 시뮬레이션.
+        // Focus 시작 → todo 체크 누적 → discard (= store_phase(Idle))는
+        // FR-17에 따라 buffer를 자동 clear한다.
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("todo-1");
+        push_todo("todo-2");
+        assert_eq!(snapshot_todos().len(), 2);
+        // Discard 경로 시뮬: store_phase(Idle)이 clear_todos 자동 호출.
         store_phase(Phase::Idle);
         assert!(snapshot_todos().is_empty());
     }
