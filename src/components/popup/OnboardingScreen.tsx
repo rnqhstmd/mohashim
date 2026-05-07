@@ -134,6 +134,43 @@ export function OnboardingScreen({
   const accessibilityHint =
     "다이얼로그가 표시되지 않습니다. 시스템 환경설정 → 개인정보 보호 → 손쉬운 사용에서 모하심 체크를 추가하세요.";
 
+  // Phase 20 사용자 피드백: 시작 버튼이 항상 동일한 라벨로 보이고, 권한이 거절된
+  // 상태에서 클릭해도 침묵 종료하므로 "왜 안 되지" 혼란이 발생. 권한 상태에 따라
+  // 라벨/활성 상태를 동기화한다.
+  //
+  // - mic granted + accessibility granted: 시작하기 (활성, 실제 진입)
+  // - mic not_determined: 마이크 권한 허용 요청 (활성 — 클릭 시 시스템 다이얼로그)
+  // - mic denied: 비활성 — 카드의 deep link로 시스템 설정 안내
+  // - accessibility != granted: 비활성 — 카드의 deep link 안내
+  const micGranted = permissions.mic === "granted";
+  const micNotDetermined = permissions.mic === "not_determined";
+  const accessibilityGranted = permissions.accessibility === "granted";
+  const allGranted = micGranted && accessibilityGranted;
+
+  let primaryLabel: string;
+  let primaryDisabled: boolean;
+  let primaryHint: string | null = null;
+  if (isConsenting) {
+    primaryLabel = "권한 요청 중...";
+    primaryDisabled = true;
+  } else if (allGranted) {
+    primaryLabel = "시작하기";
+    primaryDisabled = false;
+  } else if (micNotDetermined) {
+    primaryLabel = "마이크 권한 허용 요청";
+    primaryDisabled = false;
+  } else if (!micGranted) {
+    primaryLabel = "마이크 권한이 거절되었어요";
+    primaryDisabled = true;
+    primaryHint = "위 카드의 \"시스템 설정에서 허용하기\"를 눌러 마이크 권한을 켜주세요.";
+  } else {
+    // mic granted, accessibility !granted
+    primaryLabel = "접근성 권한을 켜주세요";
+    primaryDisabled = true;
+    primaryHint =
+      "시스템 설정 → 손쉬운 사용에서 모하심을 추가/체크한 뒤 앱을 재시작하면 자동 인식돼요.";
+  }
+
   return (
     <div
       className="relative flex h-[460px] w-[320px] flex-col items-center overflow-hidden rounded-[18px] bg-paperBg px-4 pb-3 pt-3.5 font-pretendard text-ink"
@@ -185,12 +222,18 @@ export function OnboardingScreen({
       <button
         type="button"
         onClick={onConsent}
-        disabled={isConsenting}
-        className="relative z-10 mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border-[1.8px] border-ink bg-ink py-3 text-[13px] font-extrabold tracking-tight text-paperWarm shadow-[2px_3px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[3px_5px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_2px_0_0_rgba(40,30,20,0.18)] disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={primaryDisabled}
+        className="relative z-10 mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border-[1.8px] border-ink bg-ink py-3 text-[13px] font-extrabold tracking-tight text-paperWarm shadow-[2px_3px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[3px_5px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_2px_0_0_rgba(40,30,20,0.18)] disabled:cursor-not-allowed disabled:border-ink/30 disabled:bg-ink/30 disabled:text-paperWarm/80 disabled:shadow-none disabled:hover:translate-y-0"
       >
-        <span>{isConsenting ? "권한 요청 중..." : "모든 권한 허용하고 시작하기"}</span>
-        {!isConsenting && <span aria-hidden>→</span>}
+        <span>{primaryLabel}</span>
+        {allGranted && !isConsenting && <span aria-hidden>→</span>}
       </button>
+
+      {primaryHint && (
+        <p className="relative z-10 mt-2 max-w-[280px] text-center text-[10px] font-semibold leading-snug text-ink/55">
+          {primaryHint}
+        </p>
+      )}
 
       <p className="relative z-10 mt-2 text-[10px] font-semibold text-ink/45">
         모든 정보는 PC에만 저장돼요

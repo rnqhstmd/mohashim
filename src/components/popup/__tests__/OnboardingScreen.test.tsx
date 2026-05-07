@@ -24,13 +24,25 @@ const micDenied: PermissionState = {
   accessibility: "not_determined",
 };
 
+const onlyAccessibilityMissing: PermissionState = {
+  mic: "granted",
+  accessibility: "not_determined",
+};
+
+const onlyAccessibilityDenied: PermissionState = {
+  mic: "granted",
+  accessibility: "denied",
+};
+
 describe("OnboardingScreen", () => {
   it("renders microphone and accessibility cards without score pills", () => {
     render(
       <OnboardingScreen {...baseProps} permissions={allNotDetermined} />
     );
-    expect(screen.getByText(/마이크 권한/)).toBeInTheDocument();
-    expect(screen.getByText(/접근성 권한/)).toBeInTheDocument();
+    // 카드 타이틀 정확 매칭 — Phase 20에서 버튼 라벨에 "마이크 권한 허용 요청"이 포함되어
+    // /마이크 권한/ regex로는 다중 매칭이 발생하므로 정확 문자열로 가드.
+    expect(screen.getByText("마이크 권한")).toBeInTheDocument();
+    expect(screen.getByText("접근성 권한")).toBeInTheDocument();
     expect(screen.queryByText(/20점/)).not.toBeInTheDocument();
     expect(screen.queryByText(/80점/)).not.toBeInTheDocument();
   });
@@ -50,12 +62,14 @@ describe("OnboardingScreen", () => {
     expect(screen.queryByText("🔒")).not.toBeInTheDocument();
   });
 
-  it("shows consent button label when idle", () => {
+  // Phase 20 사용자 피드백: 시작 버튼 라벨이 권한 상태에 따라 달라지고, 권한이
+  // 부족할 때는 disabled로 명확히 차단한다.
+  it("shows '마이크 권한 허용 요청' label when mic is not_determined", () => {
     render(
       <OnboardingScreen {...baseProps} permissions={allNotDetermined} />
     );
     expect(
-      screen.getByRole("button", { name: "모든 권한 허용하고 시작하기" })
+      screen.getByRole("button", { name: "마이크 권한 허용 요청" })
     ).toBeInTheDocument();
   });
 
@@ -71,17 +85,41 @@ describe("OnboardingScreen", () => {
     expect(btn).toBeDisabled();
   });
 
-  it("keeps consent button enabled when both permissions are already granted", () => {
-    // Fix 2/4 일관성: 이미 granted 상태에서도 사용자 클릭 시 handleConsent가
-    // 정상 동작해 onboarding_completed 플래그를 설정하도록 disabled 가드를 제거.
+  it("shows '시작하기' label and enabled when both permissions are granted", () => {
     render(<OnboardingScreen {...baseProps} permissions={allGranted} />);
-    const btn = screen.getByRole("button", {
-      name: "모든 권한 허용하고 시작하기",
-    });
+    const btn = screen.getByRole("button", { name: /시작하기/ });
     expect(btn).not.toBeDisabled();
   });
 
-  it("calls onConsent on click", () => {
+  it("disables button with mic-denied message when mic is denied", () => {
+    render(<OnboardingScreen {...baseProps} permissions={micDenied} />);
+    const btn = screen.getByRole("button", {
+      name: /마이크 권한이 거절되었어요/,
+    });
+    expect(btn).toBeDisabled();
+  });
+
+  it("disables button with accessibility prompt when only accessibility is missing", () => {
+    render(
+      <OnboardingScreen {...baseProps} permissions={onlyAccessibilityMissing} />
+    );
+    const btn = screen.getByRole("button", {
+      name: /접근성 권한을 켜주세요/,
+    });
+    expect(btn).toBeDisabled();
+  });
+
+  it("disables button with accessibility prompt when accessibility is denied", () => {
+    render(
+      <OnboardingScreen {...baseProps} permissions={onlyAccessibilityDenied} />
+    );
+    const btn = screen.getByRole("button", {
+      name: /접근성 권한을 켜주세요/,
+    });
+    expect(btn).toBeDisabled();
+  });
+
+  it("calls onConsent on click when mic is not_determined", () => {
     const onConsent = vi.fn();
     render(
       <OnboardingScreen
@@ -91,7 +129,7 @@ describe("OnboardingScreen", () => {
       />
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "모든 권한 허용하고 시작하기" })
+      screen.getByRole("button", { name: "마이크 권한 허용 요청" })
     );
     expect(onConsent).toHaveBeenCalledTimes(1);
   });
