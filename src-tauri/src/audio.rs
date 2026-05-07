@@ -13,7 +13,8 @@ use crate::score::shared::{load_db_ema, store_db_ema};
 /// `on_stream_error` (fn 포인터, capture 불가)가 모듈 레벨 atomic을 set한다.
 /// `run_audio_session`이 1Hz 폴링 루프에서 이 플래그를 감지하면 stream을 drop하고
 /// `run_audio_loop`의 outer reconnect 루프로 복귀한다 (FR-2).
-pub static AUDIO_STREAM_ERROR: AtomicBool = AtomicBool::new(false);
+// PR #16 리뷰 (gemini): 모듈 내부 신호이므로 pub 제거 (캡슐화).
+static AUDIO_STREAM_ERROR: AtomicBool = AtomicBool::new(false);
 
 /// 오디오 캡처 스레드 기동 (FR-9, MUST-2).
 ///
@@ -36,13 +37,21 @@ pub fn start<R: Runtime>(_app: AppHandle<R>) -> Result<(), String> {
 ///
 /// session 실패(=true) 시 백오프 후 재시도. 정상 종료(=false)는 안전장치 (실제로는 발생 안 함).
 /// 백오프: 1→2→4→8→16→30초 상한 (BR-2: CPU 부하 vs 복구 지연 균형).
+///
+/// PR #16 리뷰 (gemini/copilot): 세션이 60초 이상 정상 유지된 후 발생한 에러는
+/// 누적 백오프와 무관하므로 1초로 리셋 — 오랜 정상 동작 후 단일 에러에서 30초 대기 회피.
 fn run_audio_loop() {
     let mut backoff_secs: u64 = 1;
     loop {
         AUDIO_STREAM_ERROR.store(false, Relaxed);
+        let session_start = std::time::Instant::now();
         let session_failed = run_audio_session();
         if !session_failed {
             break;
+        }
+        // 세션이 60초 이상 정상 유지된 후 에러면 백오프 초기화 (PR #16 리뷰).
+        if session_start.elapsed() >= Duration::from_secs(60) {
+            backoff_secs = 1;
         }
         eprintln!("[mohashim] audio retry in {}s", backoff_secs);
         std::thread::sleep(Duration::from_secs(backoff_secs));

@@ -87,7 +87,7 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         if let Some(remaining) = next_tick.checked_duration_since(Instant::now()) {
             std::thread::sleep(remaining);
         } else {
-            // Phase 14 FR-2: next_tick polution 차단. should_reset_next_tick 헬퍼로
+            // Phase 14 FR-2: next_tick pollution 차단. should_reset_next_tick 헬퍼로
             // 단위 테스트 가능하게 분리 (PR #15 cross-review 반영).
             // 정상 본문이 1초 이내 실행되는 한 거의 발화하지 않음. sleep/wake 후 monotonic Instant
             // 점프 케이스에서 1Hz 정상 진행을 복구한다. 다음 루프 선두 += 1초로 1Hz 회복.
@@ -95,7 +95,7 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             // Phase 15 FR-9 (AC-8): reset 동작 흐름 ——
             // now_inst로 reset → 다음 루프 선두에서 next_tick += 1초 →
             // checked_duration_since(Instant::now())가 ~1초 remaining 반환 → 정상 thread::sleep 진입.
-            // 이로써 sleep/wake 후 polution이 누적된 상태에서도 다음 tick부터 1Hz 정상 복구된다.
+            // 이로써 sleep/wake 후 pollution이 누적된 상태에서도 다음 tick부터 1Hz 정상 복구된다.
             let now_inst = Instant::now();
             if crate::score::shared::should_reset_next_tick(
                 now_inst.saturating_duration_since(next_tick),

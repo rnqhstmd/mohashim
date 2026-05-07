@@ -47,7 +47,7 @@ pub static LAST_TICK_WALL_MS: AtomicU64 = AtomicU64::new(0);
 /// Phase 14: drift detection 임계값. 5초 점프 → sleep 합성.
 pub const WAKE_DRIFT_THRESHOLD_MS: u64 = 5000;
 
-/// Phase 14 FR-2: next_tick polution 차단 임계값. now-next_tick이 이 값 이상이면
+/// Phase 14 FR-2: next_tick pollution 차단 임계값. now-next_tick이 이 값 이상이면
 /// next_tick = now로 reset → 1Hz 정상 진행 복구. sleep/wake 후 monotonic Instant
 /// 점프 케이스에서 누적 틱 폭주 방지.
 pub const TICK_POLLUTION_RESET_THRESHOLD_SECS: u64 = 2;
@@ -536,7 +536,7 @@ mod tests {
         assert!(!wake);
     }
 
-    // ---------- Phase 14 FR-7: next_tick polution reset 단위 테스트 (PR #15 cross-review) ----------
+    // ---------- Phase 14 FR-7: next_tick pollution reset 단위 테스트 (PR #15 cross-review) ----------
 
     #[test]
     fn should_reset_next_tick_below_threshold() {
