@@ -3,11 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ContributionGraph } from "./ContributionGraph";
 import { SharePreviewModal } from "./SharePreviewModal";
 import { DayDetailPanel } from "./DayDetailPanel";
-import {
-  formatDate,
-  getMonthSessions,
-  type MonthData,
-} from "../../lib/grass";
+import { getMonthSessions, type MonthData } from "../../lib/grass";
 
 /**
  * Grass 탭 본체 (FR-17, FR-18 / Phase 16 FR-9).
@@ -95,36 +91,20 @@ export function GrassTab() {
     };
   }, [monthOffset]);
 
-  // 오늘 통계 — monthOffset=0이고 오늘 일자가 cells에 있으면.
-  // 자기점검 수정: new Date(c.date)는 UTC 자정 파싱이라 TZ 의존. formatDate로 로컬 문자열 직접 비교.
-  const todayStr = formatDate(new Date());
-  const todayCell =
-    monthOffset === 0 ? data?.cells.find((c) => c.date === todayStr) : undefined;
-  const todaySessions = todayCell?.sessions ?? 0;
-  const todayAvg = todayCell?.avg ?? 0;
-
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-deep/10 px-4 py-3">
+      <div className="border-b border-deep/10 px-4 py-3">
         <div className="text-sm text-deep">
-          {loaded
-            ? todaySessions > 0
-              ? `오늘 ${todaySessions}회 · 평균 ${todayAvg}점`
-              : "오늘 아직 세션 없음"
+          {loaded && data
+            ? data.totalSessions > 0
+              ? `이번 달 ${data.totalSessions}회 · 평균 ${data.avgScore}점`
+              : "이번 달 아직 세션 없음"
             : "..."}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowPreview(true)}
-          disabled={!loaded || !data}
-          className="rounded-md bg-deep px-3 py-1.5 text-xs text-white disabled:opacity-40"
-        >
-          잔디 자랑하기
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        <div ref={gridContainerRef}>
+        <div ref={gridContainerRef} className="relative">
           <ContributionGraph
             data={data}
             monthOffset={monthOffset}
@@ -132,6 +112,15 @@ export function GrassTab() {
             minOffset={minOffset}
             onDayClick={setSelectedDate}
           />
+          <button
+            type="button"
+            aria-label="잔디 자랑하기"
+            onClick={() => setShowPreview(true)}
+            disabled={!loaded || !data}
+            className="absolute bottom-2 right-2 rounded-full bg-deep p-2 text-white shadow disabled:opacity-40"
+          >
+            📤
+          </button>
         </div>
         {selectedDate !== null && (
           <DayDetailPanel

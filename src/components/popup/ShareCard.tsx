@@ -58,8 +58,8 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
         height={renderSize}
         viewBox={`0 0 ${SHARE_CARD_SIZE} ${SHARE_CARD_SIZE}`}
       >
-        {/* 배경 — cream */}
-        <rect width="100%" height="100%" fill="#fff8e0" />
+        {/* 배경 — cream (Phase 17 FR-D1 통일: #fff8e0 → #fffaed) */}
+        <rect width="100%" height="100%" fill="#fffaed" />
 
         {/* 워터마크 */}
         <g id="watermark">

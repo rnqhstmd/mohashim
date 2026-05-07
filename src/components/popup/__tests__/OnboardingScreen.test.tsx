@@ -25,23 +25,28 @@ const micDenied: PermissionState = {
 };
 
 describe("OnboardingScreen", () => {
-  it("renders microphone and accessibility cards with score pills", () => {
+  it("renders microphone and accessibility cards without score pills", () => {
     render(
       <OnboardingScreen {...baseProps} permissions={allNotDetermined} />
     );
     expect(screen.getByText(/마이크 권한/)).toBeInTheDocument();
     expect(screen.getByText(/접근성 권한/)).toBeInTheDocument();
-    expect(screen.getByText(/20점/)).toBeInTheDocument();
-    expect(screen.getByText(/80점/)).toBeInTheDocument();
+    expect(screen.queryByText(/20점/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/80점/)).not.toBeInTheDocument();
   });
 
-  it("shows privacy badge", () => {
-    render(
+  it("shows privacy footer text", () => {
+    const { container } = render(
       <OnboardingScreen {...baseProps} permissions={allNotDetermined} />
     );
     expect(
-      screen.getByText(/모든 데이터는 내 컴퓨터에만/)
+      screen.getByText("모든 정보는 PC에만 저장돼요")
     ).toBeInTheDocument();
+    // 기존 자물쇠 뱃지(🔒 / rounded-full border) 부재 검증.
+    expect(
+      screen.queryByText(/모든 데이터는 내 컴퓨터에만/)
+    ).not.toBeInTheDocument();
+    expect(container.querySelector(".rounded-full.border")).toBeNull();
   });
 
   it("shows consent button label when idle", () => {
@@ -49,7 +54,7 @@ describe("OnboardingScreen", () => {
       <OnboardingScreen {...baseProps} permissions={allNotDetermined} />
     );
     expect(
-      screen.getByRole("button", { name: "권한 허용하고 시작" })
+      screen.getByRole("button", { name: "모든 권한 허용하고 시작하기" })
     ).toBeInTheDocument();
   });
 
@@ -69,7 +74,9 @@ describe("OnboardingScreen", () => {
     // Fix 2/4 일관성: 이미 granted 상태에서도 사용자 클릭 시 handleConsent가
     // 정상 동작해 onboarding_completed 플래그를 설정하도록 disabled 가드를 제거.
     render(<OnboardingScreen {...baseProps} permissions={allGranted} />);
-    const btn = screen.getByRole("button", { name: "권한 허용하고 시작" });
+    const btn = screen.getByRole("button", {
+      name: "모든 권한 허용하고 시작하기",
+    });
     expect(btn).not.toBeDisabled();
   });
 
@@ -83,7 +90,7 @@ describe("OnboardingScreen", () => {
       />
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "권한 허용하고 시작" })
+      screen.getByRole("button", { name: "모든 권한 허용하고 시작하기" })
     );
     expect(onConsent).toHaveBeenCalledTimes(1);
   });

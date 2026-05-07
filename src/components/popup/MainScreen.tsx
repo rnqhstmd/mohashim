@@ -88,6 +88,24 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
 
   return (
     <div className="relative flex h-[460px] w-[320px] flex-col bg-mist font-pretendard text-ink">
+      {/* Phase 17 FR-D3: SVG feTurbulence grain 오버레이 (BR-6 pointer-events-none, QE-1).
+          z-0 ≪ ModeChip(z-30)/Toast(z-40)/Modal(z-50). 모든 인터랙션 통과. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 opacity-[0.08]"
+      >
+        <svg width="100%" height="100%">
+          <filter id="mh-grain">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.65"
+              numOctaves="3"
+              stitchTiles="stitch"
+            />
+          </filter>
+          <rect width="100%" height="100%" filter="url(#mh-grain)" />
+        </svg>
+      </div>
       <ModeChip phase={phase} />
       <main className="flex flex-1 flex-col overflow-hidden">
         {tab === "settings" ? (

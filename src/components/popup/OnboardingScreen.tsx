@@ -44,7 +44,6 @@ type PermissionCardProps = {
   icon: string;
   title: string;
   description: string;
-  score: string;
   status: PermissionStatus;
   kind: PermissionKind;
   extraHint?: string;
@@ -55,7 +54,6 @@ function PermissionCard({
   icon,
   title,
   description,
-  score,
   status,
   kind,
   extraHint,
@@ -76,11 +74,8 @@ function PermissionCard({
           </span>
           <p className="mt-1 text-xs text-deep/70">{description}</p>
         </div>
-        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-          {score}
-        </span>
+        <StatusIndicator status={status} />
       </div>
-      <StatusIndicator status={status} />
       {extraHint && showDeepLink && (
         <p className="mt-2 text-xs text-deep/70">{extraHint}</p>
       )}
@@ -119,7 +114,6 @@ export function OnboardingScreen({
         icon="🎤"
         title="마이크 권한"
         description="음량(dB)만 측정. 음성 데이터 미저장."
-        score="20점"
         status={permissions.mic}
         kind="microphone"
         onOpenSettings={onOpenSettings}
@@ -129,16 +123,15 @@ export function OnboardingScreen({
         icon="⌨️"
         title="접근성 권한"
         description="키보드/마우스 입력 발생만 감지. 키 내용 미수집."
-        score="80점"
         status={permissions.accessibility}
         kind="accessibility"
         extraHint={accessibilityHint}
         onOpenSettings={onOpenSettings}
       />
 
-      <div className="mt-auto rounded-full border border-deep/30 bg-sky/30 px-3 py-1 text-xs">
-        🔒 모든 데이터는 내 컴퓨터에만
-      </div>
+      <p className="mt-auto text-xs text-ink/50">
+        모든 정보는 PC에만 저장돼요
+      </p>
 
       <button
         type="button"
@@ -146,7 +139,7 @@ export function OnboardingScreen({
         disabled={isConsenting}
         className="mt-4 w-full rounded-lg bg-deep py-3 text-sm font-bold text-white disabled:opacity-50"
       >
-        {isConsenting ? "권한 요청 중..." : "권한 허용하고 시작"}
+        {isConsenting ? "권한 요청 중..." : "모든 권한 허용하고 시작하기"}
       </button>
     </div>
   );

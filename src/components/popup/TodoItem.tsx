@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { Todo, WorkTag, Location } from "../../lib/storage";
-import { ACCENT_DARK } from "../../lib/todos";
 import { FlatTag } from "./FlatTag";
 
 type TodoItemProps = {
@@ -16,16 +15,11 @@ type TodoItemProps = {
 
 type SwipeIntent = "undecided" | "horizontal" | "vertical";
 
-/** active 항목 시각 강조 (AC-30): 그라디언트 + 좌측 4px ACCENT_DARK 막대 + 박스섀도 + 굵은 글자. */
-const activeStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #fff8e0, #fff2c4)",
-  borderLeft: `4px solid ${ACCENT_DARK}`,
-  boxShadow: "0 4px 12px rgba(244, 209, 96, 0.35)",
-  fontWeight: 800,
-};
-
 /**
- * 투두 행 — 좌측 스와이프 시 우측에 삭제 버튼 노출 (D-4, AC-delete-swipe).
+ * 투두 카드 (Phase 17 FR-A1~A8) — 행 단위 → 카드 단위 변경.
+ *
+ * 외곽 카드는 고정. 내부 컨텐츠가 translateX로 좌측 슬라이드되며 우측에 삭제 버튼이 노출된다 (BR-7).
+ * active 시 좌측 4px deep 막대 + cream 배경. 인라인 그라디언트 하드코딩 폐기 — Tailwind 토큰만 사용.
  *
  * 스와이프 의도 분기 (C1):
  *   - 5px 임계 미만: undecided 유지 (클릭 호환).
@@ -33,7 +27,7 @@ const activeStyle: CSSProperties = {
  *   - vertical 시 부모 스크롤에 양보 (return).
  *   - horizontal 시 setPointerCapture로 click 차단 + offset 갱신.
  *
- * 다른 행 스와이프 시 자동 닫힘 — `openSwipeId !== todo.id`이면 effect로 offset=0 복귀.
+ * 다른 카드 스와이프 시 자동 닫힘 — `openSwipeId !== todo.id`이면 effect로 offset=0 복귀.
  */
 export function TodoItem({
   todo,
@@ -51,7 +45,7 @@ export function TodoItem({
   const intent = useRef<SwipeIntent>("undecided");
   const [offset, setOffset] = useState(0);
 
-  // 다른 행이 열리면 본 행은 닫힘.
+  // 다른 카드가 열리면 본 카드는 닫힘.
   useEffect(() => {
     if (openSwipeId !== todo.id) {
       setOffset(0);
@@ -107,15 +101,37 @@ export function TodoItem({
     intent.current = "undecided";
   };
 
-  const textClass = todo.done
-    ? "line-through text-deep/40 flex-1 truncate"
-    : "flex-1 truncate text-ink";
-
   const showActive = todo.active && !todo.done;
 
+  // 외곽 카드 클래스 — 표준 border-deep/10 + active 시 좌측만 4px deep로 오버라이드.
+  // PR phase-review 반영: 4면 모두 deep 진하게 보이던 문제 해소 (FR-D4 + AC-A7).
+  // mb-2 제거 — 카드 간격은 부모 TodosTab의 gap-2가 담당.
+  const cardClass = [
+    "rounded-xl border border-deep/10 bg-white relative overflow-hidden",
+    showActive ? "border-l-4 border-l-deep bg-cream" : "",
+    todo.done ? "opacity-60" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  // label 클래스 — 완료 시 line-through + opacity-40, font-kyobo 적용 (BR-3).
+  const labelClass = todo.done
+    ? "font-kyobo flex-1 truncate line-through opacity-40"
+    : "font-kyobo flex-1 truncate text-ink";
+
   return (
-    <div className="relative overflow-hidden">
-      {/* 배경 — 좌측 스와이프로 노출되는 삭제 버튼 (우측 정렬) */}
+    <div className={cardClass}>
+      {/* 우측 상단 × 삭제 버튼 (FR-A5) */}
+      <button
+        type="button"
+        onClick={() => onDelete(todo.id)}
+        aria-label="삭제 (×)"
+        className="absolute right-2 top-2 z-10 text-deep/30 hover:text-red-500"
+      >
+        ×
+      </button>
+
+      {/* 우측 슬라이드 노출 삭제 버튼 (BR-7) — 외곽 카드 내부 absolute 배경 */}
       <div className="absolute inset-y-0 right-0 flex items-center pr-3">
         <button
           type="button"
@@ -127,47 +143,52 @@ export function TodoItem({
         </button>
       </div>
 
-      {/* 전경 — 행 콘텐츠 */}
+      {/* 내부 컨텐츠 — translateX 적용 대상 */}
       <div
-        className="relative flex items-center gap-2 bg-white px-3 py-2 transition-transform duration-150 ease-out"
-        style={{
-          transform: `translateX(${offset}px)`,
-          ...(showActive ? activeStyle : {}),
-        }}
+        className="relative bg-inherit px-3 py-2 transition-transform duration-150 ease-out"
+        style={{ transform: `translateX(${offset}px)` }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
-        <button
-          type="button"
-          onClick={() => onToggleDone(todo.id)}
-          aria-label={todo.done ? "완료 해제" : "완료"}
-          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
-            todo.done
-              ? "border-deep bg-deep text-white"
-              : "border-deep/40 bg-white"
-          }`}
-        >
-          {todo.done && <span className="text-[10px]">✓</span>}
-        </button>
-
-        <span className={textClass}>{todo.text}</span>
-
-        {workTag && <FlatTag tag={workTag} />}
-        {location && <FlatTag tag={location} />}
-
-        {!todo.done && (
+        {/* 상단 행: 원형 체크박스 + label + ★/▶ */}
+        <div className="flex items-center gap-2 pr-6">
           <button
             type="button"
-            onClick={() => onToggleActive(todo.id)}
-            aria-label={todo.active ? "현재 작업 해제" : "현재 작업으로 설정"}
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm ${
-              todo.active ? "text-amber-600" : "text-deep/50"
+            onClick={() => onToggleDone(todo.id)}
+            aria-label={todo.done ? "완료 해제" : "완료"}
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+              todo.done
+                ? "border-deep bg-deep text-white"
+                : "border-deep/40 bg-white"
             }`}
           >
-            {todo.active ? "★" : "▶"}
+            {todo.done && <span className="text-[10px]">✓</span>}
           </button>
+
+          <span className={labelClass}>{todo.text}</span>
+
+          {!todo.done && (
+            <button
+              type="button"
+              onClick={() => onToggleActive(todo.id)}
+              aria-label={todo.active ? "현재 작업 해제" : "현재 작업으로 설정"}
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm ${
+                todo.active ? "text-amber-600" : "text-deep/50"
+              }`}
+            >
+              {todo.active ? "★" : "▶"}
+            </button>
+          )}
+        </div>
+
+        {/* 하단 행: 태그 칩 (들여쓰기 pl-7로 체크박스 우측 정렬) */}
+        {(workTag || location) && (
+          <div className="mt-1 flex items-center gap-2 pl-7">
+            {workTag && <FlatTag tag={workTag} />}
+            {location && <FlatTag tag={location} />}
+          </div>
         )}
       </div>
     </div>

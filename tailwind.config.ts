@@ -14,7 +14,8 @@ const config: Config = {
         peach: "#e89a82",
         ink: "#2b2520",
         // Phase 6: todos 탭 상단 카드(PomodoroCard/FocusStartButton) 배경. active 그라디언트와 일관.
-        cream: "#fff8e0",
+        // Phase 17 FR-D1: 시안 통일 #fff8e0 → #fffaed.
+        cream: "#fffaed",
         // Phase 3: ModeChip 배경 색상 (FR-chip-color).
         chipIdle: "#9ca3af",
         chipFocus: "#dc4646",
@@ -28,6 +29,15 @@ const config: Config = {
       },
       fontFamily: {
         pretendard: [
+          "Pretendard",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Apple SD Gothic Neo",
+          "sans-serif",
+        ],
+        // Phase 17 FR-D2: TodoItem label 전용 손글씨 폰트. TTF 부재 시 Pretendard로 자연 폴백.
+        kyobo: [
+          "KyoboHandwriting2019",
           "Pretendard",
           "-apple-system",
           "BlinkMacSystemFont",
