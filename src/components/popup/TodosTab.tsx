@@ -21,6 +21,7 @@ import { TodoInput } from "./TodoInput";
 import { TodoItem } from "./TodoItem";
 import { PomodoroCard } from "./PomodoroCard";
 import { FocusStartButton } from "./FocusStartButton";
+import { TimerDetailScreen } from "./TimerDetailScreen";
 
 type TodosTabProps = {
   phase: Phase;
@@ -56,6 +57,14 @@ export function TodosTab({
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   // 로드 완료 전에는 빈 상태 ("아직 할 일이 없어요") flicker 방지를 위해 본문 미렌더.
   const [loaded, setLoaded] = useState(false);
+  // Phase 17 B2-F (FR-F4): list / timer-detail view 토글. PomodoroCard 클릭 시
+  // timer-detail 진입, ← 클릭 또는 phase가 focus/break를 벗어나면 list 복귀.
+  const [view, setView] = useState<"list" | "timer-detail">("list");
+
+  // M2: phase 변경 시 자동 list 복귀 (focus/break 외 timer-detail 잔류 차단).
+  useEffect(() => {
+    if (phase !== "focus" && phase !== "break") setView("list");
+  }, [phase]);
 
   // 초기 로드 — cancelled flag 패턴으로 unmount 후 setState 방지.
   useEffect(() => {
@@ -164,6 +173,20 @@ export function TodosTab({
     // wasCompleted && !previousCompletedAt: 이전 적재 없음 가정 — invoke 생략.
   };
 
+  if (
+    view === "timer-detail" &&
+    (phase === "focus" || phase === "break")
+  ) {
+    return (
+      <TimerDetailScreen
+        timeLeft={timeLeft}
+        potatoState={potatoState}
+        phrase={phrase}
+        onBack={() => setView("list")}
+      />
+    );
+  }
+
   return (
     <div
       className="flex h-full flex-col"
@@ -175,6 +198,7 @@ export function TodosTab({
           timeLeft={timeLeft}
           potatoState={potatoState}
           phrase={phrase}
+          onTimerClick={() => setView("timer-detail")}
         />
       ) : (
         <FocusStartButton
@@ -185,7 +209,7 @@ export function TodosTab({
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
           {!loaded ? null : sorted.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-deep/40">
               아직 할 일이 없어요

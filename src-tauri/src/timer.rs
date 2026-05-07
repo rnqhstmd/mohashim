@@ -37,11 +37,12 @@ const BREAK_MINUTES_KEY: &str = "break_minutes";
 const DEFAULT_FOCUS_MINUTES: u64 = 25;
 const DEFAULT_BREAK_MINUTES: u64 = 5;
 
-/// UI canSave가 보장하는 focus/break 분(分) 범위. 손상/외부 편집 케이스 방어용.
-pub const FOCUS_MINUTES_MIN: u64 = 5;
-pub const FOCUS_MINUTES_MAX: u64 = 90;
-pub const BREAK_MINUTES_MIN: u64 = 3;
-pub const BREAK_MINUTES_MAX: u64 = 30;
+/// UI DurationsEditScreen canSave가 보장하는 focus/break 분(分) 범위.
+/// Phase 17 BR-4: 5/90/3/30 → 1/180/1/60으로 확대 (자유 입력 화면 도입).
+pub const FOCUS_MINUTES_MIN: u64 = 1;
+pub const FOCUS_MINUTES_MAX: u64 = 180;
+pub const BREAK_MINUTES_MIN: u64 = 1;
+pub const BREAK_MINUTES_MAX: u64 = 60;
 
 // =====================================================================
 // Tauri commands
