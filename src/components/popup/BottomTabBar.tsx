@@ -18,12 +18,12 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
  */
 export function BottomTabBar({ tab, onChange }: BottomTabBarProps) {
   return (
-    <nav className="flex justify-around border-t border-deep/10 bg-white p-2">
+    <nav className="relative z-10 flex justify-around border-t border-ink/10 bg-paperWarm/90 p-2 backdrop-blur-sm">
       {TABS.map((item) => {
         const isActive = item.id === tab;
         const className = isActive
-          ? "rounded-full bg-deep px-3 py-1 text-sm text-white"
-          : "px-3 py-1 text-sm text-deep/60";
+          ? "rounded-full bg-deepNavy px-3 py-1 text-sm font-bold text-white shadow-[1px_1px_0_0_#2b2520]"
+          : "px-3 py-1 text-sm font-medium text-deep/60 hover:text-deep";
         return (
           <button
             key={item.id}

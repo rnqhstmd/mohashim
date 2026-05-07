@@ -41,7 +41,7 @@ export function ModeChip({ phase }: ModeChipProps) {
 
   return (
     <div
-      className={`absolute right-3 top-3 z-30 inline-flex items-center rounded-full px-2.5 py-1 text-xs text-white shadow ${bgClass}`}
+      className={`absolute right-3 top-3 z-30 inline-flex items-center rounded-full border border-ink/80 px-2.5 py-1 text-xs font-bold text-white shadow-[1.5px_1.5px_0_0_#2b2520] ${bgClass}`}
     >
       {showPulse && (
         <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-white animate-mhpulse" />

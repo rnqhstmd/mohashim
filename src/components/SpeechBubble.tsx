@@ -7,7 +7,10 @@ export type SpeechBubbleProps = {
 const BASE_CLASS =
   "relative inline-block rounded-[14px] border-[1.5px] border-ink px-3 py-2 shadow-[2px_2px_0_0_#2b2520]";
 
-export function SpeechBubble({ text, color = "#ffffff", className }: SpeechBubbleProps) {
+// Mohashim Design.html(PAPER 톤). 페이퍼 표면과 자연스럽게 어울린다.
+const PAPER_DEFAULT = "#fdf8ef";
+
+export function SpeechBubble({ text, color = PAPER_DEFAULT, className }: SpeechBubbleProps) {
   if (!text) return null;
 
   const containerClass = [BASE_CLASS, className].filter(Boolean).join(" ");

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useScoreTick } from "../../lib/score";
 import type { Phase } from "../../lib/score";
 import { focusStart } from "../../lib/timer";
@@ -13,6 +13,19 @@ import { GrassTab } from "./GrassTab";
 
 type MainScreenProps = {
   onResetDone: () => void;
+};
+
+// Mohashim Design.html(NOTE_BG) — 따뜻한 노트 페이퍼 표면.
+//   1) SVG feTurbulence 페이퍼 섬유 노이즈 (baseFrequency 1.4, opacity 0.045)
+//   2) 27/28px 가로 ruled lines (rgba(60,50,40,0.035))
+//   3) 좌상/우하 warm vignette
+const NOTE_PAPER_BG: CSSProperties = {
+  backgroundImage: [
+    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.20  0 0 0 0 0.18  0 0 0 0 0.14  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
+    "repeating-linear-gradient(to bottom, transparent 0, transparent 27px, rgba(60,50,40,0.035) 27px, rgba(60,50,40,0.035) 28px)",
+    "radial-gradient(ellipse at 30% 20%, rgba(255,253,247,0.5), transparent 60%)",
+    "radial-gradient(ellipse at 80% 85%, rgba(200,190,175,0.18), transparent 55%)",
+  ].join(","),
 };
 
 /**
@@ -87,25 +100,13 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   };
 
   return (
-    <div className="relative flex h-[460px] w-[320px] flex-col bg-mist font-pretendard text-ink">
-      {/* Phase 17 FR-D3: SVG feTurbulence grain 오버레이 (BR-6 pointer-events-none, QE-1).
-          z-0 ≪ ModeChip(z-30)/Toast(z-40)/Modal(z-50). 모든 인터랙션 통과. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 z-0 opacity-[0.08]"
-      >
-        <svg width="100%" height="100%">
-          <filter id="mh-grain">
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.65"
-              numOctaves="3"
-              stitchTiles="stitch"
-            />
-          </filter>
-          <rect width="100%" height="100%" filter="url(#mh-grain)" />
-        </svg>
-      </div>
+    <div
+      className="relative flex h-[460px] w-[320px] flex-col bg-paperBg font-pretendard text-ink"
+      style={NOTE_PAPER_BG}
+    >
+      {/* Phase 17 FR-D3 / Phase 20 design.html 정렬: NOTE_PAPER_BG가 fractalNoise + 가로 ruled
+          stripe + warm vignette를 모두 포함한다. 별도 grain 오버레이 SVG는 제거 (디자인 NOTE_BG 통합).
+          z-30 ModeChip / z-40 Toast / z-50 Modal 레이어 순서 그대로 유지. */}
       <ModeChip phase={phase} />
       <main className="flex flex-1 flex-col overflow-hidden">
         {tab === "settings" ? (

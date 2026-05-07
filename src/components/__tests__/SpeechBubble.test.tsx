@@ -48,12 +48,14 @@ describe("SpeechBubble — empty text guard (BR-3)", () => {
 });
 
 describe("SpeechBubble — color default", () => {
-  it("uses #ffffff as the default background color", () => {
+  // Phase 20: Mohashim Design.html(PAPER 톤 #fdf8ef)을 기본 배경으로 채택. 노트 페이퍼 표면과
+  // 자연스럽게 어울리도록 흰색에서 따뜻한 종이 톤으로 변경.
+  it("uses #fdf8ef (paper warm) as the default background color", () => {
     render(<SpeechBubble text="테스트" />);
     const text = screen.getByText("테스트");
     const container = text.parentElement as HTMLElement;
     const bg = container.style.backgroundColor;
-    expect(["#ffffff", "rgb(255, 255, 255)"]).toContain(bg);
+    expect(["#fdf8ef", "rgb(253, 248, 239)"]).toContain(bg);
   });
 });
 

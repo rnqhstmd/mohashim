@@ -10,12 +10,18 @@ const config: Config = {
         sky: "#7aa3e6",
         mist: "#d8e4f7",
         deep: "#445478",
+        // Mohashim Design.html(BLUE_DEEP) — 타이머/탭 active pill에 사용.
+        deepNavy: "#3e4d70",
         sun: "#f4d160",
         peach: "#e89a82",
         ink: "#2b2520",
         // Phase 6: todos 탭 상단 카드(PomodoroCard/FocusStartButton) 배경. active 그라디언트와 일관.
         // Phase 17 FR-D1: 시안 통일 #fff8e0 → #fffaed.
         cream: "#fffaed",
+        // Mohashim Design.html(POPUP_BG) — 노트 페이퍼 표면 베이스 톤.
+        paperBg: "#f5f2ec",
+        // Mohashim Design.html(PAPER) — 말풍선/카드 표면 톤.
+        paperWarm: "#fdf8ef",
         // Phase 3: ModeChip 배경 색상 (FR-chip-color).
         chipIdle: "#9ca3af",
         chipFocus: "#dc4646",
