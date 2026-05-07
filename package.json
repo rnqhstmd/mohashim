@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tray:gen": "node scripts/tray-gen.mjs",
+    "icon:gen": "node scripts/app-icon-gen.mjs",
     "prebuild": "npm run tray:gen"
   },
   "dependencies": {
