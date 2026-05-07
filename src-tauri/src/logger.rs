@@ -6,32 +6,40 @@
 //!
 //! BR-B1 정책: write 실패는 swallow + eprintln. init 실패 시 `LOG_WRITER` 미초기화 →
 //! `write`가 no-op (BR-B3).
+//!
+//! PR #19 gemini G1 반영: 자정 넘김 시 자동 회전. write 시점에 today 비교 후 필요 시
+//! 새 파일로 writer 교체. `Mutex<LogState>`로 date + writer를 함께 보유.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use chrono::NaiveDate;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_opener::OpenerExt;
 
 /// 30일 cleanup 멱등성 가드 (J).
-///
-/// `init`이 재호출되어도 동일 프로세스 lifetime 내에서는 cleanup이 1회만 수행된다.
 static CLEANUP_DONE: AtomicBool = AtomicBool::new(false);
 
-/// JSON Lines 파일 writer. `init` 성공 시 set, 실패 시 미초기화 → write no-op (BR-B3).
-static LOG_WRITER: OnceLock<Mutex<BufWriter<File>>> = OnceLock::new();
+/// JSON Lines 파일 writer + 현재 파일이 가리키는 날짜.
+///
+/// PR #19 G1: write 시점에 `date != today`이면 writer를 새 파일로 교체하여
+/// 자정 넘김 시 일별 회전을 보장한다.
+struct LogState {
+    date: NaiveDate,
+    writer: BufWriter<File>,
+}
 
-/// 로그 디렉토리 경로 (`app_log_dir()`). `open_log_dir` command에서 참조.
+/// init 성공 시 set, 실패 시 미초기화 → write no-op (BR-B3).
+static LOG_WRITER: OnceLock<Mutex<LogState>> = OnceLock::new();
+
+/// 로그 디렉토리 경로 (`app_log_dir()`). `open_log_dir` command + 자정 회전에서 참조.
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 8개 분석 이벤트 스키마 (FR-B4).
-///
-/// `event` 필드(snake_case)와 페이로드를 분리하여 직렬화한다.
-/// 공통 필드 `ts`(RFC 3339)는 `write` 함수에서 합성하여 prepend 한다 (I).
 #[derive(Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum LogEvent {
@@ -67,12 +75,18 @@ pub enum LogEvent {
     },
 }
 
+/// 오늘 날짜의 jsonl 파일을 OpenOptions::append로 열고 BufWriter로 래핑.
+fn open_today_file(dir: &Path, date: NaiveDate) -> Result<BufWriter<File>, String> {
+    let file_path = dir.join(format!("mohashim-{}.jsonl", date.format("%Y-%m-%d")));
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+        .map_err(|e| format!("open log file failed: {e}"))?;
+    Ok(BufWriter::new(file))
+}
+
 /// 로거 초기화 (FR-B2).
-///
-/// 1. `app_log_dir()` 디렉토리 생성. 실패 시 Err 반환 — 호출자 eprintln (BR-B3).
-/// 2. 30일 초과 `mohashim-*.jsonl` 파일 일괄 삭제 (FR-B7, J: AtomicBool 멱등 가드).
-/// 3. 오늘 파일 OpenOptions::append 오픈 + BufWriter::new + LOG_WRITER set.
-/// 4. `AppStart{version, os}` 첫 이벤트 기록.
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let dir = app
         .path()
@@ -80,25 +94,22 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         .map_err(|e| format!("app_log_dir failed: {e}"))?;
     fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all failed: {e}"))?;
 
-    // LOG_DIR 보존 (open_log_dir command 참조용). 재초기화 시 set Err은 무시.
     let _ = LOG_DIR.set(dir.clone());
 
-    // J: AtomicBool로 30일 cleanup 멱등성 보장. 같은 프로세스에서 1회만 수행.
     if !CLEANUP_DONE.swap(true, Ordering::AcqRel) {
         cleanup_old_files(&dir);
     }
 
-    // 오늘 파일 경로: mohashim-YYYY-MM-DD.jsonl (chrono::Local 기준).
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let file_path = dir.join(format!("mohashim-{}.jsonl", today));
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
-        .map_err(|e| format!("open log file failed: {e}"))?;
-    let writer = BufWriter::new(file);
-    if LOG_WRITER.set(Mutex::new(writer)).is_err() {
-        // 이미 초기화된 경우 — 재호출 방어. AppStart는 1회만 발화.
+    let today = chrono::Local::now().date_naive();
+    let writer = open_today_file(&dir, today)?;
+    if LOG_WRITER
+        .set(Mutex::new(LogState {
+            date: today,
+            writer,
+        }))
+        .is_err()
+    {
+        // 재호출 방어 — AppStart는 1회만 발화.
         return Ok(());
     }
 
@@ -113,10 +124,10 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 /// 1줄 JSON Lines append + flush (FR-B3, BR-B1).
 ///
 /// `LOG_WRITER` 미초기화 시 no-op (BR-B3). 직렬화/락/IO 실패는 swallow + eprintln.
-/// `ts`는 RFC 3339(`chrono::Local`)로 합성하여 첫 키로 삽입 (I: Map 머지).
+/// `ts`는 RFC 3339(`chrono::Local`)로 합성하여 첫 키로 삽입 (I, preserve_order로 순서 보장).
+/// 자정 회전 (G1): today != state.date이면 새 파일로 writer 교체.
 pub fn write(event: LogEvent) {
-    let Some(writer) = LOG_WRITER.get() else {
-        // BR-B3: init 실패/미호출 → write no-op.
+    let Some(writer_lock) = LOG_WRITER.get() else {
         return;
     };
     let value = match serde_json::to_value(&event) {
@@ -130,7 +141,6 @@ pub fn write(event: LogEvent) {
             return;
         }
     };
-    // I: ts를 첫 키로 prepend. serde_json::Map은 IndexMap이라 삽입 순서가 직렬화 순서.
     let mut ordered = serde_json::Map::new();
     ordered.insert(
         "ts".to_string(),
@@ -146,23 +156,40 @@ pub fn write(event: LogEvent) {
             return;
         }
     };
-    let mut buf = match writer.lock() {
+
+    let mut state = match writer_lock.lock() {
         Ok(g) => g,
-        Err(p) => p.into_inner(), // poison 복원
+        Err(p) => p.into_inner(),
     };
-    if let Err(e) = writeln!(buf, "{}", line).and_then(|_| buf.flush()) {
+
+    // G1 자정 회전: 오늘 날짜와 다르면 새 파일로 writer 교체.
+    let today = chrono::Local::now().date_naive();
+    if state.date != today {
+        let _ = state.writer.flush();
+        if let Some(dir) = LOG_DIR.get() {
+            match open_today_file(dir, today) {
+                Ok(new_writer) => {
+                    state.writer = new_writer;
+                    state.date = today;
+                }
+                Err(e) => {
+                    eprintln!("[mohashim] logger rotate failed: {e}");
+                    // 회전 실패 시 기존 파일에 계속 기록 (write no-op보다 보존 우선).
+                }
+            }
+        }
+    }
+
+    if let Err(e) = writeln!(state.writer, "{}", line).and_then(|_| state.writer.flush()) {
         eprintln!("[mohashim] logger write failed: {e}");
     }
 }
 
 /// 종료 직전 BufWriter flush (E: RunEvent::Exit).
-///
-/// `write`가 매 호출마다 flush 하므로 정상 흐름에서는 no-op. 그러나 RunEvent::Exit
-/// 핸들러에서 명시 호출하여 종료 race를 방어한다 (MA-2).
 pub fn flush() {
-    if let Some(writer) = LOG_WRITER.get() {
-        if let Ok(mut buf) = writer.lock() {
-            let _ = buf.flush();
+    if let Some(writer_lock) = LOG_WRITER.get() {
+        if let Ok(mut state) = writer_lock.lock() {
+            let _ = state.writer.flush();
         }
     }
 }
@@ -173,9 +200,6 @@ pub fn log_dir() -> Option<PathBuf> {
 }
 
 /// 30일 초과 `mohashim-*.jsonl` 파일 삭제 (FR-B7).
-///
-/// `dir` 직속 파일 walk + modified time 비교. 파일명 prefix 검사로 다른 파일은 보호.
-/// 모든 IO 실패는 swallow + eprintln (BR-B1 정책 일관).
 fn cleanup_old_files(dir: &std::path::Path) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -195,10 +219,7 @@ fn cleanup_old_files(dir: &std::path::Path) {
         if !name.starts_with("mohashim-") || !name.ends_with(".jsonl") {
             continue;
         }
-        let modified = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok();
+        let modified = entry.metadata().and_then(|m| m.modified()).ok();
         let Some(mtime) = modified else { continue };
         if mtime < cutoff {
             if let Err(e) = fs::remove_file(&path) {
@@ -212,9 +233,6 @@ fn cleanup_old_files(dir: &std::path::Path) {
 }
 
 /// 로그 폴더 OS 파일 매니저로 열기 (FR-B9, D-3).
-///
-/// `LOG_DIR` 미초기화 시 Err 반환 — 호출자(JS)가 catch 후 console.error.
-/// `tauri-plugin-opener::open_path`로 OS 기본 핸들러 호출. capabilities `opener:allow-open-path` 필요 (C).
 #[tauri::command]
 pub async fn open_log_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let dir = log_dir().ok_or_else(|| "log_dir not initialized".to_string())?;

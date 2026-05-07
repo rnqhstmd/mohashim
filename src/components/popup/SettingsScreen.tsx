@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   getBreakMinutes,
@@ -54,6 +54,15 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
   // BR-C3: editingId 단일 — 한 번에 하나의 카드만 펼침.
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // PR #19 cross-review W1: 편집/삭제/추가 저장이 직렬화되지 않으면 빠른 연속 조작에서
+  // 삭제가 되살아나거나 최신 편집이 덮일 수 있다. Promise 체인으로 영속 작업을 직렬 큐화.
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueuePersist = (op: () => Promise<void>) => {
+    persistQueueRef.current = persistQueueRef.current
+      .then(op)
+      .catch((err) => console.error("[mohashim] work tag persist failed", err));
+  };
+
   // 메인 진입/복귀 시 표기 값 로드.
   useEffect(() => {
     if (view !== "main") return;
@@ -89,38 +98,34 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
     }
   };
 
-  // FR-C2 / BR-C1: 인라인 편집 — 메모리 + 디스크 즉시 영속.
-  const updateTag = async (id: string, patch: Partial<WorkTag>) => {
+  // FR-C2 / BR-C1: 인라인 편집 — 메모리 즉시 + 디스크 영속은 직렬 큐 (W1).
+  const updateTag = (id: string, patch: Partial<WorkTag>) => {
     const next = workTags.map((t) => (t.id === id ? { ...t, ...patch } : t));
     setWorkTagsState(next);
-    try {
+    enqueuePersist(async () => {
       await setWorkTags(next, { save: false });
       await flush();
-    } catch (err) {
-      console.error("[mohashim] work tag update failed", err);
-    }
+    });
   };
 
   // FR-C3 / D-4: × 클릭 → 모달 없이 즉시 삭제 + 참조 todos는 removeTagRefs로 일괄 정리.
   // FR-C4: 작업 태그 1개 시 호출 자체가 차단되도록 disabled 처리하나 방어적으로 가드.
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (workTags.length <= 1) return;
     const next = workTags.filter((t) => t.id !== id);
     setWorkTagsState(next);
     if (editingId === id) setEditingId(null);
-    try {
+    enqueuePersist(async () => {
       await setWorkTags(next, { save: false });
       const todos = await getTodos();
       const cleaned = removeTagRefs(todos, [id], "work");
       await setTodos(cleaned, { save: false });
       await flush();
-    } catch (err) {
-      console.error("[mohashim] work tag delete failed", err);
-    }
+    });
   };
 
   // FR-C6: 새 작업 태그 추가 → 즉시 편집 모드 진입.
-  const handleAdd = async () => {
+  const handleAdd = () => {
     if (workTags.length >= 5) return;
     const newId = `wt${Date.now()}${Math.random().toString(36).slice(2)}`;
     const newTag: WorkTag = {
@@ -132,12 +137,10 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
     const next = [...workTags, newTag];
     setWorkTagsState(next);
     setEditingId(newId);
-    try {
+    enqueuePersist(async () => {
       await setWorkTags(next, { save: false });
       await flush();
-    } catch (err) {
-      console.error("[mohashim] work tag add failed", err);
-    }
+    });
   };
 
   if (view === "loc") {
