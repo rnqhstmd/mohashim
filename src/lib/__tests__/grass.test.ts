@@ -179,6 +179,73 @@ describe("grass.ts — formatDate (BR-G4)", () => {
   });
 });
 
+describe("grass.ts — formatDateHeading (Phase 13 FR-8)", () => {
+  it("'YYYY년 M월 D일 요일' 포맷 (수요일)", async () => {
+    const { formatDateHeading } = await import("../grass");
+    // 2026년 5월 6일은 수요일.
+    const d = new Date(2026, 4, 6);
+    expect(formatDateHeading(d)).toBe("2026년 5월 6일 수요일");
+  });
+
+  it("한 자리 월/일은 padding 없이 표기", async () => {
+    const { formatDateHeading } = await import("../grass");
+    // 2026-01-01은 목요일.
+    const d = new Date(2026, 0, 1);
+    expect(formatDateHeading(d)).toBe("2026년 1월 1일 목요일");
+  });
+
+  it("일요일/토요일 요일 산출", async () => {
+    const { formatDateHeading } = await import("../grass");
+    // 2026-05-03 일요일.
+    expect(formatDateHeading(new Date(2026, 4, 3))).toBe("2026년 5월 3일 일요일");
+    // 2026-05-09 토요일.
+    expect(formatDateHeading(new Date(2026, 4, 9))).toBe("2026년 5월 9일 토요일");
+  });
+});
+
+describe("grass.ts — formatSessionTime (Phase 13 FR-9)", () => {
+  it("오전 시각: 09:00~09:25", async () => {
+    const { formatSessionTime } = await import("../grass");
+    const start = new Date(2026, 4, 6, 9, 0).toISOString();
+    const end = new Date(2026, 4, 6, 9, 25).toISOString();
+    expect(formatSessionTime(start, end)).toBe("오전 9:00~9:25");
+  });
+
+  it("오후 시각: 14:00~14:25 → 오후 2:00~2:25", async () => {
+    const { formatSessionTime } = await import("../grass");
+    const start = new Date(2026, 4, 6, 14, 0).toISOString();
+    const end = new Date(2026, 4, 6, 14, 25).toISOString();
+    expect(formatSessionTime(start, end)).toBe("오후 2:00~2:25");
+  });
+
+  it("정오 경계: 12:00 → 오후 12:00", async () => {
+    const { formatSessionTime } = await import("../grass");
+    const start = new Date(2026, 4, 6, 12, 0).toISOString();
+    const end = new Date(2026, 4, 6, 12, 25).toISOString();
+    expect(formatSessionTime(start, end)).toBe("오후 12:00~12:25");
+  });
+
+  it("자정 경계: 0시는 12시로 표기 (오전 12:00)", async () => {
+    const { formatSessionTime } = await import("../grass");
+    const start = new Date(2026, 4, 6, 0, 0).toISOString();
+    const end = new Date(2026, 4, 6, 0, 25).toISOString();
+    expect(formatSessionTime(start, end)).toBe("오전 12:00~12:25");
+  });
+
+  it("분 단위 zero-padding: 5분 → :05", async () => {
+    const { formatSessionTime } = await import("../grass");
+    const start = new Date(2026, 4, 6, 14, 5).toISOString();
+    const end = new Date(2026, 4, 6, 14, 30).toISOString();
+    expect(formatSessionTime(start, end)).toBe("오후 2:05~2:30");
+  });
+
+  it("invalid ISO 입력은 빈 문자열 반환 (UI 폴백)", async () => {
+    const { formatSessionTime } = await import("../grass");
+    expect(formatSessionTime("invalid-date", "also-invalid")).toBe("");
+    expect(formatSessionTime("2026-05-06T14:00:00+09:00", "garbage")).toBe("");
+  });
+});
+
 describe("grass.ts — getMonthSessions (D-G4 월별 달력)", () => {
   it("AC-G15-monthly: 빈 sessions 상태에서도 해당 월 모든 일자 셀 + leading blank 정렬", async () => {
     const { getMonthSessions } = await import("../grass");

@@ -330,31 +330,45 @@ pub(crate) fn apply_todo_delta(
     }
 }
 
-/// Todo 완료 카운트 +1 (Phase 12 FR-2).
+/// Todo 완료 카운트 +1 (Phase 12 FR-2) + 세션 buffer 적재 (Phase 13 FR-14).
 ///
 /// sessions[date].todos_completed += 1. 레코드 미존재 시 신규 생성 (sessions=0, avg=0, sum=0).
 /// store save 후 `todo-completion` 이벤트 emit (FR-7, AC-12, AC-14).
 /// Rust 단일 writer 정책 유지 (BR-2).
+///
+/// Phase 13 (MA-1): `todo_id`는 required — silent miss 차단. JS invoke에 todoId 누락 시 IPC 에러.
+/// Phase 13 FR-14: sessions 갱신 후 `score::shared::push_todo`로 buffer 적재. phase 가드는
+/// push_todo 내부에서 Focus|Break만 통과 (Idle/Discarded/Complete는 미적재).
 #[tauri::command]
 pub async fn record_todo_completion<R: Runtime>(
     app: AppHandle<R>,
     date: String,
+    todo_id: String,
 ) -> Result<(), String> {
     update_sessions_todo(&app, &date, 1)?;
+    // Phase 13 FR-14 / BR-7: phase 가드 + 중복 차단은 push_todo 내부에서 수행.
+    // 가드 false 반환은 정상 흐름 (Idle 상태 호출 등) — 결과 무시.
+    let _ = crate::score::shared::push_todo(&todo_id);
     app.emit("todo-completion", json!({ "date": date }))
         .map_err(|e| format!("todo-completion emit failed: {e}"))
 }
 
-/// Todo 완료 롤백 카운트 -1 (Phase 12 FR-3).
+/// Todo 완료 롤백 카운트 -1 (Phase 12 FR-3) + 세션 buffer 제거 (Phase 13 FR-15).
 ///
 /// sessions[date].todos_completed = max(0, current - 1). 레코드 미존재 시 no-op.
 /// store save 후 `todo-completion` 이벤트 emit.
+///
+/// Phase 13 (MA-1): `todo_id`는 required — record와 정합성 유지.
+/// Phase 13 FR-15: sessions 갱신 후 `score::shared::remove_todo`로 buffer 제거. 일치 항목 없으면 no-op.
 #[tauri::command]
 pub async fn undo_todo_completion<R: Runtime>(
     app: AppHandle<R>,
     date: String,
+    todo_id: String,
 ) -> Result<(), String> {
     update_sessions_todo(&app, &date, -1)?;
+    // Phase 13 FR-15: buffer에서 해당 todo_id 제거. 일치 항목 없으면 false → 무시.
+    let _ = crate::score::shared::remove_todo(&todo_id);
     app.emit("todo-completion", json!({ "date": date }))
         .map_err(|e| format!("todo-completion emit failed: {e}"))
 }
@@ -386,6 +400,9 @@ fn update_sessions_todo<R: Runtime>(
 /// store.set만 수행하고 store.save()는 호출자가 묶음 단일 호출한다 — sessions 키 적재와
 /// session_logs 적재의 부분 일관성을 회피하기 위한 원자화 정책 (B3).
 /// session_logs 키의 단일 writer (BR-1).
+///
+/// Phase 13 FR-16: `todos_done`은 호출자(`timer::on_complete_consumed`)가 `score::shared::drain_todos`로
+/// 회수한 세션 todo ID 배열. 빈 배열도 허용 — todo 미체크 세션의 정상 케이스.
 pub(crate) fn append_session_log<R: Runtime>(
     app: &AppHandle<R>,
     id: &str,
@@ -394,6 +411,7 @@ pub(crate) fn append_session_log<R: Runtime>(
     end_at: &str,
     duration_mins: u32,
     score: u32,
+    todos_done: Vec<String>,
 ) -> Result<(), String> {
     let store = app
         .store(STORE_FILE)
@@ -407,7 +425,7 @@ pub(crate) fn append_session_log<R: Runtime>(
         "end_at": end_at,
         "duration_mins": duration_mins,
         "score": score,
-        "todos_done": [],
+        "todos_done": todos_done,
     }));
     store.set("session_logs", Value::Array(arr));
     // save는 호출자가 단일 처리 (DEC-10-8).

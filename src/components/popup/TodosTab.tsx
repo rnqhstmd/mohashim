@@ -145,7 +145,8 @@ export function TodosTab({
       const dateStr = completedAt
         ? formatDate(new Date(completedAt))
         : formatDate(new Date()); // 방어적 폴백: toggleDone이 completedAt을 채우지 못한 비정상 경로.
-      void invoke("record_todo_completion", { date: dateStr }).catch((err) => {
+      // Phase 13 (MA-1): todoId required. Rust가 SESSION_TODOS_DONE buffer에 적재하기 위해 필수.
+      void invoke("record_todo_completion", { date: dateStr, todoId: id }).catch((err) => {
         console.error("[mohashim] record_todo_completion failed", err);
       });
     } else if (previousCompletedAt) {
@@ -153,7 +154,8 @@ export function TodosTab({
       const parsed = new Date(previousCompletedAt);
       if (!Number.isNaN(parsed.getTime())) {
         const dateStr = formatDate(parsed);
-        void invoke("undo_todo_completion", { date: dateStr }).catch((err) => {
+        // Phase 13 (MA-1): todoId required. Rust가 buffer에서 해당 ID를 제거하기 위해 필수.
+        void invoke("undo_todo_completion", { date: dateStr, todoId: id }).catch((err) => {
           console.error("[mohashim] undo_todo_completion failed", err);
         });
       }

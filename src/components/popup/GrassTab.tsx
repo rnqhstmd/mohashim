@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ContributionGraph } from "./ContributionGraph";
 import { ShareCard } from "./ShareCard";
+import { DayDetailPanel } from "./DayDetailPanel";
 import {
   composeShareCard,
   copyShareCardToClipboard,
@@ -28,9 +29,19 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const shareRef = useRef<SVGSVGElement>(null);
+  // Phase 13 FR-3: 클릭된 셀의 'YYYY-MM-DD'. null이면 패널 미표시.
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // Phase 13 CON-2: 잔디 grid container ref — DayDetailPanel의 외부 클릭 판정 제외 영역.
+  // grid 안에서의 mousedown(다른 셀 클릭)이 panel을 닫고 다시 마운트하는 깜박임을 회피.
+  const gridContainerRef = useRef<HTMLDivElement>(null);
   // Phase 10 AC-17: 이전 월 버튼 경계는 올해 1월(= -getMonth()). mount 1회 산출.
   // 자정 경계 부정확은 본 Phase 수용 — 재mount/재기동 시 자가 회복.
   const minOffset = useMemo(() => -new Date().getMonth(), []);
+
+  // Phase 13 FR-11: 월 변경 시 selectedDate 초기화 → 패널 자동 닫힘.
+  useEffect(() => {
+    setSelectedDate(null);
+  }, [monthOffset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,12 +160,22 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        <ContributionGraph
-          data={data}
-          monthOffset={monthOffset}
-          onMonthChange={setMonthOffset}
-          minOffset={minOffset}
-        />
+        <div ref={gridContainerRef}>
+          <ContributionGraph
+            data={data}
+            monthOffset={monthOffset}
+            onMonthChange={setMonthOffset}
+            minOffset={minOffset}
+            onDayClick={setSelectedDate}
+          />
+        </div>
+        {selectedDate !== null && (
+          <DayDetailPanel
+            date={selectedDate}
+            onClose={() => setSelectedDate(null)}
+            excludeRef={gridContainerRef}
+          />
+        )}
       </div>
 
       <ShareCard ref={shareRef} data={data} />

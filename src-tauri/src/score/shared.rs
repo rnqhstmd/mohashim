@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering::Relaxed};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use crate::score::phase::Phase;
@@ -133,10 +133,19 @@ pub fn current_phase() -> Phase {
 /// Phase 11 (MA-2): Idle 외 Phase 진입 시 hysteresis 카운터 자동 리셋.
 /// timer.rs의 7개 호출 사이트(focus_start/break_start/discard 등)에 별도 reset
 /// 호출이 필요 없도록 본 함수 내장. Idle→Idle 전이는 카운터 유지(FR-7 누적 보존).
+///
+/// Phase 13 FR-17 (MA-2): Idle/Focus 진입 시만 SESSION_TODOS_DONE buffer를 clear한다.
+/// Break/Complete 진입 시 미clear — Break 중 todo 체크가 같은 세션에 누적되도록 보존하고,
+/// Complete 진입 시 on_complete_consumed의 drain_todos가 buffer 내용을 session_logs로 적재한다.
+/// (Phase 11 hysteresis 카운터의 "Idle 외 일괄 리셋" 패턴과 의도적으로 다름.)
 pub fn store_phase(p: Phase) {
     PHASE_BITS.store(p.as_u8(), Relaxed);
     if !matches!(p, Phase::Idle) {
         reset_noise_loud_state();
+    }
+    // Phase 13 FR-17: Idle/Focus 진입 시 buffer clear. Break/Complete 미clear.
+    if matches!(p, Phase::Idle | Phase::Focus) {
+        clear_todos();
     }
 }
 
@@ -173,6 +182,95 @@ pub fn time_left_secs() -> u64 {
 /// 잔여 초 atomic 저장.
 pub fn store_time_left(secs: u64) {
     TIME_LEFT_SECS.store(secs, Relaxed);
+}
+
+// ---------- 세션 todos_done buffer (Phase 13 FR-13) ----------
+
+/// 현재 세션 중 완료된 todo의 ID 누적 buffer.
+///
+/// Rust 단일 writer (BR-6) — JS는 read-only. session_logs.todos_done 적재 전용.
+/// CON-1: 별도 모듈로 분리하지 않고 본 shared.rs에 도메인 함수와 동거 (active_phase /
+/// session score 누적과 동일한 통합 패턴).
+///
+/// 라이프사이클 (FR-17, store_phase 분기 + on_complete_consumed의 drain_todos):
+/// - Idle/Focus 진입: clear (이전 세션 잔존 방어 + Discard/Sleep 잔존 cleanup).
+/// - Break/Complete 진입: 미clear (Break 중 todo 누적 / drain 대기).
+/// - on_complete_consumed success path: drain_todos로 session_logs 적재 + buffer 비움.
+/// - append_session_record 실패: drain 미호출 → store_phase(Idle)의 collateral clear에
+///   위임 (silent drop, MA-3).
+pub static SESSION_TODOS_DONE: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+/// buffer lazy init 헬퍼.
+fn buffer() -> &'static Mutex<Vec<String>> {
+    SESSION_TODOS_DONE.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// FR-14 / BR-7: phase가 Focus|Break일 때만 todo_id를 push. 중복 차단(set 의미).
+///
+/// 반환값: push 성공 시 true, phase 가드 실패 또는 중복 차단 시 false.
+/// Idle/Discarded/Complete 진입 시 호출 → 가드 false 반환 (AC-15).
+pub fn push_todo(id: &str) -> bool {
+    if !matches!(current_phase(), Phase::Focus | Phase::Break) {
+        return false;
+    }
+    let mut buf = match buffer().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(), // poison 복원
+    };
+    if buf.iter().any(|x| x == id) {
+        return false;
+    }
+    buf.push(id.to_string());
+    true
+}
+
+/// FR-15: buffer에서 todo_id 제거 (undo). 일치 항목이 있으면 제거 후 true.
+///
+/// phase 가드 없음 — undo는 어떤 phase에서도 호출될 수 있으나, buffer가 비어있거나
+/// 일치 항목 없으면 단순 false 반환 (no-op).
+pub fn remove_todo(id: &str) -> bool {
+    let mut buf = match buffer().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    if let Some(pos) = buf.iter().position(|x| x == id) {
+        buf.remove(pos);
+        true
+    } else {
+        false
+    }
+}
+
+/// FR-16: buffer 내용 clone 반환 + 비움. on_complete_consumed success path 전용.
+///
+/// 호출 후 buffer는 빈 상태가 된다 — 후속 store_phase(Idle)의 clear는 no-op.
+pub fn drain_todos() -> Vec<String> {
+    let mut buf = match buffer().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    // PR #14 리뷰 (gemini): std::mem::take로 clone+clear 일괄 처리.
+    // 소유권 이동으로 불필요한 복사 방지 (idiomatic Rust).
+    std::mem::take(&mut *buf)
+}
+
+/// FR-17: buffer 무조건 비움. store_phase(Idle/Focus)에서 호출.
+pub fn clear_todos() {
+    let mut buf = match buffer().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    buf.clear();
+}
+
+/// 테스트 전용 — 현재 buffer 상태 스냅샷 (clone, 비파괴).
+#[cfg(test)]
+pub fn snapshot_todos() -> Vec<String> {
+    let buf = match buffer().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    buf.clone()
 }
 
 #[cfg(test)]
@@ -323,5 +421,165 @@ mod tests {
         let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::INFINITY, 4);
         assert_eq!(c, 5);
         assert!(a);
+    }
+
+    // ---------- Phase 13 FR-13~17 buffer 테스트 ----------
+    //
+    // 모든 buffer 조작 테스트는 #[serial] 적용 — PHASE_BITS와 SESSION_TODOS_DONE
+    // 둘 다 프로세스 공유 atomic이라 병렬 실행 시 race가 발생할 수 있다.
+
+    #[test]
+    #[serial]
+    fn push_todo_when_focus_active() {
+        store_phase(Phase::Focus);
+        clear_todos();
+        assert!(push_todo("t1"));
+        assert_eq!(snapshot_todos(), vec!["t1".to_string()]);
+        // cleanup
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn push_todo_when_break_active() {
+        // Break 진입 시 buffer 미clear → 같은 세션의 누적 보존 (FR-17).
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        // Break로 전환해도 buffer 보존.
+        PHASE_BITS.store(Phase::Break.as_u8(), Relaxed);
+        assert!(push_todo("t2"));
+        let snap = snapshot_todos();
+        assert_eq!(snap, vec!["t1".to_string(), "t2".to_string()]);
+        // cleanup
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn push_todo_rejected_when_idle() {
+        // AC-15: Idle 상태에서 push_todo 호출 시 가드 false 반환 + buffer 미변경.
+        store_phase(Phase::Idle);
+        clear_todos();
+        assert!(!push_todo("t1"));
+        assert!(snapshot_todos().is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn push_todo_rejected_when_complete() {
+        // Complete는 drain 대기 phase — 이미 끝난 세션에 추가 불가.
+        store_phase(Phase::Focus);
+        clear_todos();
+        // store_phase(Complete)는 미clear (FR-17) — 직접 PHASE_BITS만 조작.
+        PHASE_BITS.store(Phase::Complete.as_u8(), Relaxed);
+        assert!(!push_todo("t1"));
+        assert!(snapshot_todos().is_empty());
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn push_todo_dedup() {
+        // BR-7: 같은 todo_id 두 번 push → 두 번째 false, buffer 1건만 보유.
+        store_phase(Phase::Focus);
+        clear_todos();
+        assert!(push_todo("t1"));
+        assert!(!push_todo("t1"));
+        assert_eq!(snapshot_todos(), vec!["t1".to_string()]);
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn remove_todo_existing() {
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        push_todo("t2");
+        assert!(remove_todo("t1"));
+        assert_eq!(snapshot_todos(), vec!["t2".to_string()]);
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn remove_todo_missing() {
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        // 일치 항목 없음 → false + 기존 buffer 보존.
+        assert!(!remove_todo("ghost"));
+        assert_eq!(snapshot_todos(), vec!["t1".to_string()]);
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn drain_todos_clones_and_clears() {
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        push_todo("t2");
+        let drained = drain_todos();
+        assert_eq!(drained, vec!["t1".to_string(), "t2".to_string()]);
+        assert!(snapshot_todos().is_empty());
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn store_phase_idle_clears_buffer() {
+        // FR-17: Idle 진입 시 clear (Discard/Sleep/error 잔존 cleanup).
+        // store_phase(Focus)로 buffer를 채울 수 있는 phase 만든 후 push, 그 다음 Idle로 전환.
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        push_todo("t2");
+        assert_eq!(snapshot_todos().len(), 2);
+        store_phase(Phase::Idle);
+        assert!(snapshot_todos().is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn store_phase_focus_clears_buffer() {
+        // FR-17: Focus 진입 시 clear (Idle→Focus 진입 방어망 — 이전 잔존 차단).
+        // PHASE_BITS만 직접 조작하여 buffer를 채운 뒤 store_phase(Focus) 호출.
+        store_phase(Phase::Focus);
+        push_todo("stale");
+        assert_eq!(snapshot_todos(), vec!["stale".to_string()]);
+        // 다시 Focus 진입 → clear.
+        store_phase(Phase::Focus);
+        assert!(snapshot_todos().is_empty());
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn store_phase_break_preserves_buffer() {
+        // FR-17: Break 진입 시 미clear — 같은 세션의 누적 보존.
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        store_phase(Phase::Break);
+        assert_eq!(snapshot_todos(), vec!["t1".to_string()]);
+        store_phase(Phase::Idle);
+    }
+
+    #[test]
+    #[serial]
+    fn store_phase_complete_preserves_buffer() {
+        // FR-17: Complete 진입 시 미clear — drain_todos 대기.
+        store_phase(Phase::Focus);
+        clear_todos();
+        push_todo("t1");
+        store_phase(Phase::Complete);
+        assert_eq!(snapshot_todos(), vec!["t1".to_string()]);
+        // 후속 drain + Idle 복귀 시뮬레이션.
+        let drained = drain_todos();
+        assert_eq!(drained, vec!["t1".to_string()]);
+        store_phase(Phase::Idle);
+        assert!(snapshot_todos().is_empty());
     }
 }
