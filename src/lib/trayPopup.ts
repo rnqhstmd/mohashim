@@ -106,12 +106,14 @@ export function pickMonitorForPoint<
 
 export async function attachTrayClickListener(
   os: TargetOs,
+  onTailX?: (tailXLogical: number) => void,
 ): Promise<() => void> {
   const win = getCurrentWindow();
-  // Phase 21: Rust(tray.rs)가 visibility(show/hide) 토글을 담당한다. JS는 위치
-  // 정밀화만 담당 — Rust가 default 위치에 잠시 띄운 직후 JS가 정확한 트레이
-  // 아이콘 아래 좌표로 setPosition. 두 측이 같은 동작을 하지 않도록 분리하여
-  // race/double-toggle 회피.
+  // Phase 21 사용자 피드백 재개정: 팝업 좌측 선을 아이콘 좌측 끝에 맞춘다 —
+  // popup_left = icon_left_logical (메뉴바 트레이 위치 변동에도 일관 정렬).
+  // 화면 우측 경계로 clamp되면 popup_left가 좌측으로 시프트되며, tail은
+  // icon_center - popup_left로 동기화하여 항상 아이콘 중심을 가리키도록 한다
+  // (onTailX 콜백). Rust apply_initial_position과 동일 공식.
   const unlisten = await listen<TrayClickPayload>(
     "tray-click",
     async (event) => {
@@ -126,11 +128,12 @@ export async function attachTrayClickListener(
         if (!monitor) return;
 
         const sf = monitor.scaleFactor;
-        // tray-click payload는 physical 좌표. 모니터 정보 + sf로 logical 좌표 계산.
-        const iconCenterXPhys = event.payload.x + event.payload.iconWidth / 2;
-        const iconCenterXLogical = iconCenterXPhys / sf;
-        const iconBottomYPhys = event.payload.y + event.payload.iconHeight;
-        const iconTopYPhys = event.payload.y;
+        const iconLeftLogical = event.payload.x / sf;
+        const iconCenterXLogical =
+          (event.payload.x + event.payload.iconWidth / 2) / sf;
+        const iconBottomYLogical =
+          (event.payload.y + event.payload.iconHeight) / sf;
+        const iconTopYLogical = event.payload.y / sf;
         const monLeftLogical = monitor.position.x / sf;
         const monTopLogical = monitor.position.y / sf;
         const monRightLogical = monLeftLogical + monitor.size.width / sf;
@@ -138,20 +141,23 @@ export async function attachTrayClickListener(
 
         const popupW = 320;
         const popupH = 470;
-        // PopupTail.tsx에서 tailX={270} (logical, popup 좌측에서 270px)을 기준으로
-        // 트레이 아이콘 중심과 일치시킨다. popup_left + 270 = iconCenter → popup_left
-        // = iconCenter - 270. 화면 밖으로 나가지 않도록 아래 clamp.
-        const tailXFromPopupLeft = 270;
-        let x = Math.round(iconCenterXLogical - tailXFromPopupLeft);
+        let x = Math.round(iconLeftLogical);
         let y: number;
         if (os === "macos") {
-          y = Math.round(iconBottomYPhys / sf);
+          y = Math.round(iconBottomYLogical);
         } else {
-          y = Math.round(iconTopYPhys / sf - popupH);
+          y = Math.round(iconTopYLogical - popupH);
         }
         x = Math.max(monLeftLogical, Math.min(monRightLogical - popupW, x));
         y = Math.max(monTopLogical, Math.min(monBottomLogical - popupH, y));
         await win.setPosition(new LogicalPosition(x, y));
+        // Tail은 popup 좌측에서 (iconCenter - popup_left)px 위치 — clamp 후에도
+        // 정확히 아이콘 중심을 가리킨다. 양 끝 보정으로 popup 폭 안쪽으로 강제.
+        if (onTailX) {
+          const rawTailX = iconCenterXLogical - x;
+          const tailX = Math.max(8, Math.min(popupW - 28, rawTailX));
+          onTailX(tailX);
+        }
       } catch (e) {
         console.error("[mohashim] tray-click position adjust failed", e);
       }

@@ -101,19 +101,14 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 let app = tray.app_handle();
                 eprintln!("[mohashim] tray clicked, emitting tray-click");
                 emit_tray_click(app, &rect);
-                // Phase 21 사용자 피드백: 트레이 클릭해도 팝업 안 뜸. Rust 측에서
-                // 가시성을 직접 보장한다. JS listener(trayPopup.ts)는 위치 정밀화만
-                // 담당 (toggle 로직 제거됨, 충돌 방지).
+                // Phase 21 사용자 피드백 (재개정): 팝업이 화면 중앙에서 잠깐 보였다가
+                // 트레이 아이콘 아래로 이동하던 회귀 — show 직전 Rust에서 직접 위치를
+                // 계산/적용하여 default 좌표 노출 자체를 차단한다. JS listener는 보수적인
+                // re-position 백업으로만 동작 (모니터 매핑 변경 등 edge case).
                 //
                 // 동작:
-                //   visible=true   → hide (토글로 닫기 — 가벼운 dismiss)
-                //   visible=false  → show + set_focus (창 띄우기)
-                //   is_visible 에러 → 보호적으로 show 시도
-                //
-                // 위치 보정: JS가 emit된 tray-click 이벤트를 받아 setPosition 호출.
-                // setPosition은 hidden/visible 무관하게 동작하므로 Rust show보다
-                // 늦게 와도 정상 적용 (창이 잠시 default 위치에 떴다가 이동할 수
-                // 있으나 사용자에게는 거의 즉시 정렬).
+                //   visible=true   → hide
+                //   visible=false  → set_position(컴퓨트) + show + set_focus
                 if let Some(win) = app.get_webview_window("main") {
                     match win.is_visible() {
                         Ok(true) => {
@@ -121,12 +116,14 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                             let _ = win.hide();
                         }
                         Ok(false) => {
-                            eprintln!("[mohashim] window hidden → show");
+                            eprintln!("[mohashim] window hidden → reposition + show");
+                            apply_initial_position(app, &win, &rect);
                             let _ = win.show();
                             let _ = win.set_focus();
                         }
                         Err(e) => {
                             eprintln!("[mohashim] is_visible err: {e} → fallback show");
+                            apply_initial_position(app, &win, &rect);
                             let _ = win.show();
                             let _ = win.set_focus();
                         }
@@ -163,6 +160,123 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     }
 
     Ok(())
+}
+
+/// Phase 21 (사용자 피드백 재개정): 팝업 좌측 선을 트레이 아이콘의 좌측 끝과
+/// 정확히 맞춘다 — `popup_left = icon_left_logical`. 메뉴바에서 다른 앱 아이콘이
+/// 추가/제거되어 우상단 트레이 위치가 바뀌어도 팝업의 좌측 정렬이 일관 유지된다.
+///
+/// 좌표 산출:
+/// - tray rect의 물리 좌표/크기를 클릭한 모니터의 sf로 logical 변환.
+/// - popup_left = icon_left_logical (clamp 후 조정될 수 있음).
+/// - tail은 아이콘 중심 (icon_center - popup_left) 위치를 가리켜야 자연스럽다 —
+///   JS 측 tray-click listener가 이 값으로 PopupTail의 tailX를 동기화한다.
+/// - macOS: 메뉴바 하단 = icon_bottom_y. Windows: icon_top_y - popup_height.
+/// - 모니터 작업 영역으로 clamp.
+///
+/// 실패는 swallow — 위치 보정 불가 시 default 위치로 떨어져도 가시성은 유지.
+fn apply_initial_position<R: Runtime>(
+    app: &AppHandle<R>,
+    win: &tauri::WebviewWindow<R>,
+    rect: &tauri::Rect,
+) {
+    const POPUP_W: f64 = 320.0;
+    const POPUP_H: f64 = 470.0;
+
+    let monitors = match app.available_monitors() {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("[mohashim] apply_initial_position: available_monitors err: {e}");
+            return;
+        }
+    };
+
+    // rect.position을 physical px으로 정규화 (Logical 분기에서는 매칭 모니터의 sf로 변환).
+    let primary_sf = win.scale_factor().ok().unwrap_or(1.0);
+    let icon_pos_phys = match rect.position {
+        tauri::Position::Physical(p) => p,
+        tauri::Position::Logical(l) => monitors
+            .iter()
+            .find_map(|m| {
+                let p = l.to_physical::<i32>(m.scale_factor());
+                let mp = m.position();
+                let ms = m.size();
+                let in_x = p.x >= mp.x && p.x < mp.x.saturating_add(ms.width as i32);
+                let in_y = p.y >= mp.y && p.y < mp.y.saturating_add(ms.height as i32);
+                if in_x && in_y {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| l.to_physical(primary_sf)),
+    };
+    let icon_size_phys = match rect.size {
+        tauri::Size::Physical(s) => s,
+        tauri::Size::Logical(s) => s.to_physical(primary_sf),
+    };
+
+    // 클릭 모니터 매칭. 매칭 실패 시 첫 모니터 폴백.
+    let monitor = monitors
+        .iter()
+        .find(|m| {
+            let mp = m.position();
+            let ms = m.size();
+            icon_pos_phys.x >= mp.x
+                && icon_pos_phys.x < mp.x.saturating_add(ms.width as i32)
+                && icon_pos_phys.y >= mp.y
+                && icon_pos_phys.y < mp.y.saturating_add(ms.height as i32)
+        })
+        .or_else(|| monitors.first());
+    let monitor = match monitor {
+        Some(m) => m,
+        None => {
+            eprintln!("[mohashim] apply_initial_position: no monitors");
+            return;
+        }
+    };
+
+    let sf = monitor.scale_factor_or_1();
+    // Phase 21 사용자 피드백: 팝업 좌측 선을 아이콘 좌측 끝에 정렬.
+    let icon_left_logical = icon_pos_phys.x as f64 / sf;
+    let icon_bottom_y_logical = (icon_pos_phys.y as f64 + icon_size_phys.height as f64) / sf;
+    let icon_top_y_logical = icon_pos_phys.y as f64 / sf;
+
+    let mon_left_logical = monitor.position().x as f64 / sf;
+    let mon_top_logical = monitor.position().y as f64 / sf;
+    let mon_right_logical = mon_left_logical + monitor.size().width as f64 / sf;
+    let mon_bottom_logical = mon_top_logical + monitor.size().height as f64 / sf;
+
+    let mut x = icon_left_logical.round();
+    #[cfg(target_os = "macos")]
+    let mut y = icon_bottom_y_logical.round();
+    #[cfg(not(target_os = "macos"))]
+    let mut y = (icon_top_y_logical - POPUP_H).round();
+    // 컴파일러 경고 회피: 사용되지 않을 수 있는 변수.
+    let _ = icon_top_y_logical;
+    let _ = icon_bottom_y_logical;
+
+    x = x.max(mon_left_logical).min(mon_right_logical - POPUP_W);
+    y = y.max(mon_top_logical).min(mon_bottom_logical - POPUP_H);
+
+    if let Err(e) = win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y })) {
+        eprintln!("[mohashim] apply_initial_position: set_position err: {e}");
+    }
+}
+
+/// 모니터 sf 안전 추출 — Tauri Monitor::scale_factor가 panic하지 않도록 1.0 폴백 트레잇.
+trait MonitorScaleFactorExt {
+    fn scale_factor_or_1(&self) -> f64;
+}
+impl MonitorScaleFactorExt for tauri::Monitor {
+    fn scale_factor_or_1(&self) -> f64 {
+        let sf = self.scale_factor();
+        if sf.is_finite() && sf > 0.0 {
+            sf
+        } else {
+            1.0
+        }
+    }
 }
 
 /// rect를 PhysicalPosition / PhysicalSize 단위로 변환 후 emit. (MUST-ADDRESS D)

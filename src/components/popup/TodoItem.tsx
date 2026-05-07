@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Todo, WorkTag, Location } from "../../lib/storage";
 import { FlatTag } from "./FlatTag";
 
@@ -6,153 +6,101 @@ type TodoItemProps = {
   todo: Todo;
   workTag: WorkTag | null;
   location: Location | null;
-  openSwipeId: string | null;
-  onSwipeOpen: (id: string | null) => void;
   onToggleDone: (id: string) => void;
   onToggleActive: (id: string) => void;
   onDelete: (id: string) => void;
+  onEditText: (id: string, text: string) => void;
 };
 
-type SwipeIntent = "undecided" | "horizontal" | "vertical";
-
 /**
- * 투두 카드 (Phase 17 FR-A1~A8) — 행 단위 → 카드 단위 변경.
+ * 투두 카드 (Phase 21 재구조 — 사용자 피드백 반영).
  *
- * 외곽 카드는 고정. 내부 컨텐츠가 translateX로 좌측 슬라이드되며 우측에 삭제 버튼이 노출된다 (BR-7).
- * active 시 좌측 4px deep 막대 + cream 배경. 인라인 그라디언트 하드코딩 폐기 — Tailwind 토큰만 사용.
+ * 변경:
+ *   - swipe-to-delete 제거 (translateX + 노출 삭제 버튼 애니메이션 제거).
+ *   - 우측 상단 ⋮ 메뉴 버튼 단일 — 클릭 시 [고정/고정 해제 · 삭제] popover.
+ *   - 텍스트 클릭 → 인라인 편집 input. Enter 저장 / ESC 취소 / blur 저장.
+ *   - 완료된 todo는 텍스트 클릭 시 편집 진입하지 않음 (toggle만).
  *
- * 스와이프 의도 분기 (C1):
- *   - 5px 임계 미만: undecided 유지 (클릭 호환).
- *   - dx-dy 비교로 horizontal/vertical 결정.
- *   - vertical 시 부모 스크롤에 양보 (return).
- *   - horizontal 시 setPointerCapture로 click 차단 + offset 갱신.
- *
- * 다른 카드 스와이프 시 자동 닫힘 — `openSwipeId !== todo.id`이면 effect로 offset=0 복귀.
+ * active 시각: 좌측 4px deep 막대 + cream 배경.
  */
 export function TodoItem({
   todo,
   workTag,
   location,
-  openSwipeId,
-  onSwipeOpen,
   onToggleDone,
   onToggleActive,
   onDelete,
+  onEditText,
 }: TodoItemProps) {
-  const startX = useRef(0);
-  const startY = useRef(0);
-  const initialOffset = useRef(0);
-  const intent = useRef<SwipeIntent>("undecided");
-  const [offset, setOffset] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(todo.text);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // 다른 카드가 열리면 본 카드는 닫힘.
+  // 편집 진입 시 input autofocus.
   useEffect(() => {
-    if (openSwipeId !== todo.id) {
-      setOffset(0);
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
     }
-  }, [openSwipeId, todo.id]);
+  }, [editing]);
 
-  const handlePointerDown = (e: ReactPointerEvent) => {
-    startX.current = e.clientX;
-    startY.current = e.clientY;
-    initialOffset.current = offset; // 점프 방지 — 이미 -80인 상태에서 재스와이프 시 dx 0부터 더해짐.
-    intent.current = "undecided";
+  // 메뉴 외부 클릭 닫기.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [menuOpen]);
+
+  const startEdit = () => {
+    if (todo.done) return;
+    setDraft(todo.text);
+    setEditing(true);
   };
 
-  const handlePointerMove = (e: ReactPointerEvent) => {
-    const dx = e.clientX - startX.current;
-    const dy = e.clientY - startY.current;
-
-    if (intent.current === "undecided") {
-      const ax = Math.abs(dx);
-      const ay = Math.abs(dy);
-      if (ax < 5 && ay < 5) return;
-      if (ax > ay + 5) {
-        intent.current = "horizontal";
-        try {
-          // 핸들러가 부착된 컨테이너(currentTarget)에 capture — 내부 span/button으로 target이 바뀌어도 안정.
-          e.currentTarget.setPointerCapture(e.pointerId);
-        } catch {
-          // setPointerCapture 실패는 무시
-        }
-      } else if (ay > ax) {
-        intent.current = "vertical";
-        return;
-      } else {
-        return;
-      }
+  const commitEdit = () => {
+    const trimmed = draft.trim();
+    if (trimmed !== "" && trimmed !== todo.text) {
+      onEditText(todo.id, trimmed);
     }
-
-    if (intent.current === "horizontal") {
-      setOffset(Math.min(0, Math.max(-80, initialOffset.current + dx)));
-    }
+    setEditing(false);
   };
 
-  const handlePointerUp = () => {
-    if (intent.current === "horizontal") {
-      if (offset < -40) {
-        setOffset(-80);
-        onSwipeOpen(todo.id);
-      } else {
-        setOffset(0);
-        if (openSwipeId === todo.id) onSwipeOpen(null);
-      }
-    }
-    intent.current = "undecided";
+  const cancelEdit = () => {
+    setDraft(todo.text);
+    setEditing(false);
   };
 
   const showActive = todo.active && !todo.done;
 
-  // 외곽 카드 클래스 — Phase 20 design.html 정렬: ink/15 stroke + paperWarm bg + 미세
-  // offset shadow. active는 좌측 4px deep로 시각 강조 + cream bg 유지.
+  // Phase 21 사용자 피드백: 좌측 4px 검정 막대(border-l-4 border-l-ink) 제거 —
+  // 강조 색상을 살짝 붉은 톤(rose-50/rose-200)으로만 적용하고, 고정 표시는
+  // 행 우측 끝의 별도 핀 아이콘으로 노출 (메뉴 버튼 좌측).
   const cardClass = [
-    "rounded-xl border border-ink/15 relative overflow-hidden shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]",
-    showActive ? "border-l-4 border-l-ink bg-cream" : "bg-paperWarm",
+    "rounded-xl relative shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]",
+    showActive
+      ? "border border-rose-300/70 bg-rose-50/70"
+      : "border border-ink/15 bg-paperWarm",
     todo.done ? "opacity-60" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
-  // label 클래스 — 완료 시 line-through + opacity-40, font-kyobo 적용 (BR-3).
-  const labelClass = todo.done
-    ? "font-kyobo flex-1 truncate line-through opacity-40"
-    : "font-kyobo flex-1 truncate text-ink";
+  const labelBaseClass = todo.done
+    ? "flex-1 truncate line-through opacity-40"
+    : "flex-1 truncate text-ink cursor-text";
 
   return (
     <div className={cardClass}>
-      {/* 우측 상단 × 삭제 버튼 (FR-A5) */}
-      <button
-        type="button"
-        onClick={() => onDelete(todo.id)}
-        aria-label="삭제 (×)"
-        className="absolute right-2 top-2 z-10 text-ink/35 hover:text-red-500"
-      >
-        ×
-      </button>
-
-      {/* 우측 슬라이드 노출 삭제 버튼 (BR-7) — 외곽 카드 내부 absolute 배경 */}
-      <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-        <button
-          type="button"
-          onClick={() => onDelete(todo.id)}
-          disabled={offset > -10}
-          className="rounded bg-red-500 px-3 py-1 text-xs text-white disabled:opacity-0"
-        >
-          삭제
-        </button>
-      </div>
-
-      {/* 내부 컨텐츠 — translateX 적용 대상 */}
-      <div
-        className="relative bg-inherit px-3 py-2 transition-transform duration-150 ease-out"
-        style={{ transform: `translateX(${offset}px)` }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        {/* 상단 행: 원형 체크박스 + label + ★/▶ */}
-        <div className="flex items-center gap-2 pr-6">
+      <div className="px-3 py-2">
+        <div className="flex items-center gap-2 pr-1">
           <button
             type="button"
             onClick={() => onToggleDone(todo.id)}
@@ -166,40 +114,107 @@ export function TodoItem({
             {todo.done && <span className="text-[10px]">✓</span>}
           </button>
 
-          <span className={labelClass}>{todo.text}</span>
+          {editing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={draft}
+              maxLength={100}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitEdit();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              className="flex-1 rounded-md border border-ink/30 bg-paperWarm px-1.5 py-0.5 text-sm text-ink outline-none focus:border-ink/60"
+            />
+          ) : (
+            <span
+              role="button"
+              tabIndex={todo.done ? -1 : 0}
+              onClick={startEdit}
+              onKeyDown={(e) => {
+                if (!todo.done && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  startEdit();
+                }
+              }}
+              className={labelBaseClass}
+            >
+              {todo.text}
+            </span>
+          )}
 
-          {!todo.done && (
+          {/* Phase 21 사용자 피드백: 고정 항목은 우측 끝 핀 아이콘으로 표시. */}
+          {showActive && (
+            <span
+              aria-label="고정됨"
+              title="고정됨"
+              className="shrink-0 text-rose-500"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M16 4l-1 1 .5 1L13 9 9 8 7 10l3.5 3.5L7 17v3l3.5-3.5L14 20l2-2-1-4 2.5-2.5 1 .5 1-1-3.5-3.5z" />
+              </svg>
+            </span>
+          )}
+
+          <div ref={menuRef} className="relative shrink-0">
             <button
               type="button"
-              onClick={() => onToggleActive(todo.id)}
-              aria-label={todo.active ? "현재 작업 해제" : "현재 작업으로 고정"}
-              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors ${
-                todo.active
-                  ? "text-amber-500"
-                  : "text-ink/35 hover:text-ink/65"
-              }`}
+              aria-label="할 일 메뉴 열기"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex h-6 w-6 items-center justify-center rounded text-ink/50 hover:bg-ink/5 hover:text-ink/80"
             >
-              {/* Phase 21 사용자 피드백: ▶/★ 텍스트 글리프 → 핀(고정) SVG 아이콘으로 교체.
-                  todo.active=true: 채워진 핀(현재 작업). false: 빈 핀(고정 가능). */}
-              {todo.active ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                  <path d="M16 4l-1 1 .5 1L13 9 9 8 7 10l3.5 3.5L7 17v3l3.5-3.5L14 20l2-2-1-4 2.5-2.5 1 .5 1-1-3.5-3.5z" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path
-                    d="M16 4l-1 1 .5 1L13 9 9 8 7 10l3.5 3.5L7 17v3l3.5-3.5L14 20l2-2-1-4 2.5-2.5 1 .5 1-1-3.5-3.5z"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
             </button>
-          )}
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-7 z-20 min-w-[120px] overflow-hidden rounded-lg border-[1.5px] border-ink bg-paperWarm shadow-[2px_2px_0_0_#2b2520]"
+              >
+                {!todo.done && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onToggleActive(todo.id);
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-bold text-ink hover:bg-ink/5"
+                  >
+                    <span aria-hidden>📌</span>
+                    {todo.active ? "고정 해제" : "고정"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onDelete(todo.id);
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-ink/10 px-3 py-1.5 text-left text-xs font-bold text-red-600 hover:bg-red-500/10"
+                >
+                  <span aria-hidden>🗑</span>
+                  삭제
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* 하단 행: 태그 칩 (들여쓰기 pl-7로 체크박스 우측 정렬) */}
         {(workTag || location) && (
           <div className="mt-1 flex items-center gap-2 pl-7">
             {workTag && <FlatTag tag={workTag} />}

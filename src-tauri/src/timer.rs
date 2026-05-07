@@ -136,7 +136,13 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
             let minutes = read_minutes(app, BREAK_MINUTES_KEY, DEFAULT_BREAK_MINUTES);
             store_phase(Phase::Break);
             store_time_left(minutes.saturating_mul(60));
-            send_notification(app, "휴식 시작", "잠깐 쉬어가세요.");
+            // Phase 21 사용자 피드백: "집중 종료" 알림이 약해서 놓치는 회귀.
+            // 제목을 행동(집중 종료) 명시 + body에 휴식 분 표기로 강화.
+            send_notification(
+                app,
+                "🍅 집중 종료!",
+                &format!("{}분 휴식하고 다시 시작해요", minutes),
+            );
             write_active_phase(app, "break");
             // Phase 18 FR-B5: phase_change(focus→break). elapsed_secs는 focus 설정 분 환산.
             logger::write(LogEvent::PhaseChange {
@@ -150,7 +156,7 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
             let focus_minutes = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
             store_phase(Phase::Complete);
             store_time_left(0);
-            send_notification(app, "세션 완료", "고생했습니다.");
+            send_notification(app, "🎉 세션 완료!", "오늘도 고생하셨어요!");
             // 토스트 + active_phase=idle은 score::tick_loop의 emit 직후 on_complete_consumed에서 수행.
             // 토스트가 score-tick Complete payload보다 먼저 JS에 도달하지 않도록 순서 보장.
             // Phase 18 FR-B5 (A): phase_change(break→complete) + session_complete 기록.

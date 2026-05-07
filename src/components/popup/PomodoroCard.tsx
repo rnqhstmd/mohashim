@@ -1,5 +1,4 @@
 import { Potato } from "../Potato";
-import { SpeechBubble } from "../SpeechBubble";
 import type { PotatoState } from "../../lib/phrases";
 
 type PomodoroCardProps = {
@@ -7,6 +6,8 @@ type PomodoroCardProps = {
   timeLeft: number;
   potatoState: PotatoState;
   phrase: string;
+  /** Phase 21: 데시벨 인라인 노출 — 캐릭터 헤더 내부에서 dB 라벨/숫자 표기. */
+  db: number;
   onTimerClick: () => void;
 };
 
@@ -17,45 +18,104 @@ function formatMmSs(secs: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function envFromDb(db: number): { icon: string; label: string; danger: boolean } {
+  if (db <= 40) return { icon: "📚", label: "조용해요", danger: false };
+  if (db <= 55) return { icon: "🏠", label: "조용해요", danger: false };
+  if (db <= 65) return { icon: "☕", label: "조용한 편", danger: false };
+  if (db <= 75) return { icon: "🗣", label: "조금 시끄러워", danger: false };
+  if (db <= 85) return { icon: "👥", label: "시끄러워요", danger: true };
+  return { icon: "🚧", label: "매우 시끄러워", danger: true };
+}
+
 /**
- * Todos 탭 상단 압축 카드 — focus/break/complete phase에서 노출.
+ * Todos 탭 상단 카드 — focus/break/complete phase에서 노출 (Phase 21 사용자 피드백 재구조).
  *
- * 카드 영역 ~120px 높이로 압축하여 todos 본체 공간 확보 (옵션 A 통합, M1).
- *
- * Phase 17 (B2-F): [그만하기] 버튼 제거. 타이머 영역을 버튼으로 감싸 클릭 시
- * TimerDetailScreen 진입 (onTimerClick). complete phase에서는 클릭 무시
- * (TodosTab의 phase effect와 race 방지).
+ * FocusStartButton과 동일 레이아웃 골격 — 우상단 모드 칩 / 좌측 큰 Potato /
+ * 우측 헤더 + 환경 라벨 + 멘트 / 하단 풀폭 [타이머 보기 | mm:ss] 버튼.
  */
 export function PomodoroCard({
   phase,
   timeLeft,
   potatoState,
   phrase,
+  db,
   onTimerClick,
 }: PomodoroCardProps) {
   const isComplete = phase === "complete";
+  const modeLabel =
+    phase === "focus" ? "집중 중" : phase === "break" ? "휴식 중" : "세션 완료";
+  const chipBg =
+    phase === "focus"
+      ? "bg-chipFocus"
+      : phase === "break"
+      ? "bg-chipBreak"
+      : "bg-emerald-500";
+
+  const inactive = db === 0;
+  const dbSpl = inactive ? 0 : Math.max(0, Math.min(120, db + 94));
+  const env = inactive
+    ? { icon: "🎙", label: "측정 대기 중", danger: false }
+    : envFromDb(dbSpl);
+  const dbColor = inactive ? "#8a93a6" : env.danger ? "#d8554b" : "#5fa97a";
 
   return (
-    <div className="border-b border-ink/10 bg-paperWarm/70 px-3 py-2 backdrop-blur-[1px]">
-      <div className="flex items-center gap-3">
-        <Potato state={potatoState} size={80} animated={true} />
-        <div className="flex flex-1 flex-col gap-1">
-          <SpeechBubble text={phrase} />
-          <button
-            type="button"
-            onClick={onTimerClick}
-            disabled={isComplete}
-            className="flex items-center justify-between disabled:cursor-default"
-          >
-            <span className="text-2xl font-extrabold tabular-nums tracking-tight text-ink">
-              {formatMmSs(timeLeft)}
+    <div className="relative border-b border-ink/10 bg-paperWarm/70 px-3 pb-2.5 pt-2.5 backdrop-blur-[1px]">
+      {/* 우상단 절대 위치 — 모드 칩. */}
+      <span
+        className={`absolute right-3 top-2 inline-flex items-center gap-1 rounded-full border border-ink/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-[1px_1px_0_0_#2b2520] ${chipBg}`}
+      >
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-mhpulse" />
+        {modeLabel}
+      </span>
+
+      {/* 1행: 큰 Potato + 우측 헤더 영역 */}
+      <div className="flex items-start gap-3">
+        <div className="shrink-0">
+          <Potato state={potatoState} size={88} animated={true} />
+        </div>
+        <div className="min-w-0 flex-1 pt-1">
+          <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">
+            <span>안녕 모하야</span>
+            <span aria-hidden>🥔</span>
+          </h2>
+
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
+            <span
+              className="inline-flex items-center gap-1 tabular-nums"
+              style={{ color: dbColor }}
+            >
+              <span aria-hidden>{env.icon}</span>
+              <span>{env.label}</span>
+              <span className="ml-0.5 opacity-90">
+                {inactive ? "—" : `${Math.round(dbSpl)}dB`}
+              </span>
             </span>
-            {!isComplete && (
-              <span className="text-[11px] font-semibold text-ink/45">▶ 탭해서 보기</span>
-            )}
-          </button>
+          </div>
+
+          <p className="mt-1 break-words text-xs italic text-ink/75">
+            "{phrase}"
+          </p>
         </div>
       </div>
+
+      {/* 2행: 타이머 보기 풀폭 버튼. */}
+      <button
+        type="button"
+        onClick={onTimerClick}
+        disabled={isComplete}
+        className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-ink bg-ink py-2.5 text-sm font-extrabold tracking-tight text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[2px_3px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_1px_0_0_rgba(40,30,20,0.18)] disabled:cursor-default disabled:bg-ink/40 disabled:shadow-none"
+      >
+        <span aria-hidden className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-paperWarm/15">
+          ⏱
+        </span>
+        <span>{isComplete ? "세션 완료" : "타이머 보기"}</span>
+        <span
+          aria-hidden
+          className="inline-block w-[44px] border-l border-paperWarm/30 pl-2 text-right text-xs font-bold text-paperWarm/80 tabular-nums"
+        >
+          {formatMmSs(timeLeft)}
+        </span>
+      </button>
     </div>
   );
 }

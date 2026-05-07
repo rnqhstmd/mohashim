@@ -54,7 +54,9 @@ body,
 }
 
 body {
-  font-family: theme("fontFamily.pretendard");
+  /* Phase 21 사용자 피드백: 팝업 전체에 손글씨 폰트 적용 (기존 Pretendard는
+     할 일 텍스트만 노출되어 일관성 결여). KyoboHandwriting2019 → Pretendard 폴백 체인. */
+  font-family: theme("fontFamily.kyobo");
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

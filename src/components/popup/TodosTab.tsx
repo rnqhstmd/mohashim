@@ -15,6 +15,7 @@ import {
   toggleDone,
   setActive,
   deleteTodo,
+  editTodoText,
 } from "../../lib/todos";
 import { formatDate } from "../../lib/grass";
 import { TodoInput } from "./TodoInput";
@@ -22,7 +23,6 @@ import { TodoItem } from "./TodoItem";
 import { PomodoroCard } from "./PomodoroCard";
 import { FocusStartButton } from "./FocusStartButton";
 import { TimerDetailScreen } from "./TimerDetailScreen";
-import { NoiseMeter } from "./NoiseMeter";
 
 type TodosTabProps = {
   phase: Phase;
@@ -58,7 +58,6 @@ export function TodosTab({
   const [todos, setTodosState] = useState<Todo[]>([]);
   const [workTags, setWorkTags] = useState<WorkTag[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   // 로드 완료 전에는 빈 상태 ("아직 할 일이 없어요") flicker 방지를 위해 본문 미렌더.
   const [loaded, setLoaded] = useState(false);
   // Phase 17 B2-F (FR-F4): list / timer-detail view 토글. PomodoroCard 클릭 시
@@ -187,6 +186,7 @@ export function TodosTab({
   ) {
     return (
       <TimerDetailScreen
+        phase={phase}
         timeLeft={timeLeft}
         potatoState={potatoState}
         phrase={phrase}
@@ -196,34 +196,32 @@ export function TodosTab({
   }
 
   return (
-    <div
-      className="flex h-full flex-col"
-      onClick={() => setOpenSwipeId(null)}
-    >
+    <div className="flex h-full flex-col">
       {phase === "focus" || phase === "break" || phase === "complete" ? (
         <PomodoroCard
           phase={phase}
           timeLeft={timeLeft}
           potatoState={potatoState}
           phrase={phrase}
+          db={db}
           onTimerClick={() => setView("timer-detail")}
         />
       ) : (
         <FocusStartButton
           potatoState={potatoState}
           phrase={phrase}
+          db={db}
           onStart={onFocusStart}
         />
       )}
 
-      {/* Phase 21 사용자 피드백: 캐릭터 카드(PomodoroCard/FocusStartButton) 아래에
-          dB 측정 UI. 평상시/집중 모두에서 환경 노이즈 인지. */}
-      <div className="border-b border-ink/10 bg-paperWarm/60 px-3 py-1.5 backdrop-blur-[1px]">
-        <NoiseMeter db={db} size="sm" />
-      </div>
-
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
+      {/* Phase 21 사용자 피드백: 할 일 목록이 잘리거나 스크롤되지 않는 회귀 — flex
+          컨테이너의 `min-height: auto`(기본) 때문에 자식 overflow-y-auto가 부모 높이
+          이상으로 늘어나며 스크롤 트리거가 발생하지 않음. 부모에 min-h-0, 자식에도
+          min-h-0를 명시하고 TodoInput을 shrink-0으로 고정해 잔여 공간만 스크롤 영역에
+          할당. gap-2 → space-y-2 + p-1로 카드 그림자 잘림도 방지. */}
+      <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+        <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1 space-y-2">
           {!loaded ? null : sorted.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-deep/40">
               아직 할 일이 없어요
@@ -235,22 +233,23 @@ export function TodosTab({
                 todo={t}
                 workTag={t.tag ? workMap.get(t.tag) ?? null : null}
                 location={t.loc ? locMap.get(t.loc) ?? null : null}
-                openSwipeId={openSwipeId}
-                onSwipeOpen={setOpenSwipeId}
                 onToggleDone={handleToggleDone}
                 onToggleActive={(id) => persist(setActive(todos, id))}
                 onDelete={(id) => persist(deleteTodo(todos, id))}
+                onEditText={(id, text) => persist(editTodoText(todos, id, text))}
               />
             ))
           )}
         </div>
-        <TodoInput
-          workTags={workTags}
-          locations={locations}
-          onSubmit={(text, tag, loc) =>
-            persist([...todos, createTodo(text, tag, loc)])
-          }
-        />
+        <div className="shrink-0">
+          <TodoInput
+            workTags={workTags}
+            locations={locations}
+            onSubmit={(text, tag, loc) =>
+              persist([...todos, createTodo(text, tag, loc)])
+            }
+          />
+        </div>
       </div>
     </div>
   );

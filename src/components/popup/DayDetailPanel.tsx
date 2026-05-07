@@ -115,10 +115,27 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
   );
 
   // 완료된 todo 수집 — 중복 제거 + 태그/위치 룩업.
+  //
+  // Phase 21 사용자 피드백: 잔디 상세에서 세션이 0건인 날 또는 세션 외부에서
+  // 완료된 todo가 누락되는 회귀 — `logs.todos_done`은 Focus/Break 세션 진행
+  // 중에만 SESSION_TODOS_DONE buffer에 적재되므로 (1) 세션 없이 완료한 항목
+  // (2) 세션 시작 전/종료 후 완료한 항목은 추적 누락. 보완: 같은 날짜의
+  // `todo.completedAt`이 그 날인 todo도 함께 수집한다 (id 기반 dedupe).
   const doneItems = useMemo<DoneItem[]>(() => {
     const ids = new Set<string>();
     for (const log of logs) {
       for (const id of log.todos_done ?? []) ids.add(id);
+    }
+    // todo.completedAt 기반 보충 — 로컬 'YYYY-MM-DD' 매칭.
+    for (const t of todos) {
+      if (!t.completedAt) continue;
+      const parsed = new Date(t.completedAt);
+      if (Number.isNaN(parsed.getTime())) continue;
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, "0");
+      const day = String(parsed.getDate()).padStart(2, "0");
+      const localDate = `${y}-${m}-${day}`;
+      if (localDate === date) ids.add(t.id);
     }
     return Array.from(ids)
       .map((id) => {
@@ -132,7 +149,7 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
         };
       })
       .filter((item): item is DoneItem => item !== null);
-  }, [logs, todoMap, tagMap, locMap]);
+  }, [logs, todos, date, todoMap, tagMap, locMap]);
 
   // FR-8: 'YYYY-MM-DD' → "YYYY년 M월 D일 요일".
   const headingDate = useMemo(() => {

@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering::Relaxed;
+
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
@@ -21,6 +23,9 @@ pub struct PermissionState {
 pub enum PermissionKind {
     Microphone,
     Accessibility,
+    /// Phase 21: 알림 권한 — macOS는 동일 origin 재요청 불가하므로 denied 시
+    /// 시스템 설정 deep-link로 안내.
+    Notification,
 }
 
 // =====================================================================
@@ -42,16 +47,36 @@ pub fn current_accessibility_status() -> PermissionStatus {
 // =====================================================================
 
 #[tauri::command]
-pub async fn permission_status() -> PermissionState {
-    PermissionState {
-        mic: platform::mic_status(),
-        accessibility: platform::accessibility_status(),
-    }
+pub async fn permission_status(app: AppHandle) -> PermissionState {
+    let mic = platform::mic_status();
+    let accessibility = platform::accessibility_status();
+    sync_runtime_grants(&app, mic, accessibility);
+    PermissionState { mic, accessibility }
 }
 
 #[tauri::command]
-pub async fn request_microphone_permission() -> Result<PermissionStatus, String> {
-    platform::request_microphone().await
+pub async fn request_microphone_permission(app: AppHandle) -> Result<PermissionStatus, String> {
+    let status = platform::request_microphone().await?;
+    sync_runtime_grants(&app, status, platform::accessibility_status());
+    Ok(status)
+}
+
+/// 마이크/AX 권한 변경을 런타임 atomic + audio thread에 반영한다.
+///
+/// 부팅 시점에 score::start가 권한 미부여 상태로 audio thread 미기동된 경우,
+/// 이후 사용자가 권한을 부여한 시점(권한 다이얼로그/포커스 재조회)에 호출되어
+/// MIC_GRANTED atomic을 갱신하고 audio thread를 멱등 기동한다. 미부여 시 db=0
+/// 폴백 경로가 그대로 동작 — UI 측은 dBFS 0 → SPL 94 고정으로 보이지 않는다.
+fn sync_runtime_grants(app: &AppHandle, mic: PermissionStatus, accessibility: PermissionStatus) {
+    let mic_granted = mic == PermissionStatus::Granted;
+    let ax_granted = accessibility == PermissionStatus::Granted;
+    crate::score::shared::MIC_GRANTED.store(mic_granted, Relaxed);
+    crate::score::shared::AX_GRANTED.store(ax_granted, Relaxed);
+    if mic_granted {
+        if let Err(e) = crate::audio::start(app.clone()) {
+            eprintln!("[mohashim] audio start (post-grant) failed: {e}");
+        }
+    }
 }
 
 /// 설계 §6.1/C2: AX 다이얼로그를 트리거하지 않는다. status 조회만 수행한다.
@@ -162,6 +187,10 @@ mod platform {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
                     .to_string()
             }
+            PermissionKind::Notification => {
+                // macOS Ventura+ Notifications 설정 패널.
+                "x-apple.systempreferences:com.apple.preference.notifications".to_string()
+            }
         }
     }
 
@@ -196,6 +225,7 @@ mod platform {
         match kind {
             PermissionKind::Microphone => "ms-settings:privacy-microphone".to_string(),
             PermissionKind::Accessibility => "ms-settings:privacy".to_string(),
+            PermissionKind::Notification => "ms-settings:notifications".to_string(),
         }
     }
 }
@@ -221,6 +251,7 @@ mod platform {
         match kind {
             PermissionKind::Microphone => "ms-settings:privacy-microphone".to_string(),
             PermissionKind::Accessibility => "ms-settings:privacy".to_string(),
+            PermissionKind::Notification => "ms-settings:notifications".to_string(),
         }
     }
 }

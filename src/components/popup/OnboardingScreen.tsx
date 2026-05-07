@@ -12,6 +12,8 @@ type OnboardingScreenProps = {
   isConsenting: boolean;
   onConsent: () => void;
   onRequestMic: () => void;
+  /** Phase 21: 알림 권한은 선택. 미허용/취소 시에도 시작하기 활성. */
+  onRequestNotification: () => void;
   onOpenSettings: (kind: PermissionKind) => void;
 };
 
@@ -25,7 +27,7 @@ const NOTE_PAPER_BG: CSSProperties = {
   ].join(","),
 };
 
-// Mohashim Design.html(line 1644) — BLUE_LIGHT 점박이 오버레이 (디자인 시안의 친근한 텍스처).
+// Mohashim Design.html(line 1644) — BLUE_LIGHT 점박이 오버레이.
 const DOT_OVERLAY: CSSProperties = {
   backgroundImage:
     "radial-gradient(rgba(180,200,230,0.45) 1.2px, transparent 1.2px)",
@@ -33,31 +35,83 @@ const DOT_OVERLAY: CSSProperties = {
   opacity: 0.35,
 };
 
-type StatusIndicatorProps = {
+type RequiredBadgeKind = "required" | "optional";
+
+function RequirementBadge({ kind }: { kind: RequiredBadgeKind }) {
+  if (kind === "required") {
+    return (
+      <span className="rounded-full border border-peach/40 bg-peach/15 px-1.5 py-px text-[8.5px] font-bold text-peach">
+        필수
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full border border-deep/30 bg-mist px-1.5 py-px text-[8.5px] font-bold text-deep">
+      선택
+    </span>
+  );
+}
+
+type PermissionToggleProps = {
+  status: PermissionStatus;
+  /** 권한이 부여되지 않은 상태에서 토글 클릭 시 실행할 콜백. */
+  onActivate: () => void;
+};
+
+/**
+ * 권한 토글 — 시각적으로는 iOS-스타일 스위치. granted=ON, 그 외=OFF.
+ *
+ * granted 상태에서는 disabled (시스템에서만 해제 가능). non-granted 상태에서는
+ * 클릭 시 onActivate 호출 — 호출자가 권한 요청 / 시스템 설정 deep-link 등
+ * 적절한 액션을 실행한다 (BR-9).
+ */
+function PermissionToggle({ status, onActivate }: PermissionToggleProps) {
+  const granted = status === "granted";
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={granted}
+      onClick={granted ? undefined : onActivate}
+      disabled={granted}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-[1.5px] border-ink transition-colors ${
+        granted
+          ? "cursor-default bg-emerald-400/80 shadow-[1px_1px_0_0_#2b2520]"
+          : "bg-paperBg shadow-[1px_1px_0_0_#2b2520] hover:bg-mist"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block h-[18px] w-[18px] transform rounded-full border-[1.5px] border-ink bg-paperWarm transition-transform ${
+          granted ? "translate-x-[22px]" : "translate-x-[2px]"
+        }`}
+      />
+    </button>
+  );
+}
+
+type StatusPillProps = {
   status: PermissionStatus;
 };
 
-function StatusIndicator({ status }: StatusIndicatorProps) {
+function StatusPill({ status }: StatusPillProps) {
   if (status === "granted") {
     return (
-      <span className="ml-2 flex shrink-0 items-center gap-1 rounded-full border border-emerald-700/30 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-        <span aria-hidden="true">✓</span>
-        <span>허용됨</span>
+      <span className="rounded-full border border-emerald-700/30 bg-emerald-50 px-1.5 py-px text-[8.5px] font-bold text-emerald-700">
+        허용됨
       </span>
     );
   }
   if (status === "denied") {
     return (
-      <span className="ml-2 flex shrink-0 items-center gap-1 rounded-full border border-peach/40 bg-peach/15 px-2 py-0.5 text-[10px] font-bold text-peach">
-        <span aria-hidden="true">✕</span>
-        <span>거절됨</span>
+      <span className="rounded-full border border-peach/40 bg-peach/15 px-1.5 py-px text-[8.5px] font-bold text-peach">
+        거절됨
       </span>
     );
   }
   return (
-    <span className="ml-2 flex shrink-0 items-center gap-1 rounded-full border border-ink/15 bg-paperBg px-2 py-0.5 text-[10px] font-bold text-ink/55">
-      <span aria-hidden="true">●</span>
-      <span>미요청</span>
+    <span className="rounded-full border border-ink/15 bg-paperBg px-1.5 py-px text-[8.5px] font-bold text-ink/55">
+      미요청
     </span>
   );
 }
@@ -67,11 +121,9 @@ type PermissionCardProps = {
   title: string;
   description: string;
   status: PermissionStatus;
-  /** 카드 내부 액션 버튼 라벨 (granted 시 미노출). null이면 액션 버튼 자체 미노출. */
-  actionLabel?: string | null;
-  /** 액션 버튼 클릭 시 호출. */
-  onAction?: () => void;
-  extraHint?: string;
+  requirement: RequiredBadgeKind;
+  /** 권한 미부여 상태에서 토글 클릭 시 실행 — request 또는 openSettings 분기. */
+  onActivate: () => void;
 };
 
 function PermissionCard({
@@ -79,11 +131,9 @@ function PermissionCard({
   title,
   description,
   status,
-  actionLabel,
-  onAction,
-  extraHint,
+  requirement,
+  onActivate,
 }: PermissionCardProps) {
-  const showAction = status !== "granted" && actionLabel && onAction;
   return (
     <div className="w-full rounded-[12px] border-[1.5px] border-ink bg-paperWarm px-3 py-2 shadow-[1.5px_1.5px_0_0_#2b2520]">
       <div className="flex items-center gap-2.5">
@@ -94,88 +144,84 @@ function PermissionCard({
           {icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
             <span className="text-[11px] font-extrabold leading-tight">
               {title}
             </span>
-            <StatusIndicator status={status} />
+            <RequirementBadge kind={requirement} />
+            <StatusPill status={status} />
           </div>
           <p className="mt-0.5 text-[9.5px] leading-snug text-ink/55">
             {description}
           </p>
         </div>
+        <PermissionToggle status={status} onActivate={onActivate} />
       </div>
-      {extraHint && status !== "granted" && (
-        <p className="mt-1.5 text-[9.5px] leading-snug text-ink/55">
-          {extraHint}
-        </p>
-      )}
-      {showAction && (
-        <button
-          type="button"
-          onClick={onAction}
-          className="mt-2 inline-flex w-full items-center justify-center rounded-lg border-[1.5px] border-ink bg-deepNavy px-3 py-1.5 text-[10.5px] font-extrabold text-paperWarm shadow-[1px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
-        >
-          {actionLabel}
-        </button>
-      )}
     </div>
   );
 }
 
 /**
- * 권한 카드 + 시작하기 버튼.
+ * 권한 카드(토글 형식) + 시작하기 버튼.
  *
  * Phase 21 사용자 피드백 반영:
- *   - 마이크 권한 요청 버튼은 마이크 카드 안에 분리 (별도 액션).
- *   - 접근성 권한 deep link도 카드 안에.
- *   - 최하단 시작하기 버튼은 둘 다 granted 시에만 활성.
+ *   - 가로 레이아웃: 모하(좌) + 말풍선(우, 꼬리는 ←로 모하 가리킴).
+ *   - 토글 형식: 카드 안의 별도 버튼 제거 → 우측 토글이 단일 진입점.
+ *     * not_determined: 시스템 다이얼로그 트리거 (mic/notification) 또는 시스템 설정
+ *       deep-link (accessibility — Tauri로 다이얼로그 트리거 불가).
+ *     * denied: 시스템 설정 deep-link (mic/accessibility). notification은 미지원.
+ *     * granted: 토글 disabled (해제는 OS에서만 가능).
+ *   - 알림 카드는 최하단에 배치하고 "선택" 배지 + 위 두 카드는 "필수" 배지로
+ *     UI 위계 명시.
+ *   - 카드 압축으로 시작하기 버튼이 460px 화면 안에 노출 (스크롤 회귀 해소).
  */
 export function OnboardingScreen({
   permissions,
   isConsenting,
   onConsent,
   onRequestMic,
+  onRequestNotification,
   onOpenSettings,
 }: OnboardingScreenProps) {
-  const accessibilityHint =
-    "다이얼로그가 표시되지 않아요. 시스템 설정 → 손쉬운 사용에서 모하심 체크.";
-
   const micGranted = permissions.mic === "granted";
   const accessibilityGranted = permissions.accessibility === "granted";
+  // Phase 21: 알림은 시작하기 게이트에서 제외 — 선택 권한.
   const allGranted = micGranted && accessibilityGranted;
 
-  // 마이크 카드 액션:
-  //   not_determined: 권한 요청 (시스템 다이얼로그 트리거)
-  //   denied: 시스템 설정 deep-link
-  let micActionLabel: string | null = null;
-  let micAction: (() => void) | null = null;
-  if (permissions.mic === "not_determined") {
-    micActionLabel = "마이크 권한 허용 요청";
-    micAction = onRequestMic;
-  } else if (permissions.mic === "denied") {
-    micActionLabel = "시스템 설정에서 허용하기";
-    micAction = () => onOpenSettings("microphone");
-  }
+  // 토글 클릭 시 실행할 액션 분기.
+  const handleMicToggle = () => {
+    if (permissions.mic === "denied") {
+      onOpenSettings("microphone");
+      return;
+    }
+    onRequestMic();
+  };
 
-  // 접근성 카드 액션:
-  //   not_granted: 항상 시스템 설정 deep-link (다이얼로그 트리거 없음).
-  let accessibilityActionLabel: string | null = null;
-  let accessibilityAction: (() => void) | null = null;
-  if (!accessibilityGranted) {
-    accessibilityActionLabel = "시스템 설정에서 허용하기";
-    accessibilityAction = () => onOpenSettings("accessibility");
-  }
+  const handleAccessibilityToggle = () => {
+    // not_determined / denied 모두 시스템 설정으로 deep-link.
+    // (rdev/AX는 다이얼로그 트리거 불가 — Tauri 플러그인에서도 마찬가지)
+    onOpenSettings("accessibility");
+  };
 
-  // 최하단 시작하기 버튼:
-  //   둘 다 granted: 활성 → onConsent 호출 → setOnboardingCompleted → MainScreen 진입.
-  //   else: 비활성.
+  const handleNotificationToggle = () => {
+    // Phase 21 사용자 피드백: macOS는 denied 상태에서 동일 origin 재요청 시
+    // 시스템 다이얼로그가 발현되지 않아 토글이 동작하지 않는 회귀.
+    // 분기:
+    //   - denied: 시스템 설정 deep-link로 사용자가 직접 허용하도록 안내
+    //   - 그 외(not_determined): 권한 요청 다이얼로그 트리거
+    if (permissions.notification === "denied") {
+      onOpenSettings("notification");
+      return;
+    }
+    onRequestNotification();
+  };
+
   const startDisabled = !allGranted || isConsenting;
   const startLabel = isConsenting ? "권한 요청 중..." : "시작하기";
 
   return (
     <div
-      className="relative flex h-[460px] w-[320px] flex-col items-center overflow-hidden rounded-[18px] bg-paperBg px-4 pb-3 pt-3.5 font-pretendard text-ink"
+      className="relative flex h-[460px] w-[320px] flex-col items-center overflow-hidden rounded-[18px] bg-paperBg px-4 pb-3 pt-3 font-kyobo text-ink"
       style={NOTE_PAPER_BG}
     >
       <div
@@ -188,49 +234,59 @@ export function OnboardingScreen({
         <span className="text-[9px] font-extrabold tracking-[0.2em] text-deepNavy">
           WELCOME TO
         </span>
-        <span className="mt-0.5 text-[28px] font-extrabold leading-none tracking-tight">
+        <span className="mt-0 text-[24px] font-extrabold leading-none tracking-tight">
           모하심
         </span>
 
-        <div className="mt-1.5">
-          <Potato state="calm" size={84} />
-        </div>
-        <div className="-mt-1">
-          <SpeechBubble text="시작하려면 권한 두 개 줘!" color="#f4d160" />
+        {/* Phase 21: 모하(좌) + 말풍선(우) 가로 레이아웃. 말풍선 꼬리 ←는
+            SpeechBubble 자체에서 좌측을 가리키도록 구현되어 있어 이대로 OK. */}
+        <div className="mt-2 flex w-full items-center justify-center gap-2">
+          <Potato state="calm" size={64} />
+          <SpeechBubble text="권한 세 개만 줘!" color="#f4d160" />
         </div>
 
-        <div className="mt-3 flex w-full flex-col gap-2">
+        <div className="mt-2.5 flex w-full flex-col gap-1.5">
           <PermissionCard
             icon="🎤"
             title="마이크 권한"
             description="음량(dB)만 측정 — 녹음 안 해요"
             status={permissions.mic}
-            actionLabel={micActionLabel}
-            onAction={micAction ?? undefined}
+            requirement="required"
+            onActivate={handleMicToggle}
           />
           <PermissionCard
             icon="⌨️"
             title="접근성 권한"
             description="입력 발생 여부만 — 키 내용 안 봐요"
             status={permissions.accessibility}
-            extraHint={accessibilityHint}
-            actionLabel={accessibilityActionLabel}
-            onAction={accessibilityAction ?? undefined}
+            requirement="required"
+            onActivate={handleAccessibilityToggle}
+          />
+          <PermissionCard
+            icon="🔔"
+            title="알림 권한"
+            description="휴식/세션 완료 알림 — 안 받고 싶으면 건너뛰기"
+            status={permissions.notification}
+            requirement="optional"
+            onActivate={handleNotificationToggle}
           />
         </div>
       </div>
+
+      {/* spacer — 시작하기 버튼을 항상 하단에 고정. */}
+      <div className="flex-1" />
 
       <button
         type="button"
         onClick={onConsent}
         disabled={startDisabled}
-        className="relative z-10 mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border-[1.8px] border-ink bg-ink py-3 text-[13px] font-extrabold tracking-tight text-paperWarm shadow-[2px_3px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[3px_5px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_2px_0_0_rgba(40,30,20,0.18)] disabled:cursor-not-allowed disabled:border-ink/30 disabled:bg-ink/30 disabled:text-paperWarm/80 disabled:shadow-none disabled:hover:translate-y-0"
+        className="relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border-[1.8px] border-ink bg-ink py-2.5 text-[13px] font-extrabold tracking-tight text-paperWarm shadow-[2px_3px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[3px_5px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_2px_0_0_rgba(40,30,20,0.18)] disabled:cursor-not-allowed disabled:border-ink/30 disabled:bg-ink/30 disabled:text-paperWarm/80 disabled:shadow-none disabled:hover:translate-y-0"
       >
         <span>{startLabel}</span>
         {!startDisabled && <span aria-hidden>→</span>}
       </button>
 
-      <p className="relative z-10 mt-2 text-[10px] font-semibold text-ink/45">
+      <p className="relative z-10 mt-1.5 text-[9.5px] font-semibold text-ink/45">
         모든 정보는 PC에만 저장돼요
       </p>
     </div>
