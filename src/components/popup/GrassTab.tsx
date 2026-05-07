@@ -93,8 +93,8 @@ export function GrassTab() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-deep/10 px-4 py-3">
-        <div className="text-sm text-deep">
+      <div className="border-b border-ink/10 px-4 py-3">
+        <div className="text-sm font-semibold text-ink/75">
           {loaded && data
             ? data.totalSessions > 0
               ? `이번 달 ${data.totalSessions}회 · 평균 ${data.avgScore}점`
@@ -117,7 +117,7 @@ export function GrassTab() {
             aria-label="잔디 자랑하기"
             onClick={() => setShowPreview(true)}
             disabled={!loaded || !data}
-            className="absolute bottom-2 right-2 rounded-full bg-deep p-2 text-white shadow disabled:opacity-40"
+            className="absolute bottom-2 right-2 rounded-full border-[1.5px] border-ink bg-ink p-2 text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[2px_3px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_1px_0_0_rgba(40,30,20,0.18)] disabled:translate-y-0 disabled:bg-ink/30 disabled:text-paperWarm/70 disabled:shadow-none disabled:hover:translate-y-0"
           >
             📤
           </button>

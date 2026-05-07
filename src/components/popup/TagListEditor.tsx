@@ -109,22 +109,23 @@ export function TagListEditor<T extends AnyTag>({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-deep/10 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
         <button
           type="button"
           onClick={onBackClick}
-          className="text-sm text-deep"
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-ink/75 hover:text-ink"
         >
-          ← 뒤로
+          <span aria-hidden>←</span>
+          <span>뒤로</span>
         </button>
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <h2 className="text-sm font-extrabold text-ink">{title}</h2>
         <button
           type="button"
           onClick={() => {
             void handleSave();
           }}
           disabled={!isDirty || saving}
-          className="text-sm text-deep disabled:text-deep/30"
+          className="text-sm font-bold text-deepNavy disabled:text-ink/30"
         >
           저장
         </button>
@@ -142,11 +143,11 @@ export function TagListEditor<T extends AnyTag>({
           return (
             <div
               key={item.id}
-              className="mb-3 rounded-lg border border-deep/10 bg-white p-3"
+              className="mb-3 rounded-xl border border-ink/15 bg-paperWarm/85 p-3 shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]"
             >
               <div className="flex items-center gap-2">
                 <span
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-base"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-ink/15 text-base"
                   style={{ background: item.color }}
                 >
                   {item.emoji}
@@ -159,7 +160,7 @@ export function TagListEditor<T extends AnyTag>({
                     onChange={(e) =>
                       updateTag(item.id, { label: e.target.value } as Partial<T>)
                     }
-                    className="flex-1 rounded border border-deep/30 px-2 py-1 text-sm"
+                    className="flex-1 rounded border border-ink/25 bg-paperWarm px-2 py-1 text-sm text-ink outline-none focus:border-ink/50"
                   />
                 ) : (
                   <span className="flex-1 text-sm text-ink">{item.label}</span>
@@ -167,7 +168,7 @@ export function TagListEditor<T extends AnyTag>({
                 <button
                   type="button"
                   onClick={() => setEditingId(editing ? null : item.id)}
-                  className="px-2 text-xs text-deep/60"
+                  className="px-2 text-xs font-semibold text-ink/55 hover:text-ink"
                 >
                   {editing ? "완료" : "✎"}
                 </button>
@@ -175,7 +176,7 @@ export function TagListEditor<T extends AnyTag>({
                   type="button"
                   onClick={() => handleDelete(item.id)}
                   disabled={draft.length <= 1}
-                  className="px-2 text-xs text-red-500 disabled:text-deep/20"
+                  className="px-2 text-xs text-red-500 disabled:text-ink/20"
                 >
                   ×
                 </button>
@@ -190,8 +191,8 @@ export function TagListEditor<T extends AnyTag>({
                         onClick={() =>
                           updateTag(item.id, { emoji } as Partial<T>)
                         }
-                        className={`flex h-7 w-7 items-center justify-center rounded ${
-                          item.emoji === emoji ? "bg-deep/15" : ""
+                        className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                          item.emoji === emoji ? "bg-deepNavy/15" : "hover:bg-ink/5"
                         }`}
                       >
                         {emoji}
@@ -208,7 +209,7 @@ export function TagListEditor<T extends AnyTag>({
                         }
                         style={{ background: color }}
                         className={`h-6 w-6 rounded-full ${
-                          item.color === color ? "ring-2 ring-deep" : ""
+                          item.color === color ? "ring-2 ring-ink" : ""
                         }`}
                         aria-label={`색상 ${color}`}
                       />
@@ -223,7 +224,7 @@ export function TagListEditor<T extends AnyTag>({
           type="button"
           onClick={handleAdd}
           disabled={maxItems !== undefined && draft.length >= maxItems}
-          className="w-full rounded-lg border border-dashed border-deep/30 py-3 text-sm text-deep/60 disabled:opacity-40"
+          className="w-full rounded-xl border border-dashed border-ink/25 py-3 text-sm font-semibold text-ink/55 hover:border-ink/40 hover:text-ink/75 disabled:opacity-40 disabled:hover:border-ink/25"
         >
           ＋ 새 {kind === "work" ? "작업 태그" : "위치 태그"} 추가
         </button>

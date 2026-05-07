@@ -5,6 +5,29 @@ import {
   copyShareCardToClipboard,
 } from "../../lib/grass";
 import { ShareCard, SHARE_PREVIEW_DISPLAY_PX } from "./ShareCard";
+// Phase 21: 잔디 공유 PNG에 손글씨 폰트를 임베드하기 위해 woff URL을 Vite로
+// 정적 분석. 실제 fetch + base64 변환은 모달 mount 시 수행 (cold start 비용 회피).
+import kyoboFontUrl from "../../assets/fonts/KyoboHandwriting2019.woff?url";
+
+// 모듈 스코프 캐시. 모달이 다시 열릴 때 재요청을 회피하여 cold path 1회로 한정.
+let fontDataUrlCache: string | null = null;
+
+async function loadKyoboFontDataUrl(): Promise<string | null> {
+  if (fontDataUrlCache) return fontDataUrlCache;
+  try {
+    const res = await fetch(kyoboFontUrl);
+    if (!res.ok) throw new Error(`font fetch ${res.status}`);
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    fontDataUrlCache = `data:font/woff;base64,${btoa(binary)}`;
+    return fontDataUrlCache;
+  } catch (err) {
+    console.error("[mohashim] kyobo font load failed (share will use fallback)", err);
+    return null;
+  }
+}
 
 type SharePreviewModalProps = {
   data: MonthData | null;
@@ -35,6 +58,10 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
   // PR #17 gemini G2 + D2 개정: 실패/timeout 시 모달 내 안내문 표시.
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Phase 21: 모달 mount 시 woff → base64 data URL 1회 fetch.
+  const [fontDataUrl, setFontDataUrl] = useState<string | null>(
+    fontDataUrlCache
+  );
   const copyRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<number | null>(null);
@@ -46,6 +73,22 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
   // Q3, CON-6: 메시지 입력이 모달의 핵심 액션 → autofocus.
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  // Phase 21: 손글씨 폰트 base64 lazy load. 캐시 hit 시 즉시 동기 반영, miss 시
+  // 비동기 fetch — 미리보기/PNG 모두 폴백 시스템 폰트로 즉시 렌더되다가 폰트
+  // 도착 시 손글씨로 자연 전환된다 (Image.decode가 SVG 내부 @font-face 파싱).
+  useEffect(() => {
+    if (fontDataUrl) return;
+    let cancelled = false;
+    void loadKyoboFontDataUrl().then((url) => {
+      if (!cancelled && url) setFontDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // mount 시 1회만 트리거 — fontDataUrl 변경은 자기 자신의 set이 유발한 변경 외에는 발생하지 않음.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // FR-8a: ESC 키 닫기. deps=[]로 고정하여 listener 재등록 사이클 회피.
@@ -84,6 +127,9 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
     }
     setCopied(false);
     setFailed(false);
+    // Phase 21: 폰트는 모달 mount 시점부터 백그라운드 로드된다. 클릭 시점에
+    // 미도착이면 시스템 폰트 폴백으로 합성 — 1회성 edge case로 허용한다.
+    // (이전 in-onCopy await는 fakeTimers 환경에서 race condition을 유발해 회귀.)
     try {
       // PR #17 gemini G1: 1초 SLA — composeShareCard + 클립보드 합산.
       const blob = await Promise.race<Blob>([
@@ -139,6 +185,7 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
             data={data}
             message={message}
             previewSize={SHARE_PREVIEW_DISPLAY_PX}
+            fontDataUrl={fontDataUrl}
           />
         </div>
         <input
@@ -170,7 +217,12 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
           </p>
         )}
         {/* MA-1: off-screen 인스턴스를 panel 내부에 배치 */}
-        <ShareCard ref={copyRef} data={data} message={message} />
+        <ShareCard
+          ref={copyRef}
+          data={data}
+          message={message}
+          fontDataUrl={fontDataUrl}
+        />
       </div>
     </div>
   );

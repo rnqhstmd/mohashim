@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ModeChip } from "../ModeChip";
 
 /**
@@ -42,12 +42,10 @@ describe("ModeChip", () => {
     expect(chip?.className).toContain("bg-chipBreak");
   });
 
-  it("applies bg-chipIdle class for idle phase", () => {
-    // Math.random mock으로 useIdleChipLabel 안정화.
-    vi.spyOn(Math, "random").mockReturnValue(0);
+  // Phase 21 사용자 피드백: idle 라벨("음료 홀짝이는 중", "명상 중" 등) 회색 chip이
+  // 불필요하다는 피드백 → idle phase에서 chip 자체를 미노출(null)로 변경.
+  it("renders nothing for idle phase", () => {
     const { container } = render(<ModeChip phase="idle" />);
-    const chip = container.firstChild as HTMLElement | null;
-    expect(chip?.className).toContain("bg-chipIdle");
-    vi.restoreAllMocks();
+    expect(container.firstChild).toBeNull();
   });
 });

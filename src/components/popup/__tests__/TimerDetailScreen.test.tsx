@@ -5,6 +5,14 @@ vi.mock("../../../lib/timer", () => ({
   discardSession: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Phase 21: TimerDetailScreen은 mount 시 focus/break minutes를 store에서 1회
+// 조회하여 progress ring을 정상화한다. 테스트에서는 jsdom + Tauri Store 부재로
+// 실호출 시 throw 되므로 명시적으로 stub.
+vi.mock("../../../lib/storage", () => ({
+  getFocusMinutes: vi.fn().mockResolvedValue(25),
+  getBreakMinutes: vi.fn().mockResolvedValue(5),
+}));
+
 import { TimerDetailScreen } from "../TimerDetailScreen";
 import { discardSession } from "../../../lib/timer";
 import { POTATO_PHRASES } from "../../../lib/phrases";
@@ -17,9 +25,9 @@ const breakPhrase = POTATO_PHRASES.break[0];
  * (Phase 17 B2-F, FR-F3~F5).
  */
 describe("TimerDetailScreen", () => {
-  it("renders Potato, SpeechBubble, and MM:SS (1500 → 25:00)", () => {
+  it("renders Potato + MM:SS (1500 → 25:00) — Phase 21: 대사는 메인 전용으로 미노출", () => {
     render(
-      <TimerDetailScreen
+      <TimerDetailScreen phase="focus"
         timeLeft={1500}
         potatoState="focused"
         phrase={focusPhrase}
@@ -29,13 +37,14 @@ describe("TimerDetailScreen", () => {
     expect(
       screen.getByRole("img", { name: "집중하는 모하" })
     ).toBeInTheDocument();
-    expect(screen.getByText(focusPhrase)).toBeInTheDocument();
     expect(screen.getByText("25:00")).toBeInTheDocument();
+    // 대사는 메인 화면 전용 — TimerDetailScreen에서는 노출되지 않는다.
+    expect(screen.queryByText(focusPhrase)).not.toBeInTheDocument();
   });
 
   it("formats timeLeft 65 as 01:05 in break phase", () => {
     render(
-      <TimerDetailScreen
+      <TimerDetailScreen phase="break"
         timeLeft={65}
         potatoState="calm"
         phrase={breakPhrase}
@@ -48,7 +57,7 @@ describe("TimerDetailScreen", () => {
   it("calls onBack when ← button clicked", () => {
     const onBack = vi.fn();
     render(
-      <TimerDetailScreen
+      <TimerDetailScreen phase="focus"
         timeLeft={1500}
         potatoState="focused"
         phrase={focusPhrase}
@@ -61,7 +70,7 @@ describe("TimerDetailScreen", () => {
 
   it("opens DiscardModal on '그만하기' click", () => {
     render(
-      <TimerDetailScreen
+      <TimerDetailScreen phase="focus"
         timeLeft={1500}
         potatoState="focused"
         phrase={focusPhrase}
@@ -77,7 +86,7 @@ describe("TimerDetailScreen", () => {
 
   it("closes DiscardModal on '계속할래' click", () => {
     render(
-      <TimerDetailScreen
+      <TimerDetailScreen phase="focus"
         timeLeft={1500}
         potatoState="focused"
         phrase={focusPhrase}
@@ -94,7 +103,7 @@ describe("TimerDetailScreen", () => {
 
   it("calls discardSession on '포기' click", () => {
     render(
-      <TimerDetailScreen
+      <TimerDetailScreen phase="focus"
         timeLeft={1500}
         potatoState="focused"
         phrase={focusPhrase}

@@ -59,20 +59,20 @@ export function PomodoroRunning({
   void phase;
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+    <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-4 p-6">
       <div className="flex items-start justify-center gap-2">
         <Potato state={potatoState} size={100} animated={true} />
         <div className="mt-8">
           <SpeechBubble text={phrase} />
         </div>
       </div>
-      <span className="text-5xl font-bold tabular-nums text-deep">
+      <span className="text-5xl font-extrabold tabular-nums tracking-tight text-ink">
         {formatMmSs(timeLeft)}
       </span>
       <button
         type="button"
         onClick={() => setShowDiscard(true)}
-        className="mt-2 text-xs text-deep/60 underline"
+        className="mt-2 inline-flex items-center rounded-2xl border-[1.5px] border-ink/10 bg-transparent px-4 py-1.5 text-xs font-medium text-ink/55 transition-colors hover:border-ink/20 hover:text-ink/75"
       >
         그만하기
       </button>

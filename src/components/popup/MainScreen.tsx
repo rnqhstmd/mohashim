@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useScoreTick } from "../../lib/score";
-import type { Phase } from "../../lib/score";
 import { focusStart } from "../../lib/timer";
 import { useToastQueue } from "../../lib/toast";
 import { usePhrase } from "../../lib/usePhrase";
@@ -13,6 +12,19 @@ import { GrassTab } from "./GrassTab";
 
 type MainScreenProps = {
   onResetDone: () => void;
+};
+
+// Mohashim Design.html(NOTE_BG) — 따뜻한 노트 페이퍼 표면.
+//   1) SVG feTurbulence 페이퍼 섬유 노이즈 (baseFrequency 1.4, opacity 0.045)
+//   2) 27/28px 가로 ruled lines (rgba(60,50,40,0.035))
+//   3) 좌상/우하 warm vignette
+const NOTE_PAPER_BG: CSSProperties = {
+  backgroundImage: [
+    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.20  0 0 0 0 0.18  0 0 0 0 0.14  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
+    "repeating-linear-gradient(to bottom, transparent 0, transparent 27px, rgba(60,50,40,0.035) 27px, rgba(60,50,40,0.035) 28px)",
+    "radial-gradient(ellipse at 30% 20%, rgba(255,253,247,0.5), transparent 60%)",
+    "radial-gradient(ellipse at 80% 85%, rgba(200,190,175,0.18), transparent 55%)",
+  ].join(","),
 };
 
 /**
@@ -41,6 +53,8 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   const total = snap?.total ?? 0;
   const engineState = snap?.state ?? "calm";
   const noiseLoudActive = snap?.noiseLoud ?? false;
+  // Phase 21 사용자 피드백: 평상시/집중 모두에서 dB 측정 UI가 노출되어야 함.
+  const db = snap?.db ?? 50;
 
   const { phrase, potatoState } = usePhrase(
     snap
@@ -49,29 +63,10 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   );
 
   const toastQueue = useToastQueue();
-  const pushToast = toastQueue.push;
 
-  // FR-35: phase=complete 1-tick 진입 시점에 sessionComplete 멘트를 토스트로 동시 표시.
-  // Phase 3 timer 검증 결과: timer.rs::on_phase_transition(Break, Complete)이 즉시
-  // on_complete_consumed를 호출하여 atomic이 Idle로 전환되므로 complete는 정확히 1 tick만 emit됨.
-  // prevPhaseRef로 1-tick 엣지 검출 (직전 phase != complete && 현재 phase == complete).
-  //
-  // deps 정책 (PR #5 review 반영):
-  // - phase는 엣지 검출 트리거이므로 deps 필수.
-  // - phrase는 deps에서 제외 — usePhrase가 currentBucket 기반으로 phase=complete 진입 즉시
-  //   sessionComplete 첫 멘트를 반환하므로 effect 진입 시점의 phrase가 항상 정확.
-  //   8초마다 phrase 회전으로 effect가 재실행되어도 prevPhaseRef 가드로 push는 차단되지만
-  //   불필요한 effect 재실행을 차단하여 비용 최소화.
-  // - pushToast는 toast.ts에서 useCallback으로 안정화된 참조라 재실행 영향 없음.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const prevPhaseRef = useRef<Phase>("idle");
-  useEffect(() => {
-    if (prevPhaseRef.current !== "complete" && phase === "complete") {
-      pushToast({ kind: "complete", text: phrase });
-    }
-    prevPhaseRef.current = phase;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, pushToast]);
+  // Phase 21 사용자 피드백: 세션 완료 토스트는 제거. 직전 세션 점수는 idle 상태의
+  // FocusStartButton 상단 "🏆 직전 세션" 배지로 노출되어 동일 정보가 충돌 없이 전달.
+  // Toast 인프라는 다른 메시지(에러/안내) 용으로 유지.
 
   // Focus 진입 시 자동으로 todos 탭으로 전환하여 PomodoroCard가 보이도록.
   // 외부 트리거 등으로 settings 탭에 머무는 동안 Focus가 시작될 때를 대비한 fail-safe.
@@ -87,26 +82,18 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   };
 
   return (
-    <div className="relative flex h-[460px] w-[320px] flex-col bg-mist font-pretendard text-ink">
-      {/* Phase 17 FR-D3: SVG feTurbulence grain 오버레이 (BR-6 pointer-events-none, QE-1).
-          z-0 ≪ ModeChip(z-30)/Toast(z-40)/Modal(z-50). 모든 인터랙션 통과. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 z-0 opacity-[0.08]"
-      >
-        <svg width="100%" height="100%">
-          <filter id="mh-grain">
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.65"
-              numOctaves="3"
-              stitchTiles="stitch"
-            />
-          </filter>
-          <rect width="100%" height="100%" filter="url(#mh-grain)" />
-        </svg>
-      </div>
-      <ModeChip phase={phase} />
+    <div
+      className="relative flex h-[460px] w-[320px] flex-col overflow-hidden rounded-[18px] bg-paperBg font-kyobo text-ink"
+      style={NOTE_PAPER_BG}
+    >
+      {/* Phase 17 FR-D3 / Phase 20 design.html 정렬: NOTE_PAPER_BG가 fractalNoise + 가로 ruled
+          stripe + warm vignette를 모두 포함한다. 별도 grain 오버레이 SVG는 제거 (디자인 NOTE_BG 통합).
+          z-30 ModeChip / z-40 Toast / z-50 Modal 레이어 순서 그대로 유지. */}
+      {/* Phase 21: PomodoroCard / FocusStartButton 안에 mode chip이 통합되어 카드 안에서
+          위계가 표시된다. todos 탭에서는 카드 내부 chip이 단일 진실 소스 — 절대 위치
+          ModeChip 미노출 (overlap 회귀 차단). grass/settings 탭에서는 우상단에 ModeChip
+          노출하여 다른 탭에서도 phase 인지 가능. */}
+      {tab !== "todos" && <ModeChip phase={phase} />}
       <main className="flex flex-1 flex-col overflow-hidden">
         {tab === "settings" ? (
           <SettingsScreen onResetDone={onResetDone} />
@@ -119,6 +106,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
             timeLeft={timeLeft}
             potatoState={potatoState}
             phrase={phrase}
+            db={db}
             onFocusStart={handleFocusStart}
           />
         )}

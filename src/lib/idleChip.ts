@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 
+// Phase 21 사용자 피드백: "애인 생각 중", "딴 생각 중" 등 개인적 멘트 제외.
 export const IDLE_LABELS = [
   "음료 홀짝이는 중",
   "웹 서핑 중",
   "멍때리는 중",
-  "애인 생각 중",
-  "딴 생각 중",
   "상상 중",
   "명상 중",
 ] as const;

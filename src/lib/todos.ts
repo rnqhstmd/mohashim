@@ -147,6 +147,21 @@ export function deleteTodo(todos: readonly Todo[], id: string): Todo[] {
 }
 
 /**
+ * Phase 21: 할 일 인라인 편집 — text 갱신. 기존 정렬 가중치(active/done/createdAt)에는
+ * 영향이 없으므로 list 순서 유지. 빈 문자열은 호출자에서 사전 차단되지만 방어적으로
+ * 미반영 경로를 둔다.
+ */
+export function editTodoText(
+  todos: readonly Todo[],
+  id: string,
+  text: string,
+): Todo[] {
+  const trimmed = text.trim();
+  if (trimmed === "") return [...todos];
+  return todos.map((t) => (t.id === id ? { ...t, text: trimmed } : t));
+}
+
+/**
  * 태그 삭제 시 todos 참조 정리 (BR-5). 일괄 처리 (U-4).
  * 삭제된 태그 ID 배열을 받아 해당 필드를 null로 비운다.
  */

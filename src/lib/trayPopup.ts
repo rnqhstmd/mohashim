@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   availableMonitors,
   getCurrentWindow,
-  PhysicalPosition,
+  LogicalPosition,
 } from "@tauri-apps/api/window";
 
 /**
@@ -106,50 +106,69 @@ export function pickMonitorForPoint<
 
 export async function attachTrayClickListener(
   os: TargetOs,
+  onTailX?: (tailXLogical: number) => void,
 ): Promise<() => void> {
   const win = getCurrentWindow();
+  // Phase 21 사용자 피드백 재개정: 팝업 좌측 선을 아이콘 좌측 끝에 맞춘다 —
+  // popup_left = icon_left_logical (메뉴바 트레이 위치 변동에도 일관 정렬).
+  // 화면 우측 경계로 clamp되면 popup_left가 좌측으로 시프트되며, tail은
+  // icon_center - popup_left로 동기화하여 항상 아이콘 중심을 가리키도록 한다
+  // (onTailX 콜백). Rust apply_initial_position과 동일 공식.
   const unlisten = await listen<TrayClickPayload>(
     "tray-click",
     async (event) => {
       try {
-        const isVisible = await win.isVisible();
-        if (isVisible) {
-          await win.hide();
-          return;
-        }
         const monitors = await availableMonitors();
-        const monitor = pickMonitorForPoint(
+        let monitor = pickMonitorForPoint(
           monitors,
           event.payload.x,
           event.payload.y,
         );
-        if (!monitor) {
-          await win.show();
-          await win.setFocus();
-          return;
-        }
+        if (!monitor) monitor = monitors[0];
+        if (!monitor) return;
+
         const sf = monitor.scaleFactor;
-        const popupPhysical: PopupGeometryPhysical = {
-          width: Math.round(320 * sf),
-          height: Math.round(470 * sf),
-        };
-        const monB: MonitorBoundsPhysical = {
-          x: monitor.position.x,
-          y: monitor.position.y,
-          width: monitor.size.width,
-          height: monitor.size.height,
-        };
-        const { x, y } = computePopupPosition(
-          event.payload,
-          popupPhysical,
-          monB,
-          os,
+        const iconLeftLogical = event.payload.x / sf;
+        const iconRightLogical =
+          (event.payload.x + event.payload.iconWidth) / sf;
+        const iconCenterXLogical =
+          (event.payload.x + event.payload.iconWidth / 2) / sf;
+        const iconBottomYLogical =
+          (event.payload.y + event.payload.iconHeight) / sf;
+        const iconTopYLogical = event.payload.y / sf;
+        const monLeftLogical = monitor.position.x / sf;
+        const monTopLogical = monitor.position.y / sf;
+        const monRightLogical = monLeftLogical + monitor.size.width / sf;
+        const monBottomLogical = monTopLogical + monitor.size.height / sf;
+
+        const popupW = 320;
+        const popupH = 470;
+        // Phase 21 사용자 피드백 (Windows): 우측 끝 트레이 아이콘 케이스에서
+        // popup_left = icon_left가 화면 밖으로 나가는 회귀 — popup_right = icon_right로
+        // 폴백하여 아이콘이 팝업 우측 하단 모서리 근처에 위치하도록.
+        let x = Math.round(
+          iconLeftLogical + popupW > monRightLogical
+            ? iconRightLogical - popupW
+            : iconLeftLogical,
         );
-        await win.setPosition(new PhysicalPosition(x, y));
-        await win.show();
-        await win.setFocus();
+        let y: number;
+        if (os === "macos") {
+          y = Math.round(iconBottomYLogical);
+        } else {
+          y = Math.round(iconTopYLogical - popupH);
+        }
+        x = Math.max(monLeftLogical, Math.min(monRightLogical - popupW, x));
+        y = Math.max(monTopLogical, Math.min(monBottomLogical - popupH, y));
+        await win.setPosition(new LogicalPosition(x, y));
+        // Tail은 popup 좌측에서 (iconCenter - popup_left)px 위치 — clamp 후에도
+        // 정확히 아이콘 중심을 가리킨다. 양 끝 보정으로 popup 폭 안쪽으로 강제.
+        if (onTailX) {
+          const rawTailX = iconCenterXLogical - x;
+          const tailX = Math.max(8, Math.min(popupW - 28, rawTailX));
+          onTailX(tailX);
+        }
       } catch (e) {
-        console.error("[mohashim] tray-click handler failed", e);
+        console.error("[mohashim] tray-click position adjust failed", e);
       }
     },
   );

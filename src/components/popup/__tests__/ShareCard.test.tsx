@@ -4,7 +4,12 @@ import { ShareCard, SHARE_PREVIEW_DISPLAY_PX } from "../ShareCard";
 import type { MonthData } from "../../../lib/grass";
 
 /**
- * Phase 16 ShareCard 재설계 검증 (AC-12~14, previewSize 분기).
+ * Phase 16 + Phase 21 ShareCard 검증.
+ *
+ * Phase 21 변경:
+ * - 워터마크 "MOHASHIM" → "모하심" + 연월 서브타이틀
+ * - <g id="highlights">: 가장 집중 잘 한 날 / 할일 가장 많이 한 날
+ * - 사용자 메시지: y=950 fontSize=72 → y=1010 fontSize=56 (베스트 통계 위로 이동)
  */
 
 const sampleData: MonthData = {
@@ -19,35 +24,67 @@ const sampleData: MonthData = {
   avgScore: 70,
 };
 
+const emptyData: MonthData = {
+  monthOffset: 0,
+  year: 2026,
+  month: 5,
+  cells: [],
+  totalSessions: 0,
+  avgScore: 0,
+};
+
 describe("ShareCard", () => {
-  it("AC-12: character 영역과 stats 영역이 부재", () => {
+  it("character 영역 부재 + highlights 영역 존재 (Phase 21)", () => {
     const { container } = render(<ShareCard data={sampleData} message="" />);
     expect(container.querySelector("#character")).toBeNull();
-    expect(container.querySelector("#stats")).toBeNull();
+    expect(container.querySelector("#highlights")).not.toBeNull();
   });
 
-  it("AC-13: message가 빈 문자열이면 사용자 메시지 text 미렌더", () => {
+  it("워터마크는 한글 '모하심'으로 표기 + 연월 서브타이틀 노출", () => {
     const { container } = render(<ShareCard data={sampleData} message="" />);
-    // SVG 내 모든 text 요소: watermark 1개만 (stats 제거됨).
-    const texts = container.querySelectorAll("svg text");
-    expect(texts.length).toBe(1);
-    // 워터마크는 남아있어야 함.
-    expect(texts[0].textContent).toBe("MOHASHIM");
+    const texts = Array.from(container.querySelectorAll("svg text"));
+    const watermark = texts.find((t) => t.textContent === "모하심");
+    expect(watermark).toBeTruthy();
+    const subtitle = texts.find((t) => t.textContent === "2026년 5월");
+    expect(subtitle).toBeTruthy();
   });
 
-  it("AC-14: message가 비어있지 않으면 x=540, y=950, fontSize=72, bold, fill=#2b2520", () => {
+  it("highlights — 가장 집중 잘 한 날 + 할일 가장 많이 한 날 노출 (sampleData)", () => {
+    const { container } = render(<ShareCard data={sampleData} message="" />);
+    const texts = Array.from(container.querySelectorAll("svg text"));
+    const focusLine = texts.find((t) =>
+      (t.textContent ?? "").includes("가장 집중 잘 한 날")
+    );
+    const todoLine = texts.find((t) =>
+      (t.textContent ?? "").includes("할일 가장 많이 한 날")
+    );
+    expect(focusLine).toBeTruthy();
+    expect(focusLine?.textContent).toContain("70점");
+    expect(focusLine?.textContent).toContain("5월 1일");
+    expect(todoLine).toBeTruthy();
+    expect(todoLine?.textContent).toContain("2개");
+  });
+
+  it("highlights — 데이터 없는 달은 '아직 집중 세션 없음' 폴백", () => {
+    const { container } = render(<ShareCard data={emptyData} message="" />);
+    const texts = Array.from(container.querySelectorAll("svg text"));
+    const fallback = texts.find(
+      (t) => t.textContent === "아직 집중 세션 없음"
+    );
+    expect(fallback).toBeTruthy();
+  });
+
+  it("message가 비어있지 않으면 y=1010, fontSize=56, bold, fill=#2b2520 (Phase 21)", () => {
     const { container } = render(
       <ShareCard data={sampleData} message="안녕" />
     );
-    const texts = container.querySelectorAll("svg text");
-    // watermark + message = 2.
-    expect(texts.length).toBe(2);
-    const messageText = Array.from(texts).find((t) => t.textContent === "안녕");
+    const texts = Array.from(container.querySelectorAll("svg text"));
+    const messageText = texts.find((t) => t.textContent === "안녕");
     expect(messageText).toBeTruthy();
     expect(messageText?.getAttribute("x")).toBe("540");
-    expect(messageText?.getAttribute("y")).toBe("950");
+    expect(messageText?.getAttribute("y")).toBe("1010");
     expect(messageText?.getAttribute("text-anchor")).toBe("middle");
-    expect(messageText?.getAttribute("font-size")).toBe("72");
+    expect(messageText?.getAttribute("font-size")).toBe("56");
     expect(messageText?.getAttribute("font-weight")).toBe("bold");
     expect(messageText?.getAttribute("fill")).toBe("#2b2520");
   });
@@ -58,11 +95,9 @@ describe("ShareCard", () => {
     expect(wrapper.getAttribute("aria-hidden")).toBe("true");
     expect(wrapper.className).toContain("absolute");
     expect((wrapper.style.left || "")).toBe("-99999px");
-    // SVG width/height는 1080.
     const svg = container.querySelector("svg");
     expect(svg?.getAttribute("width")).toBe("1080");
     expect(svg?.getAttribute("height")).toBe("1080");
-    // viewBox는 1080 유지.
     expect(svg?.getAttribute("viewBox")).toBe("0 0 1080 1080");
   });
 

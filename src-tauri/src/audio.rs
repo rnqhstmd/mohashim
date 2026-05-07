@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, Ordering::AcqRel, Ordering::Acquire, Ordering::Relaxed};
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -16,21 +16,37 @@ use crate::score::shared::{load_db_ema, store_db_ema};
 // PR #16 리뷰 (gemini): 모듈 내부 신호이므로 pub 제거 (캡슐화).
 static AUDIO_STREAM_ERROR: AtomicBool = AtomicBool::new(false);
 
+/// 오디오 스레드 기동 idempotency 가드. 부팅 시 권한 미부여 → 후속 권한 부여 시
+/// 재시도 호출 가능하도록 SCORE_STARTED와 별개의 atomic을 둔다 (DB 94 고정 회귀 방지).
+static AUDIO_STARTED: AtomicBool = AtomicBool::new(false);
+
 /// 오디오 캡처 스레드 기동 (FR-9, MUST-2).
 ///
 /// `mohashim-audio` 스레드 안에서 outer reconnect 루프(`run_audio_loop`)를 돌린다.
 /// Phase 15 H-3 (FR-2/3): session 실패 시 지수 백오프(1→2→4→8→16→30초 상한)로 재시도.
 /// 마이크 분리/재연결 등 일시적 실패에서 앱 재시작 없이 자동 복구한다.
 ///
-/// `app` 인자는 후속 Phase에서 80dB 경고 emit 용으로 보존한다.
+/// 멱등 호출 — 이미 시작됐으면 즉시 Ok 반환. 부팅 시 권한 미부여 → 사용자 권한 부여
+/// 시점에 다시 호출되는 경로(permission_status IPC)에서 안전하게 통과한다.
 pub fn start<R: Runtime>(_app: AppHandle<R>) -> Result<(), String> {
-    std::thread::Builder::new()
+    if AUDIO_STARTED
+        .compare_exchange(false, true, AcqRel, Acquire)
+        .is_err()
+    {
+        return Ok(());
+    }
+    let spawn_result = std::thread::Builder::new()
         .name("mohashim-audio".into())
         .spawn(move || {
             run_audio_loop();
-        })
-        .map(|_| ())
-        .map_err(|e| format!("audio thread spawn failed: {e}"))
+        });
+    match spawn_result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            AUDIO_STARTED.store(false, Relaxed);
+            Err(format!("audio thread spawn failed: {e}"))
+        }
+    }
 }
 
 /// Phase 15 H-3 (FR-2/3): outer reconnect 루프 + 지수 백오프.

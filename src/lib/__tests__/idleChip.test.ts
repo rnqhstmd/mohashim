@@ -45,7 +45,8 @@ describe("useIdleChipLabel", () => {
     expect(result.current).toBe(IDLE_LABELS[2]);
   });
 
-  it("wraps around to index 0 after 7 rotations (8*7=56s)", async () => {
+  // Phase 21: IDLE_LABELS 개수 변경(7 → 5)에 따라 wrap-around 주기를 8*5=40s로 갱신.
+  it("wraps around to index 0 after IDLE_LABELS.length rotations", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0);
     const { useIdleChipLabel, IDLE_LABELS } = await import("../idleChip");
@@ -53,7 +54,7 @@ describe("useIdleChipLabel", () => {
     expect(result.current).toBe(IDLE_LABELS[0]);
 
     act(() => {
-      vi.advanceTimersByTime(8000 * 7);
+      vi.advanceTimersByTime(8000 * IDLE_LABELS.length);
     });
     expect(result.current).toBe(IDLE_LABELS[0]);
   });
@@ -83,9 +84,10 @@ describe("useIdleChipLabel", () => {
     rerender({ active: false });
     expect(result.current).toBe("");
 
-    randomSpy.mockReturnValue(0.5); // 0.5 * 7 = 3.5 → floor = 3
+    // Phase 21: IDLE_LABELS 5개 기준 — 0.5 * 5 = 2.5 → floor = 2.
+    randomSpy.mockReturnValue(0.5);
     rerender({ active: true });
-    expect(result.current).toBe(IDLE_LABELS[3]);
+    expect(result.current).toBe(IDLE_LABELS[2]);
   });
 
   it("clears interval on unmount", async () => {
