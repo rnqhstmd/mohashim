@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, type CSSProperties } from "react";
 import {
   SHARE_CARD_SIZE,
   GRASS_COLORS,
@@ -41,7 +41,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
   const wrapperClass = isPreview
     ? ""
     : "pointer-events-none absolute top-0";
-  const wrapperStyle: React.CSSProperties = isPreview
+  const wrapperStyle: CSSProperties = isPreview
     ? { width: previewSize, height: previewSize }
     : { left: "-99999px" };
 
@@ -98,7 +98,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
         {/* Phase 16 FR-2: 사용자 메시지 (비어있지 않을 때만 렌더) */}
         {message && (
           <text
-            x={540}
+            x={SHARE_CARD_SIZE / 2}
             y={950}
             textAnchor="middle"
             fontSize="72"
