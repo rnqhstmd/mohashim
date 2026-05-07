@@ -40,17 +40,17 @@ export function ResetConfirmModal({
       aria-modal="true"
       aria-labelledby="reset-confirm-title"
       aria-describedby="reset-confirm-desc"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45"
       onClick={handleCancel}
     >
       <div
-        className="w-72 rounded-xl bg-white p-4 shadow-lg"
+        className="w-72 rounded-2xl border-[1.5px] border-ink bg-paperWarm p-4 shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="reset-confirm-title" className="text-sm font-semibold text-ink">
+        <h2 id="reset-confirm-title" className="text-sm font-extrabold text-ink">
           데이터 초기화 확인
         </h2>
-        <p id="reset-confirm-desc" className="mt-2 text-sm text-ink">
+        <p id="reset-confirm-desc" className="mt-2 text-xs leading-snug text-ink/65">
           '모하'를 입력하면 모든 데이터가 삭제됩니다.
         </p>
         <input
@@ -59,13 +59,13 @@ export function ResetConfirmModal({
           onChange={(e) => setText(e.target.value)}
           aria-label="확인 키워드 입력 (모하)"
           placeholder="모하"
-          className="mt-3 w-full rounded-md border border-deep/20 bg-white px-3 py-2 text-sm"
+          className="mt-3 w-full rounded-md border border-ink/20 bg-paperWarm/80 px-3 py-2 text-sm text-ink placeholder:text-ink/40 outline-none focus:border-ink/50"
         />
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex gap-2">
           <button
             type="button"
             onClick={handleCancel}
-            className="rounded-md bg-deep px-4 py-2 text-sm text-white"
+            className="flex-1 rounded-lg border-[1.5px] border-ink bg-paperWarm px-3 py-2 text-xs font-extrabold text-ink shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
           >
             취소
           </button>
@@ -73,7 +73,7 @@ export function ResetConfirmModal({
             type="button"
             onClick={handleConfirm}
             disabled={!canConfirm}
-            className="rounded-md bg-peach px-4 py-2 text-sm text-white disabled:opacity-50"
+            className="flex-1 rounded-lg border-[1.5px] border-ink bg-[#d8554b] px-3 py-2 text-xs font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none disabled:cursor-not-allowed disabled:bg-[#d8554b]/40 disabled:shadow-none disabled:hover:translate-y-0"
           >
             확인
           </button>

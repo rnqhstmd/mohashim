@@ -46,13 +46,13 @@ export function TimerDetailScreen({
   };
 
   return (
-    <div className="flex h-full flex-col bg-cream">
+    <div className="relative z-10 flex h-full flex-col">
       <div className="flex items-center px-3 py-2">
         <button
           type="button"
           onClick={onBack}
           aria-label="뒤로가기"
-          className="text-2xl text-deep"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border-[1.5px] border-ink bg-paperWarm text-sm font-extrabold text-ink shadow-[1px_1px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
         >
           ←
         </button>
@@ -61,7 +61,7 @@ export function TimerDetailScreen({
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
         <Potato state={potatoState} size={120} animated={true} />
         <SpeechBubble text={phrase} />
-        <span className="text-6xl font-bold tabular-nums text-deep">
+        <span className="text-6xl font-extrabold tabular-nums tracking-tight text-ink">
           {formatMmSs(timeLeft)}
         </span>
       </div>
@@ -70,7 +70,7 @@ export function TimerDetailScreen({
         <button
           type="button"
           onClick={() => setShowDiscard(true)}
-          className="text-sm text-deep/60 underline"
+          className="inline-flex items-center rounded-2xl border-[1.5px] border-ink/10 bg-transparent px-4 py-1.5 text-xs font-medium text-ink/55 transition-colors hover:border-ink/20 hover:text-ink/75"
         >
           그만하기
         </button>
