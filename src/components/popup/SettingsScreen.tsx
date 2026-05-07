@@ -156,7 +156,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
         <button
           type="button"
           onClick={() => setView("durations")}
-          className="flex w-full items-center justify-between rounded-xl border border-deep/10 bg-white px-4 py-3 hover:bg-deep/5"
+          className="flex w-full items-center justify-between rounded-xl border border-ink/15 bg-paperWarm/80 px-4 py-3 shadow-[1px_1px_0_0_rgba(40,37,32,0.06)] hover:bg-paperWarm"
         >
           <span className="text-sm text-ink">
             ⏱ 집중 {focusMin ?? "—"} 분
@@ -166,7 +166,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
         <button
           type="button"
           onClick={() => setView("durations")}
-          className="flex w-full items-center justify-between rounded-xl border border-deep/10 bg-white px-4 py-3 hover:bg-deep/5"
+          className="flex w-full items-center justify-between rounded-xl border border-ink/15 bg-paperWarm/80 px-4 py-3 shadow-[1px_1px_0_0_rgba(40,37,32,0.06)] hover:bg-paperWarm"
         >
           <span className="text-sm text-ink">
             ☕ 휴식 {breakMin ?? "—"} 분
@@ -183,7 +183,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
           return (
             <div
               key={tag.id}
-              className="rounded-xl border border-deep/10 bg-white p-2"
+              className="rounded-xl border border-ink/15 bg-paperWarm/80 p-2 shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]"
             >
               <div className="flex items-center gap-2">
                 <span
@@ -280,7 +280,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
         <button
           type="button"
           onClick={() => setView("loc")}
-          className="mt-2 rounded-md border border-deep/15 bg-white px-3 py-2 text-left text-sm text-ink"
+          className="mt-2 rounded-md border border-ink/15 bg-paperWarm/80 px-3 py-2 text-left text-sm text-ink shadow-[1px_1px_0_0_rgba(40,37,32,0.06)] hover:bg-paperWarm"
         >
           위치 태그 편집
         </button>
@@ -294,7 +294,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
               console.error("[mohashim] open_log_dir failed", err);
             });
           }}
-          className="mt-2 rounded-md border border-deep/15 bg-white px-3 py-2 text-left text-sm text-ink"
+          className="mt-2 rounded-md border border-ink/15 bg-paperWarm/80 px-3 py-2 text-left text-sm text-ink shadow-[1px_1px_0_0_rgba(40,37,32,0.06)] hover:bg-paperWarm"
         >
           로그 폴더 열기
         </button>

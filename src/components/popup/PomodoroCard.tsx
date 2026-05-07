@@ -36,7 +36,7 @@ export function PomodoroCard({
   const isComplete = phase === "complete";
 
   return (
-    <div className="border-b border-deep/10 bg-cream px-3 py-2">
+    <div className="border-b border-ink/10 bg-paperWarm/70 px-3 py-2 backdrop-blur-[1px]">
       <div className="flex items-center gap-3">
         <Potato state={potatoState} size={80} animated={true} />
         <div className="flex flex-1 flex-col gap-1">
@@ -47,11 +47,11 @@ export function PomodoroCard({
             disabled={isComplete}
             className="flex items-center justify-between disabled:cursor-default"
           >
-            <span className="text-2xl font-bold tabular-nums text-deep">
+            <span className="text-2xl font-extrabold tabular-nums tracking-tight text-ink">
               {formatMmSs(timeLeft)}
             </span>
             {!isComplete && (
-              <span className="text-xs text-deep/50">▶ 탭해서 보기</span>
+              <span className="text-[11px] font-semibold text-ink/45">▶ 탭해서 보기</span>
             )}
           </button>
         </div>
