@@ -68,11 +68,11 @@ export function ContributionGraph({
             onClick={() => onMonthChange(monthOffset - 1)}
             disabled={prevDisabled}
             aria-label="이전 달"
-            className="px-2 py-1 text-sm text-deep disabled:text-deep/20"
+            className="rounded-md px-2 py-1 text-sm font-bold text-ink/65 transition-colors hover:bg-ink/5 hover:text-ink disabled:text-ink/20 disabled:hover:bg-transparent"
           >
             ←
           </button>
-          <span className="text-sm font-semibold text-ink">
+          <span className="text-sm font-extrabold tabular-nums text-ink">
             {data ? `${data.year}년 ${data.month}월` : "..."}
           </span>
           <button
@@ -80,14 +80,14 @@ export function ContributionGraph({
             onClick={() => onMonthChange(monthOffset + 1)}
             disabled={monthOffset >= 0}
             aria-label="다음 달"
-            className="px-2 py-1 text-sm text-deep disabled:text-deep/20"
+            className="rounded-md px-2 py-1 text-sm font-bold text-ink/65 transition-colors hover:bg-ink/5 hover:text-ink disabled:text-ink/20 disabled:hover:bg-transparent"
           >
             →
           </button>
         </div>
       )}
 
-      <div className="grid grid-cols-7 gap-1 text-center text-xs text-deep/60">
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-ink/45">
         {WEEKDAYS.map((d) => (
           <div key={d}>{d}</div>
         ))}
