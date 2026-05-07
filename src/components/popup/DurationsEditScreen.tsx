@@ -161,20 +161,21 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-deep/10 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
         <button
           type="button"
           onClick={handleBack}
-          className="text-sm text-deep"
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-ink/75 hover:text-ink"
         >
-          ← 시간 편집
+          <span aria-hidden>←</span>
+          <span>시간 편집</span>
         </button>
         <div className="w-12" />
       </div>
 
       <div className="flex flex-1 flex-col gap-4 p-4">
         <div className="flex flex-col gap-1">
-          <label className="flex items-center justify-between text-xs text-deep/80">
+          <label className="flex items-center justify-between text-xs font-semibold text-ink/75">
             <span>집중 시간 ({FOCUS_MIN}~{FOCUS_MAX}분)</span>
             <input
               type="number"
@@ -184,7 +185,7 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
               value={focusInput}
               onChange={(e) => handleFocusChange(e.target.value)}
               onBlur={handleFocusBlur}
-              className="w-20 rounded-md border border-deep/20 bg-white px-2 py-1 text-right text-sm"
+              className="w-20 rounded-md border border-ink/20 bg-paperWarm/80 px-2 py-1 text-right text-sm text-ink outline-none focus:border-ink/50"
             />
           </label>
           {!focusValid && focusInput.trim() !== "" && (
@@ -195,7 +196,7 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="flex items-center justify-between text-xs text-deep/80">
+          <label className="flex items-center justify-between text-xs font-semibold text-ink/75">
             <span>휴식 시간 ({BREAK_MIN}~{BREAK_MAX}분)</span>
             <input
               type="number"
@@ -205,7 +206,7 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
               value={breakInput}
               onChange={(e) => handleBreakChange(e.target.value)}
               onBlur={handleBreakBlur}
-              className="w-20 rounded-md border border-deep/20 bg-white px-2 py-1 text-right text-sm"
+              className="w-20 rounded-md border border-ink/20 bg-paperWarm/80 px-2 py-1 text-right text-sm text-ink outline-none focus:border-ink/50"
             />
           </label>
           {!breakValid && breakInput.trim() !== "" && (
@@ -221,7 +222,7 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
             void handleSave();
           }}
           disabled={!enabled}
-          className="mt-2 self-end rounded-md bg-deep px-4 py-2 text-xs text-white disabled:opacity-50"
+          className="mt-2 inline-flex items-center justify-center self-end rounded-lg border-[1.5px] border-ink bg-ink px-4 py-2 text-xs font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none disabled:cursor-not-allowed disabled:border-ink/30 disabled:bg-ink/30 disabled:text-paperWarm/70 disabled:shadow-none disabled:hover:translate-y-0"
         >
           저장
         </button>

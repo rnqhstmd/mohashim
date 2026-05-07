@@ -113,17 +113,17 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
   return (
     <div
       ref={panelRef}
-      className="mt-3 rounded-md border border-deep/10 bg-white p-3 shadow-md animate-slide-up"
+      className="mt-3 rounded-xl border-[1.5px] border-ink/15 bg-paperWarm/85 p-3 shadow-[1.5px_1.5px_0_0_rgba(40,37,32,0.08)] backdrop-blur-sm animate-slide-up"
       role="dialog"
       aria-label="날짜 상세"
     >
       <header className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-ink">{headingDate}</h3>
+        <h3 className="text-sm font-extrabold text-ink">{headingDate}</h3>
         <button
           type="button"
           onClick={onClose}
           aria-label="닫기"
-          className="text-deep/60 hover:text-deep"
+          className="text-ink/45 hover:text-ink/75"
         >
           ×
         </button>
@@ -131,7 +131,7 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
       {loaded && (
         <>
           {logs.length > 0 ? (
-            <ul className="mt-2 space-y-1 text-sm">
+            <ul className="mt-2 space-y-1 text-sm text-ink/80">
               {logs.map((log, idx) => (
                 <li key={log.id}>
                   [{idx + 1}] {formatSessionTime(log.start_at, log.end_at)} · {log.duration_mins}분 · {log.score}점
@@ -139,12 +139,12 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
               ))}
             </ul>
           ) : (
-            <div className="mt-2 text-sm text-deep/60">세션 기록 없음</div>
+            <div className="mt-2 text-sm text-ink/45">세션 기록 없음</div>
           )}
           {doneItems.length > 0 && (
             <>
-              <h4 className="mt-3 text-xs font-semibold text-deep">완료한 todo</h4>
-              <ul className="mt-1 space-y-0.5 text-sm">
+              <h4 className="mt-3 text-xs font-bold text-deepNavy">완료한 todo</h4>
+              <ul className="mt-1 space-y-0.5 text-sm text-ink/80">
                 {doneItems.map((item) => (
                   <li key={item.id}>✓ {item.text}</li>
                 ))}

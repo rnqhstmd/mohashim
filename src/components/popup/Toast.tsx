@@ -23,7 +23,7 @@ export function ToastContainer({ toasts }: ToastContainerProps) {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="rounded-md bg-deep/90 px-3 py-2 text-xs text-white shadow"
+          className="rounded-xl border-[1.5px] border-ink bg-ink/90 px-3 py-2 text-xs font-bold text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.32)] backdrop-blur-sm"
         >
           {t.text}
         </div>
