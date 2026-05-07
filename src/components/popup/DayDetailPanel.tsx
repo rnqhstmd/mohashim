@@ -37,9 +37,13 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
   const panelRef = useRef<HTMLDivElement>(null);
 
   // FR-5 / BR-3: date 변경 시 재로드. cancelled 패턴으로 stale setState 방지.
+  // PR #14 cross-review: load 시작 시점에 logs/todoMap을 비워 stale 표시 차단.
+  // load 실패 catch에서도 비어있는 상태가 유지되어 이전 날짜 데이터가 화면에 남지 않는다.
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
+    setLogs([]);
+    setTodoMap(new Map());
     (async () => {
       try {
         const [allLogs, todos] = await Promise.all([
