@@ -1,34 +1,61 @@
-import { forwardRef } from "react";
+import { forwardRef, type CSSProperties } from "react";
 import {
   SHARE_CARD_SIZE,
   GRASS_COLORS,
   type MonthData,
 } from "../../lib/grass";
 
-type ShareCardProps = { data: MonthData | null };
+/**
+ * Phase 16 CON-2: 미리보기 표시 픽셀. SVG는 viewBox=1080을 유지하고
+ * width/height만 260으로 축소하여 비율을 보존.
+ */
+export const SHARE_PREVIEW_DISPLAY_PX = 260;
+
+type ShareCardProps = {
+  data: MonthData | null;
+  message: string;
+  /**
+   * 미지정: off-screen 1080×1080 (PNG 변환용 원본, BR-3/AC-16).
+   * 지정: visible 미리보기 (Phase 16 FR-4).
+   */
+  previewSize?: number;
+};
 
 /**
- * 공유 카드 1080×1080 SVG 스켈레톤 (D-G3, FR-18).
+ * 공유 카드 SVG 본체 (Phase 8 + Phase 16 재설계).
  *
- * - 화면 미렌더 (off-screen, BR-G6): position absolute -99999px.
- * - <foreignObject> 미사용 (AC-G30) — <text>만 사용.
- * - 픽셀 좌표는 placeholder. DEC-16 시안 확정 후 후속 Phase에서 채움.
+ * Phase 16 변경 (FR-1, FR-2):
+ * - <g id="character" /> 삭제
+ * - <g id="stats"> 삭제 (월 통계 미표시)
+ * - message prop 추가: 비어있지 않으면 하단 중앙에 사용자 메시지 렌더
+ *
+ * <foreignObject> 미사용 (AC-G30) — <text>만 사용.
  */
 export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function ShareCard(
-  { data },
+  { data, message, previewSize },
   ref
 ) {
+  const isPreview = typeof previewSize === "number";
+  const renderSize = isPreview ? previewSize : SHARE_CARD_SIZE;
+
+  const wrapperClass = isPreview
+    ? ""
+    : "pointer-events-none absolute top-0";
+  const wrapperStyle: CSSProperties = isPreview
+    ? { width: previewSize, height: previewSize }
+    : { left: "-99999px" };
+
   return (
     <div
-      className="pointer-events-none absolute top-0"
-      style={{ left: "-99999px" }}
-      aria-hidden="true"
+      className={wrapperClass}
+      style={wrapperStyle}
+      {...(isPreview ? {} : { "aria-hidden": true })}
     >
       <svg
         ref={ref}
         xmlns="http://www.w3.org/2000/svg"
-        width={SHARE_CARD_SIZE}
-        height={SHARE_CARD_SIZE}
+        width={renderSize}
+        height={renderSize}
         viewBox={`0 0 ${SHARE_CARD_SIZE} ${SHARE_CARD_SIZE}`}
       >
         {/* 배경 — cream */}
@@ -68,30 +95,19 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           })}
         </g>
 
-        {/* 통계 */}
-        <g id="stats">
+        {/* Phase 16 FR-2: 사용자 메시지 (비어있지 않을 때만 렌더) */}
+        {message && (
           <text
             x={SHARE_CARD_SIZE / 2}
-            y="900"
+            y={950}
             textAnchor="middle"
-            fontSize="36"
+            fontSize="72"
+            fontWeight="bold"
             fill="#2b2520"
           >
-            {data ? `${data.totalSessions}회 · 평균 ${data.avgScore}점` : ""}
+            {message}
           </text>
-          <text
-            x={SHARE_CARD_SIZE / 2}
-            y="960"
-            textAnchor="middle"
-            fontSize="24"
-            fill="#445478"
-          >
-            {data ? `${data.year}년 ${data.month}월` : ""}
-          </text>
-        </g>
-
-        {/* 캐릭터 placeholder — 후속 Phase에서 모하 SVG 임베드 */}
-        <g id="character" />
+        )}
       </svg>
     </div>
   );

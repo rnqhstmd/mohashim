@@ -1,34 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ContributionGraph } from "./ContributionGraph";
-import { ShareCard } from "./ShareCard";
+import { SharePreviewModal } from "./SharePreviewModal";
 import { DayDetailPanel } from "./DayDetailPanel";
 import {
-  composeShareCard,
-  copyShareCardToClipboard,
   formatDate,
   getMonthSessions,
   type MonthData,
 } from "../../lib/grass";
 
-type GrassTabProps = {
-  onShareToast: (kind: "share_ok" | "share_fail", text: string) => void;
-};
-
 /**
- * Grass 탭 본체 (FR-17, FR-18).
+ * Grass 탭 본체 (FR-17, FR-18 / Phase 16 FR-9).
  *
  * - 헤더: 오늘 sessions/avg 통계 + "잔디 자랑하기" 버튼.
  * - 본문: ContributionGraph (월별 달력).
- * - off-screen ShareCard (composeShareCard 입력).
- * - 자랑하기 흐름: composeShareCard → copyShareCardToClipboard → 토스트.
+ * - Phase 16: 자랑하기 클릭 → SharePreviewModal 열림. composeShareCard / 토스트
+ *   호출은 모달이 담당 (off-screen ShareCard 마운트도 모달로 이전).
  */
-export function GrassTab({ onShareToast }: GrassTabProps) {
+export function GrassTab() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [data, setData] = useState<MonthData | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const shareRef = useRef<SVGSVGElement>(null);
+  const [showPreview, setShowPreview] = useState(false);
   // Phase 13 FR-3: 클릭된 셀의 'YYYY-MM-DD'. null이면 패널 미표시.
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   // Phase 13 CON-2: 잔디 grid container ref — DayDetailPanel의 외부 클릭 판정 제외 영역.
@@ -102,33 +95,6 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
     };
   }, [monthOffset]);
 
-  const handleShare = async () => {
-    if (!shareRef.current || busy || !data) return;
-    // 월 이동 중 stale data 방지 — data.monthOffset이 현재 monthOffset과 일치할 때만 진행.
-    if (data.monthOffset !== monthOffset) return;
-    setBusy(true);
-    try {
-      // QE-1 1초 SLA — Promise.race로 timeout. 초과 시 실패 토스트.
-      const SHARE_TIMEOUT_MS = 1000;
-      const composed = await Promise.race<Blob>([
-        composeShareCard(shareRef.current).then(async (blob) => {
-          await copyShareCardToClipboard(blob);
-          return blob;
-        }),
-        new Promise<Blob>((_, reject) =>
-          setTimeout(() => reject(new Error("share timeout > 1s")), SHARE_TIMEOUT_MS)
-        ),
-      ]);
-      void composed;
-      onShareToast("share_ok", "복사됨");
-    } catch (err) {
-      console.error("[mohashim] share failed", err);
-      onShareToast("share_fail", "복사 실패");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   // 오늘 통계 — monthOffset=0이고 오늘 일자가 cells에 있으면.
   // 자기점검 수정: new Date(c.date)는 UTC 자정 파싱이라 TZ 의존. formatDate로 로컬 문자열 직접 비교.
   const todayStr = formatDate(new Date());
@@ -149,10 +115,8 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
         </div>
         <button
           type="button"
-          onClick={() => {
-            void handleShare();
-          }}
-          disabled={busy || !loaded || !data}
+          onClick={() => setShowPreview(true)}
+          disabled={!loaded || !data}
           className="rounded-md bg-deep px-3 py-1.5 text-xs text-white disabled:opacity-40"
         >
           잔디 자랑하기
@@ -178,7 +142,12 @@ export function GrassTab({ onShareToast }: GrassTabProps) {
         )}
       </div>
 
-      <ShareCard ref={shareRef} data={data} />
+      {showPreview && (
+        <SharePreviewModal
+          data={data}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
     </div>
   );
 }

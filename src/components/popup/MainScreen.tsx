@@ -93,10 +93,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
         {tab === "settings" ? (
           <SettingsScreen onResetDone={onResetDone} />
         ) : tab === "grass" ? (
-          <GrassTab
-            key={tab}
-            onShareToast={(kind, text) => pushToast({ kind, text })}
-          />
+          <GrassTab key={tab} />
         ) : (
           <TodosTab
             key={tab}
