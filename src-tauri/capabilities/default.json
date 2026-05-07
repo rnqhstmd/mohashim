@@ -9,6 +9,7 @@
     "core:event:default",
     "store:default",
     "opener:allow-open-url",
+    "opener:allow-open-path",
     "clipboard-manager:allow-write-image",
     "autostart:default"
   ]

@@ -61,7 +61,11 @@ export function TodosTab({
   // timer-detail 진입, ← 클릭 또는 phase가 focus/break를 벗어나면 list 복귀.
   const [view, setView] = useState<"list" | "timer-detail">("list");
 
-  // M2: phase 변경 시 자동 list 복귀 (focus/break 외 timer-detail 잔류 차단).
+  // FR-D1 (Phase 18): phase=idle/complete 진입 시 timer-detail에서 list 자동 복귀.
+  // 이유: TimerDetailScreen은 mm:ss 카운트다운이 의미 있는 focus/break 동안만 노출.
+  // phase 종료 시 빈 카운터(00:00 정지) 표시를 방지하고 사용자가 자연스러운 list 흐름으로
+  // 복귀하도록 한다. phase=focus/break 유지 시에는 view 전환 없음 (FR-D3).
+  // 매핑: AC-D2 (phase=idle → view=list), AC-D3 (phase=complete → view=list).
   useEffect(() => {
     if (phase !== "focus" && phase !== "break") setView("list");
   }, [phase]);

@@ -24,7 +24,7 @@ cpal = "0.15"
 rdev = "0.5"
 tokio = { version = "1", features = ["sync", "rt"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 chrono = "0.4"
 
 [target."cfg(target_os = \"macos\")".dependencies]

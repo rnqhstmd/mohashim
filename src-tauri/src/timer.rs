@@ -4,7 +4,7 @@
 //! 한 곳에 집약한다. **`active_phase` 스토어 키의 write는 본 모듈에서만 수행**한다 —
 //! Rust 단일 writer 정책으로 race 차단 (MUST-1).
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
 
+use crate::logger::{self, LogEvent};
 use crate::score::phase::Phase;
 use crate::score::shared::{
     current_phase, reset_session_totals, snapshot_and_reset_session_avg, store_phase,
@@ -28,6 +29,15 @@ use crate::storage::{ACTIVE_PHASE_KEY, STORE_FILE};
 ///
 /// BR-2: focus_start의 Idle 가드 통과 후에만 갱신되므로, 비Idle 재호출은 stale 시각을 덮어쓰지 않는다.
 pub static FOCUS_START_AT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Phase 18 (A): on_phase_transition Break→Complete에서 산출한 세션 평균을
+/// on_complete_consumed가 사용하기 위한 인계용 atomic.
+///
+/// 설계서 §A: `snapshot_and_reset_session_avg()`는 swap 함수로 두 번 호출 시 두 번째는 0.
+/// 호출 위치를 on_phase_transition으로 이동하면서 on_complete_consumed가 같은 값을
+/// 사용해야 sessions 적재 회귀 없음. AtomicU32(0..=100 범위)로 인계 후 on_complete_consumed가
+/// load + 0 리셋한다. 정상 흐름은 Break→Complete 전이가 on_complete_consumed 호출보다 항상 선행.
+pub static SESSION_FINAL_SCORE: AtomicU32 = AtomicU32::new(0);
 
 /// 슬립 grace 기준 (BR-sleep-1, DEC-10a/b). wall-clock 경과 ≤ 180s: 세션 유지.
 pub const SLEEP_GRACE_SECS: u64 = 180;
@@ -75,6 +85,12 @@ pub async fn focus_start<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     store_phase(Phase::Focus);
     store_time_left(minutes.saturating_mul(60));
     write_active_phase(&app, "focus");
+    // Phase 18 FR-B5: phase_change(idle→focus) 기록. elapsed_secs=0 (Idle 체류 시간 미추적).
+    logger::write(LogEvent::PhaseChange {
+        from: "idle".into(),
+        to: "focus".into(),
+        elapsed_secs: 0,
+    });
     Ok(())
 }
 
@@ -91,6 +107,10 @@ pub async fn discard_session<R: Runtime>(app: AppHandle<R>) -> Result<(), String
             write_active_phase(&app, "idle");
             // Phase 10 DEC-10-7: Discarded 경로 cleanup. SessionLog 미적재.
             FOCUS_START_AT_MS.store(0, Ordering::Release);
+            // Phase 18 FR-B5 (D): manual discard 기록.
+            logger::write(LogEvent::SessionDiscarded {
+                reason: "manual".into(),
+            });
         }
         _ => {}
     }
@@ -112,18 +132,43 @@ pub async fn discard_session<R: Runtime>(app: AppHandle<R>) -> Result<(), String
 pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phase) {
     match (from, to) {
         (Phase::Focus, Phase::Break) => {
+            let focus_minutes = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
             let minutes = read_minutes(app, BREAK_MINUTES_KEY, DEFAULT_BREAK_MINUTES);
             store_phase(Phase::Break);
             store_time_left(minutes.saturating_mul(60));
             send_notification(app, "휴식 시작", "잠깐 쉬어가세요.");
             write_active_phase(app, "break");
+            // Phase 18 FR-B5: phase_change(focus→break). elapsed_secs는 focus 설정 분 환산.
+            logger::write(LogEvent::PhaseChange {
+                from: "focus".into(),
+                to: "break".into(),
+                elapsed_secs: focus_minutes.saturating_mul(60),
+            });
         }
         (Phase::Break, Phase::Complete) => {
+            let break_minutes = read_minutes(app, BREAK_MINUTES_KEY, DEFAULT_BREAK_MINUTES);
+            let focus_minutes = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
             store_phase(Phase::Complete);
             store_time_left(0);
             send_notification(app, "세션 완료", "고생했습니다.");
             // 토스트 + active_phase=idle은 score::tick_loop의 emit 직후 on_complete_consumed에서 수행.
             // 토스트가 score-tick Complete payload보다 먼저 JS에 도달하지 않도록 순서 보장.
+            // Phase 18 FR-B5 (A): phase_change(break→complete) + session_complete 기록.
+            // final_score는 snapshot_and_reset_session_avg() 결과 — on_complete_consumed가
+            // 후속 호출에서 동일 함수를 호출하지 않도록 SESSION_FINAL_SCORE atomic으로 인계한다.
+            let final_score = snapshot_and_reset_session_avg();
+            SESSION_FINAL_SCORE.store(final_score, Ordering::Release);
+            logger::write(LogEvent::PhaseChange {
+                from: "break".into(),
+                to: "complete".into(),
+                elapsed_secs: break_minutes.saturating_mul(60),
+            });
+            logger::write(LogEvent::SessionComplete {
+                focus_mins: focus_minutes as u32,
+                break_mins: break_minutes as u32,
+                final_score,
+                tag: None, // B: 후속 phase에서 todo↔session 매핑 정의.
+            });
         }
         _ => {
             // 정상 흐름에서 호출되지 않는 조합. 방어적 no-op.
@@ -150,7 +195,10 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     // DEC-10-8: snapshot_and_reset_session_avg()는 부수효과(누적값 리셋)가 있으므로
     // 외부 가드를 변경할 때 비정상 경로에서 호출되지 않도록 주의.
 
-    let avg = snapshot_and_reset_session_avg();
+    // Phase 18 (A): on_phase_transition Break→Complete에서 이미 snapshot_and_reset_session_avg()를
+    // 호출하여 SESSION_FINAL_SCORE atomic에 적재했다. 여기서 동일 함수를 재호출하면 0을 반환하므로
+    // 인계 atomic을 load + 0 리셋하여 같은 평균을 사용한다.
+    let avg = SESSION_FINAL_SCORE.swap(0, Ordering::AcqRel);
     // 1. sessions 적재 (in-memory only, DEC-10-8).
     if let Err(e) = append_session_record(app, avg) {
         eprintln!("[mohashim] append_session_record failed: {e}");
@@ -309,6 +357,10 @@ pub fn on_sleep_overflow_discard<R: Runtime>(app: &AppHandle<R>) {
         "sleep_discard",
         "슬립 시간이 길어 세션이 종료되었습니다",
     );
+    // Phase 18 FR-B5 (D): sleep_overflow discard 기록.
+    logger::write(LogEvent::SessionDiscarded {
+        reason: "sleep_overflow".into(),
+    });
 }
 
 /// 부트 시점 진행 중 세션 자동 Discarded (DEC-11, BR-phase-3).
@@ -327,6 +379,10 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
         // Phase 10 DEC-10-7: 부트 시점 자동 Discarded cleanup. in-memory atomic은 default 0이지만,
         // 미래에 부트 시 atomic을 미리 로드하더라도 안전하도록 명시 리셋.
         FOCUS_START_AT_MS.store(0, Ordering::Release);
+        // Phase 18 FR-B5: boot_reset discard 기록.
+        logger::write(LogEvent::SessionDiscarded {
+            reason: "boot_reset".into(),
+        });
     }
     Ok(())
 }
@@ -339,6 +395,10 @@ pub fn reset_runtime_state() {
     store_time_left(0);
     // Phase 10 DEC-10-7: reset_all 후 stale FOCUS_START_AT_MS 차단.
     FOCUS_START_AT_MS.store(0, Ordering::Release);
+    // Phase 18 phase-review M1: reset_all 경로에서 SESSION_FINAL_SCORE atomic
+    // 인계값 stale 오염 차단. on_phase_transition Break→Complete가 set한 값이
+    // on_complete_consumed 호출 없이 reset되는 케이스 보호.
+    SESSION_FINAL_SCORE.store(0, Ordering::Release);
 }
 
 // =====================================================================
