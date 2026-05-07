@@ -200,7 +200,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
                     onChange={(e) => {
                       void updateTag(tag.id, { label: e.target.value });
                     }}
-                    className="flex-1 rounded border border-deep/30 px-2 py-1 text-sm"
+                    className="flex-1 rounded border border-ink/25 bg-paperWarm px-2 py-1 text-sm text-ink outline-none focus:border-ink/50"
                   />
                 ) : (
                   <span className="flex-1 text-sm text-ink">{tag.label}</span>
@@ -238,7 +238,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
                           void updateTag(tag.id, { emoji });
                         }}
                         className={`flex h-7 w-7 items-center justify-center rounded ${
-                          tag.emoji === emoji ? "bg-deep/15" : ""
+                          tag.emoji === emoji ? "bg-deepNavy/15" : "hover:bg-ink/5"
                         }`}
                       >
                         {emoji}
@@ -272,7 +272,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
             void handleAdd();
           }}
           disabled={workTags.length >= 5}
-          className="w-full rounded-xl border border-dashed border-deep/30 py-2 text-sm text-deep/60 disabled:opacity-40"
+          className="w-full rounded-xl border border-dashed border-ink/25 py-2 text-sm font-semibold text-ink/55 hover:border-ink/40 hover:text-ink/75 disabled:opacity-40 disabled:hover:border-ink/25"
         >
           ＋ 새 작업 태그 추가
         </button>
