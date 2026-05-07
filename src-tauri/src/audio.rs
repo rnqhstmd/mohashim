@@ -143,10 +143,17 @@ fn run_audio_session() -> bool {
 ///
 /// 캡처 없는 fn 포인터로 정의하여 의도(정적 함수, 상태 비공유)를 명시한다.
 /// AUDIO_STREAM_ERROR atomic을 set하여 session 폴링 루프가 stream drop + 재시도하도록 신호.
+///
+/// Phase 18 FR-B5 (G): cpal 콜백 스레드 비차단 정책 — logger::write가 락을 잡으므로 직접 호출하지
+/// 않고 `std::thread::spawn`으로 위임한다. 콜백이 락 경합으로 블로킹되는 것을 방지한다.
 fn on_stream_error(e: cpal::StreamError) {
     eprintln!("[mohashim] cpal stream error: {e}");
     store_db_ema(0.0);
     AUDIO_STREAM_ERROR.store(true, Relaxed);
+    let msg = e.to_string();
+    std::thread::spawn(move || {
+        crate::logger::write(crate::logger::LogEvent::AudioError { message: msg });
+    });
 }
 
 /// i16 PCM → 정규화 RMS → dB → EMA 갱신.

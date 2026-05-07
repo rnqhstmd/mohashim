@@ -1,5 +1,6 @@
 mod audio;
 mod input;
+mod logger;
 mod permissions;
 mod power;
 pub mod score;
@@ -36,12 +37,18 @@ pub fn run() {
             storage::set_auto_launch,
             storage::record_todo_completion,
             storage::undo_todo_completion,
+            logger::open_log_dir,
         ])
         .setup(|app| {
             // setup 순서: storage 시드 → boot discard → power observer → tray → score.
             // boot discard는 score::start (tick 시작) 이전에 실행해야 한다 (DEC-11).
             if let Err(err) = storage::init(app.handle()) {
                 eprintln!("[mohashim] storage init failed: {err}");
+            }
+            // Phase 18 FR-B2: 분석 로거 초기화. 실패 시 write no-op (BR-B3) — 앱 동작 무영향.
+            // 내부에서 AppStart 이벤트 1건을 기록한다.
+            if let Err(err) = logger::init(app.handle()) {
+                eprintln!("[mohashim] logger init failed: {err}");
             }
             // FR-18 / BR-5: 메인 윈도우 X 클릭 시 종료 대신 hide. 트레이 클릭으로 재노출.
             install_main_window_close_guard(app.handle());
@@ -74,8 +81,16 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // Phase 18 (E, MA-2): 트레이 quit / Cmd+Q / 시스템 종료 모두 RunEvent::Exit로 통합 캡처.
+            // AppQuit 이벤트 기록 후 BufWriter flush로 종료 race 방어.
+            if let tauri::RunEvent::Exit = event {
+                logger::write(logger::LogEvent::AppQuit);
+                logger::flush();
+            }
+        });
 }
 
 /// store `auto_launch_enabled` ↔ OS launcher 정합 (FR-9, DEC-9-1).

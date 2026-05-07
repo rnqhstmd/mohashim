@@ -82,6 +82,10 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
     let mut prev_tray_state: Option<LiveState> = None;
     let mut prev_title: Option<Option<String>> = None;
     let mut next_tick = Instant::now();
+    // Phase 18 FR-B5 (F): noise_enter/exit 전환 감지용 로컬 상태.
+    // Idle phase 한정 — Focus/Break/Complete 진입 시 active=true→false 합성으로 NoiseExit 발화.
+    let mut prev_noise_loud_active = false;
+    let mut noise_loud_started_at_secs: u64 = 0;
     loop {
         next_tick += Duration::from_secs(1);
         if let Some(remaining) = next_tick.checked_duration_since(Instant::now()) {
@@ -216,6 +220,26 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             noise_loud_active = active;
             Some(new_count)
         });
+
+        // Phase 18 FR-B5 (F): noise_enter/exit 전환 감지 (Idle phase 한정).
+        // apply_noise_loud_hysteresis가 Idle 외 phase에서 (0, false)를 반환하므로
+        // Focus/Break 진입 시 prev=true → cur=false 자연스러운 전환 → NoiseExit 합성 발화.
+        // BR-B4: hysteresis 5틱 도달 시점이 noise_enter 기록 시점.
+        let now_secs = crate::score::shared::START_AT
+            .get()
+            .map(|s| s.elapsed().as_secs())
+            .unwrap_or(0);
+        if !prev_noise_loud_active && noise_loud_active {
+            noise_loud_started_at_secs = now_secs;
+            crate::logger::write(crate::logger::LogEvent::NoiseEnter { db_ema: db });
+        } else if prev_noise_loud_active && !noise_loud_active {
+            let dur = now_secs.saturating_sub(noise_loud_started_at_secs);
+            crate::logger::write(crate::logger::LogEvent::NoiseExit {
+                db_ema: db,
+                duration_secs: dur,
+            });
+        }
+        prev_noise_loud_active = noise_loud_active;
 
         // Phase 8 R-G2: Focus tick에만 세션 평균 누적.
         // phase transition 블록 이후에 확인하여 wake tick에서 전이가 발생한 경우를 제외한다.
