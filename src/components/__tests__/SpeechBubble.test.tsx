@@ -22,21 +22,22 @@ describe("SpeechBubble", () => {
 });
 
 describe("SpeechBubble — bubble tail", () => {
-  // Phase 21: Mohashim Design.html(popup.jsx line 282-303)의 SpeechBubble 패턴과 정렬.
-  // border-r + border-b + rotate-45 → ▽ (아래 향함) 모양. 기존 border-l + border-b는
-  // < 모양이라 사용자가 "꼬리 방향이 이상하다"고 피드백.
-  it("renders the bottom tail (downward ▽) with right+bottom ink borders (AC-19)", () => {
+  // Phase 21 사용자 피드백 (재): Potato가 말풍선 좌측에 있는 horizontal 레이아웃에서
+  // 꼬리가 Potato를 가리켜야 함 → 좌측 향함(◁). border-l + border-b + rotate-45 →
+  // 좌하단 코너 변이 보이며 좌측으로 향한 삼각형. 위치는 좌측면 -left-[6px], 수직
+  // 중앙 근처(bottom-3).
+  it("renders the left-pointing tail (◁) with left+bottom ink borders", () => {
     render(<SpeechBubble text="테스트" />);
     const tail = screen.getByTestId("bubble-tail");
     expect(tail).toBeInTheDocument();
     expect(tail.className).toContain("rotate-45");
-    expect(tail.className).toContain("border-r-ink");
+    expect(tail.className).toContain("border-l-ink");
     expect(tail.className).toContain("border-b-ink");
-    expect(tail.className).toContain("border-l-transparent");
+    expect(tail.className).toContain("border-r-transparent");
     expect(tail.className).toContain("border-t-transparent");
     expect(tail.className).toContain("absolute");
-    expect(tail.className).toContain("left-5");
-    expect(tail.className).toContain("-bottom-[6px]");
+    expect(tail.className).toContain("-left-[6px]");
+    expect(tail.className).toContain("bottom-3");
   });
 });
 

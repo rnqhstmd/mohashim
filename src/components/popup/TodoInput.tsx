@@ -66,12 +66,12 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
           />
         </div>
       )}
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div className="flex w-full items-center gap-1.5 px-3 py-2">
         <button
           type="button"
           onClick={() => togglePicker("work")}
           aria-label="작업 태그 선택"
-          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm transition-colors ${
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm transition-colors ${
             pickerOpen === "work" || selectedTag
               ? "bg-deepNavy/10 text-deepNavy"
               : "text-ink/50 hover:text-ink/70"
@@ -83,7 +83,7 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
           type="button"
           onClick={() => togglePicker("loc")}
           aria-label="위치 태그 선택"
-          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm transition-colors ${
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm transition-colors ${
             pickerOpen === "loc" || selectedLoc
               ? "bg-deepNavy/10 text-deepNavy"
               : "text-ink/50 hover:text-ink/70"
@@ -98,13 +98,13 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
           placeholder="할 일을 입력하세요"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 rounded-md border border-ink/20 bg-paperWarm px-3 py-1.5 text-sm text-ink placeholder:text-ink/40 outline-none focus:border-ink/50"
+          className="min-w-0 flex-1 rounded-md border border-ink/20 bg-paperWarm px-2.5 py-1 text-sm text-ink placeholder:text-ink/40 outline-none focus:border-ink/50"
         />
         <button
           type="button"
           onClick={handleSubmit}
           aria-label="추가"
-          className="flex h-8 w-8 items-center justify-center rounded-full border-[1.5px] border-ink bg-ink text-base font-bold text-paperWarm shadow-[1px_1px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[1.5px] border-ink bg-ink text-base font-bold text-paperWarm shadow-[1px_1px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
         >
           ＋
         </button>

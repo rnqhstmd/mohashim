@@ -24,10 +24,15 @@ function envFromDb(db: number): { icon: string; label: string } {
 }
 
 export function NoiseMeter({ db, size = "sm" }: NoiseMeterProps) {
-  const env = envFromDb(db);
-  const pct = Math.max(0, Math.min(100, ((db - 30) / 70) * 100));
+  // Phase 21 사용자 피드백: 음수 dB(예: -67) 표시 문제. score 엔진은 dBFS(full
+  // scale, 0~-∞) 기준이라 -67 같은 음수가 자연스럽게 나옴. UX는 dBSPL(가청 영역
+  // 30~100)을 기대하므로 +94 보정으로 근사 변환 후 0~120으로 클램프.
+  // 정확한 calibration은 마이크/환경에 따라 다르나, 일상 환경 추정에는 충분.
+  const dbSpl = Math.max(0, Math.min(120, db + 94));
+  const env = envFromDb(dbSpl);
+  const pct = Math.max(0, Math.min(100, ((dbSpl - 30) / 70) * 100));
   const tickAt65 = ((65 - 30) / 70) * 100;
-  const danger = db > 65;
+  const danger = dbSpl > 65;
   const h = size === "sm" ? 5 : 8;
   const dangerColor = "#d8554b";
   const successColor = "#5fa97a";
@@ -43,7 +48,7 @@ export function NoiseMeter({ db, size = "sm" }: NoiseMeterProps) {
           className="tabular-nums"
           style={{ color: danger ? dangerColor : "#8a93a6" }}
         >
-          {Math.round(db)}
+          {Math.round(dbSpl)}
           <span className="ml-px text-[8px] opacity-70">dB</span>
         </span>
       </div>

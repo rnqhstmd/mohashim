@@ -138,9 +138,11 @@ export async function attachTrayClickListener(
 
         const popupW = 320;
         const popupH = 470;
-        // 꼬리(tail)가 logical x=22~30 부근이라 popup 좌상단은 iconCenter - (320-26)
-        // ≈ iconCenter - 294. 단, 화면 밖으로 나가지 않도록 clamp.
-        let x = Math.round(iconCenterXLogical - (popupW - 26));
+        // PopupTail.tsx에서 tailX={270} (logical, popup 좌측에서 270px)을 기준으로
+        // 트레이 아이콘 중심과 일치시킨다. popup_left + 270 = iconCenter → popup_left
+        // = iconCenter - 270. 화면 밖으로 나가지 않도록 아래 clamp.
+        const tailXFromPopupLeft = 270;
+        let x = Math.round(iconCenterXLogical - tailXFromPopupLeft);
         let y: number;
         if (os === "macos") {
           y = Math.round(iconBottomYPhys / sf);
