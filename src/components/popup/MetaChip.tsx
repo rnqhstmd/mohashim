@@ -20,19 +20,19 @@ export function MetaChip({
 }: MetaChipProps) {
   const padding = size === "sm" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm";
   const style: CSSProperties = active
-    ? { background: tag.color, color: "white" }
+    ? { background: tag.color, color: "#fdf8ef" }
     : {
         borderColor: tag.color,
         color: tag.color,
         borderWidth: 1,
-        background: "white",
+        background: "rgba(253,248,239,0.85)",
       };
   return (
     <button
       type="button"
       onClick={onClick}
       style={style}
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full ${padding}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full font-bold transition-transform hover:-translate-y-px ${padding}`}
     >
       <span>{tag.emoji}</span>
       <span>{tag.label}</span>
