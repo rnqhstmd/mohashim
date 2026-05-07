@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { computePopupPosition } from "../trayPopup";
+import { computePopupPosition, pickMonitorForPoint } from "../trayPopup";
+
+type FakeMonitor = {
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+};
+const mon = (x: number, y: number, w: number, h: number): FakeMonitor => ({
+  position: { x, y },
+  size: { width: w, height: h },
+});
 
 describe("computePopupPosition", () => {
   it("clamps x to right edge on macOS retina near right of monitor", () => {
@@ -77,5 +86,39 @@ describe("computePopupPosition", () => {
       "macos",
     );
     expect(result).toEqual({ x: 3441, y: 22 });
+  });
+});
+
+describe("pickMonitorForPoint", () => {
+  it("좌상단 inclusive — primary 좌상단 (0,0) 매칭", () => {
+    const monitors = [mon(0, 0, 1920, 1080), mon(1920, 0, 1920, 1080)];
+    expect(pickMonitorForPoint(monitors, 0, 0)).toBe(monitors[0]);
+  });
+
+  it("우하단 exclusive — primary 우하단 정확히는 secondary", () => {
+    const monitors = [mon(0, 0, 1920, 1080), mon(1920, 0, 1920, 1080)];
+    // x=1920은 primary[0,1920) 미포함, secondary[1920,3840) 포함.
+    expect(pickMonitorForPoint(monitors, 1920, 0)).toBe(monitors[1]);
+  });
+
+  it("secondary 모니터 내부 좌표 매칭", () => {
+    const monitors = [mon(0, 0, 1920, 1080), mon(1920, 0, 1920, 1080)];
+    expect(pickMonitorForPoint(monitors, 2500, 500)).toBe(monitors[1]);
+  });
+
+  it("매칭 실패 시 monitors[0] 폴백 (D-2)", () => {
+    const monitors = [mon(0, 0, 1920, 1080), mon(1920, 0, 1920, 1080)];
+    // 음수 좌표(어디에도 없음) → monitors[0] 폴백.
+    expect(pickMonitorForPoint(monitors, -100, -100)).toBe(monitors[0]);
+  });
+
+  it("빈 monitor 목록 → undefined (호출자 null 가드 위임)", () => {
+    expect(pickMonitorForPoint([], 0, 0)).toBeUndefined();
+  });
+
+  it("음수 좌표 모니터 (macOS 보조 좌측) — 음수 영역 매칭", () => {
+    // primary 0, secondary -1920~0
+    const monitors = [mon(0, 0, 1920, 1080), mon(-1920, 0, 1920, 1080)];
+    expect(pickMonitorForPoint(monitors, -500, 100)).toBe(monitors[1]);
   });
 });

@@ -163,11 +163,14 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
                 to: "complete".into(),
                 elapsed_secs: break_minutes.saturating_mul(60),
             });
+            // Phase 19 FR-B1/B2: 세션 중 완료된 todo의 tag 다수결 (비파괴 buffer read).
+            // drain은 후속 on_complete_consumed에서 발생하므로 이 시점에 buffer 조회 가능.
+            let session_tag = compute_session_tag(app);
             logger::write(LogEvent::SessionComplete {
                 focus_mins: focus_minutes as u32,
                 break_mins: break_minutes as u32,
                 final_score,
-                tag: None, // B: 후속 phase에서 todo↔session 매핑 정의.
+                tag: session_tag,
             });
         }
         _ => {
@@ -345,6 +348,58 @@ pub(crate) fn apply_session_record(
     sessions.insert(date.to_string(), Value::Object(next));
 }
 
+/// Phase 19 FR-B2: SESSION_TODOS_DONE buffer + todos 스토어로 다수결 tag 산출.
+///
+/// 비파괴 — buffer는 후속 on_complete_consumed의 drain_todos에서 회수.
+/// 빈 buffer / 모든 tag None / 스토어 조회 실패 시 None 반환 (BR-B3 일관 폴백).
+fn compute_session_tag<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let ids = crate::score::shared::snapshot_todos();
+    if ids.is_empty() {
+        return None;
+    }
+    let pairs = crate::storage::read_todo_tags(app, &ids);
+    if pairs.is_empty() {
+        return None;
+    }
+    tally_session_tag(&pairs)
+}
+
+/// FR-B2 다수결 산출 (pure 함수, atomic/IO 무의존):
+/// - tag=None은 카운트 제외
+/// - 단일 winner: 해당 tag 반환
+/// - 동수: pairs 역순 순회로 동률 후보 중 첫 non-None tag (Q1 결정)
+/// - 모두 None / 입력 비면 None
+pub(crate) fn tally_session_tag(pairs: &[(String, Option<String>)]) -> Option<String> {
+    use std::collections::{HashMap, HashSet};
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for (_, tag) in pairs {
+        if let Some(t) = tag {
+            *counts.entry(t.as_str()).or_insert(0) += 1;
+        }
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    let max = *counts.values().max().unwrap();
+    let winners: HashSet<&str> = counts
+        .iter()
+        .filter(|(_, &c)| c == max)
+        .map(|(&k, _)| k)
+        .collect();
+    if winners.len() == 1 {
+        return Some(winners.into_iter().next().unwrap().to_string());
+    }
+    // 동수: 역순으로 동률 후보에 속하는 첫 non-None tag (Q1).
+    for (_, tag) in pairs.iter().rev() {
+        if let Some(t) = tag {
+            if winners.contains(t.as_str()) {
+                return Some(t.clone());
+            }
+        }
+    }
+    None
+}
+
 /// 슬립 grace 초과 자동 Discarded (DEC-10b, FR-toast-sleep, AC-9).
 pub fn on_sleep_overflow_discard<R: Runtime>(app: &AppHandle<R>) {
     store_phase(Phase::Idle);
@@ -480,7 +535,7 @@ fn emit_toast<R: Runtime>(app: &AppHandle<R>, kind: &str, text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::apply_session_record;
+    use super::{apply_session_record, tally_session_tag};
     use serde_json::json;
 
     /// Phase 12 GAP fix: 기존 todos_completed=N 상태에서 세션 완료 적재 시 N 보존.
@@ -578,5 +633,68 @@ mod tests {
         assert_eq!(entry.get("avg"), Some(&json!(57)));
         assert_eq!(entry.get("sum"), Some(&json!(170)));
         assert_eq!(entry.get("todos_completed"), Some(&json!(2)));
+    }
+
+    // Phase 19 FR-B3: tally_session_tag 다수결 단위 테스트 7건.
+    fn pair(id: &str, tag: Option<&str>) -> (String, Option<String>) {
+        (id.to_string(), tag.map(String::from))
+    }
+
+    #[test]
+    fn tally_returns_none_on_empty() {
+        assert_eq!(tally_session_tag(&[]), None);
+    }
+
+    #[test]
+    fn tally_returns_none_when_all_tags_none() {
+        let pairs = vec![pair("t1", None), pair("t2", None)];
+        assert_eq!(tally_session_tag(&pairs), None);
+    }
+
+    #[test]
+    fn tally_majority_single_winner() {
+        let pairs = vec![
+            pair("t1", Some("개발")),
+            pair("t2", Some("개발")),
+            pair("t3", Some("공부")),
+        ];
+        assert_eq!(tally_session_tag(&pairs), Some("개발".to_string()));
+    }
+
+    #[test]
+    fn tally_tie_uses_buffer_last_tag() {
+        // 동수: 개발 1, 공부 1. buffer 마지막=공부 → 공부.
+        let pairs = vec![pair("t1", Some("개발")), pair("t2", Some("공부"))];
+        assert_eq!(tally_session_tag(&pairs), Some("공부".to_string()));
+    }
+
+    #[test]
+    fn tally_tie_with_last_none_falls_back_reverse() {
+        // 동수: 개발 1, 공부 1. buffer 마지막=None → 역순 첫 non-None=공부.
+        let pairs = vec![
+            pair("t1", Some("개발")),
+            pair("t2", Some("공부")),
+            pair("t3", None),
+        ];
+        assert_eq!(tally_session_tag(&pairs), Some("공부".to_string()));
+    }
+
+    #[test]
+    fn tally_excludes_none_from_count_but_keeps_position() {
+        // 개발 1, 공부 1 동수 (None 제외). 역순 첫 non-None=공부.
+        let pairs = vec![
+            pair("t1", Some("개발")),
+            pair("t2", None),
+            pair("t3", None),
+            pair("t4", Some("공부")),
+        ];
+        assert_eq!(tally_session_tag(&pairs), Some("공부".to_string()));
+    }
+
+    #[test]
+    fn tally_unicode_tag_passthrough() {
+        let pairs = vec![pair("t1", Some("💻 개발")), pair("t2", Some("📚 공부"))];
+        // 동수, 마지막=📚 공부.
+        assert_eq!(tally_session_tag(&pairs), Some("📚 공부".to_string()));
     }
 }

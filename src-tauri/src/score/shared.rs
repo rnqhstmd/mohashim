@@ -323,8 +323,11 @@ pub fn clear_todos() {
     buf.clear();
 }
 
-/// 테스트 전용 — 현재 buffer 상태 스냅샷 (clone, 비파괴).
-#[cfg(test)]
+/// 현재 buffer 상태 스냅샷 (clone, 비파괴). drain_todos와 달리 buffer를 비우지 않는다.
+///
+/// Phase 19 FR-B2: Break→Complete 분기에서 timer::compute_session_tag가 호출하여
+/// 다수결 tag 산출에 사용한다. drain은 후속 on_complete_consumed의 drain_todos에서
+/// 수행되므로 본 함수는 read-only이며 race 없음 (같은 tick 내 동기 순차 호출).
 pub fn snapshot_todos() -> Vec<String> {
     let buf = match buffer().lock() {
         Ok(g) => g,

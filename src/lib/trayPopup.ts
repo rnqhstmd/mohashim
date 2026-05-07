@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import {
-  currentMonitor,
+  availableMonitors,
   getCurrentWindow,
   PhysicalPosition,
 } from "@tauri-apps/api/window";
@@ -75,11 +75,35 @@ export function computePopupPosition(
  * - visible: hide (사용자 결정 = 토글 유지)
  * - hidden: setPosition + show + setFocus
  *
- * `currentMonitor`가 null인 경우(모니터 정보 조회 실패) 위치 보정 없이 show/focus만
- * 수행한다 — 사용자 가시성을 우선 보존한다.
+ * Phase 19 FR-A1/A2: 트레이 클릭 좌표(`payload.x/y`) 기반으로 모니터를 매칭한다.
+ * `currentMonitor()`(앱 윈도우 기준)는 듀얼 모니터에서 잘못된 모니터를 반환할 수 있어
+ * `availableMonitors()` + 좌표 매칭으로 교체. 매칭 실패 시 `monitors[0]` 폴백,
+ * 그래도 undefined면 위치 보정 없이 show/focus만 수행한다 (가시성 우선).
  *
  * 반환값은 listener cleanup 함수.
  */
+/**
+ * Phase 19 FR-A1: 트레이 클릭 물리 좌표가 속하는 모니터를 매칭한다.
+ *
+ * 매칭 술어: 좌상단 inclusive + 우하단 exclusive (인접 모니터 동시 매칭 회피).
+ * 매칭 실패 시 `monitors[0]` 폴백 (FR-A2). 빈 목록은 undefined 반환 → 호출자 null 가드.
+ */
+export function pickMonitorForPoint<
+  M extends {
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+  },
+>(monitors: readonly M[], x: number, y: number): M | undefined {
+  const found = monitors.find(
+    (m) =>
+      x >= m.position.x &&
+      x < m.position.x + m.size.width &&
+      y >= m.position.y &&
+      y < m.position.y + m.size.height,
+  );
+  return found ?? monitors[0];
+}
+
 export async function attachTrayClickListener(
   os: TargetOs,
 ): Promise<() => void> {
@@ -93,7 +117,12 @@ export async function attachTrayClickListener(
           await win.hide();
           return;
         }
-        const monitor = await currentMonitor();
+        const monitors = await availableMonitors();
+        const monitor = pickMonitorForPoint(
+          monitors,
+          event.payload.x,
+          event.payload.y,
+        );
         if (!monitor) {
           await win.show();
           await win.setFocus();

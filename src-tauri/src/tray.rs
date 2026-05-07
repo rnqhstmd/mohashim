@@ -146,9 +146,31 @@ fn emit_tray_click<R: Runtime>(app: &AppHandle<R>, rect: &tauri::Rect) {
         });
 
     // Tauri v2: Position/Size는 Logical/Physical variant를 가지며 to_physical(sf)로 변환.
+    //
+    // Phase 19 cross-review W1: 혼합 DPI 듀얼 모니터에서 main/primary sf로 변환하면 클릭
+    // 모니터 배율이 다를 때 좌표가 빗나간다. Logical 분기에서 모든 모니터에 대해 각 sf로
+    // 변환을 시도하고 어느 모니터의 물리 영역에 들어가는지 매칭하여 매칭된 sf 결과 사용.
+    // 매칭 실패 시 main/primary sf 폴백 (단일 DPI 환경 동일 동작 보존).
     let pos = match rect.position {
         tauri::Position::Physical(p) => p,
-        tauri::Position::Logical(l) => l.to_physical(sf),
+        tauri::Position::Logical(l) => app
+            .available_monitors()
+            .ok()
+            .into_iter()
+            .flatten()
+            .find_map(|m| {
+                let p = l.to_physical(m.scale_factor());
+                let mp = m.position();
+                let ms = m.size();
+                let in_x = p.x >= mp.x && p.x < mp.x.saturating_add(ms.width as i32);
+                let in_y = p.y >= mp.y && p.y < mp.y.saturating_add(ms.height as i32);
+                if in_x && in_y {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| l.to_physical(sf)),
     };
     let size = match rect.size {
         tauri::Size::Physical(s) => s,
