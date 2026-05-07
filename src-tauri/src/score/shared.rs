@@ -38,6 +38,15 @@ pub static SLEEP_AT_UNIX_MS: AtomicU64 = AtomicU64::new(0);
 /// DidWake 발생 플래그. WillSleep과 짝지어 wake 이벤트 신호.
 pub static WAKE_FLAG: AtomicBool = AtomicBool::new(false);
 
+/// Phase 14 C-2 fix: tick 본문 진입 시 wall-clock 기록.
+/// 이전 tick과의 차이가 WAKE_DRIFT_THRESHOLD_MS 이상이면 sleep으로 간주하여
+/// SLEEP_AT_UNIX_MS / WAKE_FLAG 합성 (Windows fallback, macOS NSWorkspace 우선).
+/// 0=초기화 미완. 첫 tick 진입 시 set, drift 검사 skip.
+pub static LAST_TICK_WALL_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Phase 14: drift detection 임계값. 5초 점프 → sleep 합성.
+pub const WAKE_DRIFT_THRESHOLD_MS: u64 = 5000;
+
 /// FR-2 / BR-noise-80: phase=Idle 상태에서 db_ema > NOISE_LOUD_THRESHOLD_DB 인 1Hz tick 카운터.
 /// hysteresis 활용: NOISE_LOUD_HYSTERESIS_TICKS 도달 시 noiseLoud 활성, db≤80 또는
 /// phase 전환 시 0 리셋 (Phase 11 FR-7~9, BR-5).
@@ -172,6 +181,36 @@ pub fn apply_noise_loud_hysteresis(phase: Phase, db: f32, prev_count: u64) -> (u
     let new_count = prev_count.saturating_add(1);
     let active = new_count >= NOISE_LOUD_HYSTERESIS_TICKS;
     (new_count, active)
+}
+
+/// Phase 14: prev/now wall-clock diff 기반 sleep 합성 산출 (순수 함수).
+///
+/// tick_loop의 atomic 의존을 분리하여 단위 테스트 가능하게 한 헬퍼.
+/// macOS NSWorkspace가 이미 `SLEEP_AT_UNIX_MS`를 set한 경우 보존하기 위해
+/// `sleep_at_existing != 0`이면 `sleep_at_to_set = None`으로 반환한다 (BR-1).
+///
+/// 반환: `(synthesized, sleep_at_to_set, set_wake_flag)`
+/// - prev_wall=0: 초기화 미완 → `(false, None, false)` (BR-3)
+/// - diff < threshold: drift 미감지 → `(false, None, false)`
+/// - diff >= threshold: drift 감지 → `(true, Some(prev_wall) | None, true)`
+pub fn detect_drift_sleep(
+    prev_wall: u64,
+    now_wall: u64,
+    sleep_at_existing: u64,
+) -> (bool, Option<u64>, bool) {
+    if prev_wall == 0 {
+        return (false, None, false);
+    }
+    let diff_ms = now_wall.saturating_sub(prev_wall);
+    if diff_ms < WAKE_DRIFT_THRESHOLD_MS {
+        return (false, None, false);
+    }
+    let sleep_at = if sleep_at_existing == 0 {
+        Some(prev_wall)
+    } else {
+        None
+    };
+    (true, sleep_at, true)
 }
 
 /// 잔여 초 atomic 로드.
@@ -421,6 +460,59 @@ mod tests {
         let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::INFINITY, 4);
         assert_eq!(c, 5);
         assert!(a);
+    }
+
+    // ---------- Phase 14 C-2 — wall-clock drift detection 테스트 (FR-6, AC-6) ----------
+
+    #[test]
+    fn wake_drift_threshold_constant() {
+        // 5초 임계가 의도대로 정의되어 있는지 회귀 차단.
+        assert_eq!(WAKE_DRIFT_THRESHOLD_MS, 5000);
+    }
+
+    #[test]
+    #[serial]
+    fn last_tick_wall_ms_initial_zero() {
+        // 모듈 초기 상태에서 0 (drift 검사 skip 의미).
+        // 다른 테스트 영향 회피 — store(0) 후 load 검증만.
+        LAST_TICK_WALL_MS.store(0, Relaxed);
+        assert_eq!(LAST_TICK_WALL_MS.load(Relaxed), 0);
+    }
+
+    #[test]
+    fn drift_below_threshold_no_synthesis() {
+        // 4초 점프 (임계 미만) → 합성 안 함.
+        let (det, sleep_at, wake) = detect_drift_sleep(1000, 4999, 0);
+        assert!(!det);
+        assert_eq!(sleep_at, None);
+        assert!(!wake);
+    }
+
+    #[test]
+    fn drift_at_threshold_synthesizes() {
+        // 5초 점프 (임계 도달) → 합성 + WAKE_FLAG.
+        let (det, sleep_at, wake) = detect_drift_sleep(1000, 6000, 0);
+        assert!(det);
+        assert_eq!(sleep_at, Some(1000));
+        assert!(wake);
+    }
+
+    #[test]
+    fn drift_preserves_existing_sleep_at() {
+        // BR-1: macOS NSWorkspace가 이미 set한 SLEEP_AT_UNIX_MS는 보존 (None 반환).
+        let (det, sleep_at, wake) = detect_drift_sleep(1000, 10000, 500);
+        assert!(det);
+        assert_eq!(sleep_at, None);
+        assert!(wake);
+    }
+
+    #[test]
+    fn drift_initial_state_skips() {
+        // BR-3: prev_wall=0 (초기화 미완) → drift 검사 skip.
+        let (det, sleep_at, wake) = detect_drift_sleep(0, 10000, 0);
+        assert!(!det);
+        assert_eq!(sleep_at, None);
+        assert!(!wake);
     }
 
     // ---------- Phase 13 FR-13~17 buffer 테스트 ----------

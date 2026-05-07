@@ -4,7 +4,8 @@
 //! 콜백 본문은 atomic store만 수행 (lock-free, Send 무관).
 //! 비즈니스 로직(grace 판정 + Discarded)은 `score::tick`의 `drain_wake_event`가 처리.
 //!
-//! Windows/기타 OS: stub.
+//! Windows/기타 OS: 직접 옵저버 미등록. score/mod.rs의 tick_loop이 wall-clock
+//! drift를 감지하여 SLEEP_AT_UNIX_MS / WAKE_FLAG를 합성한다 (Phase 14 C-2 fix).
 
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{SystemTime, UNIX_EPOCH};

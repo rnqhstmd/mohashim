@@ -86,7 +86,38 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         next_tick += Duration::from_secs(1);
         if let Some(remaining) = next_tick.checked_duration_since(Instant::now()) {
             std::thread::sleep(remaining);
+        } else {
+            // Phase 14 FR-2: next_tick이 과거 2초 이상으로 누적되면 폭주 방지를 위해 재정렬.
+            // 정상 본문이 1초 이내 실행되는 한 거의 발화하지 않음. sleep/wake 후 monotonic Instant
+            // 점프 케이스에서 1Hz 정상 진행을 복구한다.
+            let now_inst = Instant::now();
+            if now_inst.saturating_duration_since(next_tick) >= Duration::from_secs(2) {
+                next_tick = now_inst;
+            }
+            // 그 외(1초 미만 늦은 케이스)는 즉시 진행 — 기존 동작 유지.
         }
+
+        // Phase 14 C-2: wall-clock drift detection (Windows sleep/wake 합성).
+        // macOS는 NSWorkspace가 SLEEP_AT_UNIX_MS를 우선 set한 경우 보존 (BR-1).
+        // detect_drift_sleep 순수 함수로 산출하여 단위 테스트 가능하게 분리.
+        let now_wall = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let (synth, sleep_at_set, set_wake) = crate::score::shared::detect_drift_sleep(
+            crate::score::shared::LAST_TICK_WALL_MS.load(Relaxed),
+            now_wall,
+            crate::score::shared::SLEEP_AT_UNIX_MS.load(Relaxed),
+        );
+        if synth {
+            if let Some(s) = sleep_at_set {
+                crate::score::shared::SLEEP_AT_UNIX_MS.store(s, Relaxed);
+            }
+            if set_wake {
+                crate::score::shared::WAKE_FLAG.store(true, Relaxed);
+            }
+        }
+        crate::score::shared::LAST_TICK_WALL_MS.store(now_wall, Relaxed);
 
         // 1) 슬립 wake 처리 (DEC-10/10a/10b, BR-sleep-1/2).
         // wake 차감이 발생하면 같은 tick의 phase 분기에서 -1을 추가 적용하지 않는다 —
