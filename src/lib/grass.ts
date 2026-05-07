@@ -120,14 +120,23 @@ function formatHM12End(d: Date): string {
 
 /**
  * Phase 13 FR-9: 세션 시각 — "오전/오후 h:mm~h:mm" 형식 (12시간제, 로컬).
- * 시작에만 period 표기, 종료는 시:분만 — 같은 세션 내 자정 경계는 드물어 단순화.
+ *
+ * PR #14 리뷰 (Copilot): 시작/종료의 period(오전·오후) 또는 일자가 다르면 종료에도
+ * period를 표기하여 11:50~12:15 같은 경계 케이스의 모호성을 제거한다.
+ * 같은 period면 종료는 "h:mm"으로 간결.
+ *
  * RFC3339 입력 파싱 실패 시 빈 문자열 반환 (UI 측 안전 폴백).
  */
 export function formatSessionTime(startIso: string, endIso: string): string {
   const start = new Date(startIso);
   const end = new Date(endIso);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
-  return `${formatHM12(start)}~${formatHM12End(end)}`;
+  const startHasAfternoon = start.getHours() >= 12;
+  const endHasAfternoon = end.getHours() >= 12;
+  const sameDay = start.toDateString() === end.toDateString();
+  const periodChanged = !sameDay || startHasAfternoon !== endHasAfternoon;
+  const endStr = periodChanged ? formatHM12(end) : formatHM12End(end);
+  return `${formatHM12(start)}~${endStr}`;
 }
 
 /**

@@ -319,13 +319,17 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
 export async function getSessionLogs(): Promise<SessionLog[]> {
   const raw = await get("session_logs");
   if (!Array.isArray(raw)) return [];
-  // PR #14 리뷰: 손상/레거시 데이터 방어 — todos_done이 배열이 아닌 경우(string/null/undefined)
-  // for-of 순회 시 string 문자 단위 이터레이션이나 TypeError 발생 가능.
+  // PR #14 리뷰: 손상/레거시 데이터 방어.
+  // - todos_done이 배열이 아닌 경우 빈 배열 폴백 (string 문자 이터레이션 방지)
+  // - raw 항목 자체가 null/원시값이면 빈 SessionLog 골격으로 폴백 (스프레드 TypeError 방지)
   return (raw as unknown[]).map((r) => {
+    if (typeof r !== "object" || r === null) {
+      return { todos_done: [] } as unknown as SessionLog;
+    }
     const log = r as Record<string, unknown>;
     return {
-      ...(log as object),
-      todos_done: Array.isArray(log?.todos_done) ? (log.todos_done as string[]) : [],
+      ...log,
+      todos_done: Array.isArray(log.todos_done) ? (log.todos_done as string[]) : [],
     } as SessionLog;
   });
 }

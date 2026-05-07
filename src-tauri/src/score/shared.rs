@@ -249,9 +249,9 @@ pub fn drain_todos() -> Vec<String> {
         Ok(g) => g,
         Err(p) => p.into_inner(),
     };
-    let out = buf.clone();
-    buf.clear();
-    out
+    // PR #14 리뷰 (gemini): std::mem::take로 clone+clear 일괄 처리.
+    // 소유권 이동으로 불필요한 복사 방지 (idiomatic Rust).
+    std::mem::take(&mut *buf)
 }
 
 /// FR-17: buffer 무조건 비움. store_phase(Idle/Focus)에서 호출.

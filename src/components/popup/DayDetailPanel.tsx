@@ -89,21 +89,24 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [onClose, excludeRef]);
 
-  // FR-10 / BR-5: 완료 todo 텍스트 — 삭제된 ID는 제외.
-  const doneTexts = useMemo(() => {
+  // FR-10 / BR-5: 완료 todo 항목 — 삭제된 ID는 제외.
+  // PR #14 리뷰: {id, text} 객체 배열 + key={id}로 React 재조정 안정성 확보.
+  const doneItems = useMemo(() => {
     const ids = new Set<string>();
     for (const log of logs) {
       const todoIds = log.todos_done ?? [];
       for (const id of todoIds) ids.add(id);
     }
     return Array.from(ids)
-      .map((id) => todoMap.get(id))
-      .filter((t): t is string => typeof t === "string");
+      .map((id) => ({ id, text: todoMap.get(id) }))
+      .filter((item): item is { id: string; text: string } => typeof item.text === "string");
   }, [logs, todoMap]);
 
-  // FR-8: 'YYYY-MM-DD' → "YYYY년 M월 D일 요일". 로컬 자정 기준 파싱 (BR-4).
+  // FR-8: 'YYYY-MM-DD' → "YYYY년 M월 D일 요일". 로컬 자정 기준 파싱.
+  // PR #14 리뷰: split 후 (y, m-1, d) 인자 생성자로 로컬/UTC 해석 차이 회피.
   const headingDate = useMemo(() => {
-    const d = new Date(`${date}T00:00:00`);
+    const [y, m, day] = date.split("-").map(Number);
+    const d = new Date(y, m - 1, day);
     return formatDateHeading(d);
   }, [date]);
 
@@ -138,12 +141,12 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
           ) : (
             <div className="mt-2 text-sm text-deep/60">세션 기록 없음</div>
           )}
-          {doneTexts.length > 0 && (
+          {doneItems.length > 0 && (
             <>
               <h4 className="mt-3 text-xs font-semibold text-deep">완료한 todo</h4>
               <ul className="mt-1 space-y-0.5 text-sm">
-                {doneTexts.map((text, i) => (
-                  <li key={i}>✓ {text}</li>
+                {doneItems.map((item) => (
+                  <li key={item.id}>✓ {item.text}</li>
                 ))}
               </ul>
             </>
