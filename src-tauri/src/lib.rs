@@ -127,9 +127,45 @@ fn show_window_for_onboarding<R: Runtime>(app: &AppHandle<R>) {
     attempt_show(app.clone(), 1);
 }
 
-/// 메인 윈도우 핸들 획득 후 show + set_focus. None일 때 100ms 후 1회 재시도 (DEC-9-6).
+/// 메인 윈도우 핸들 획득 후 위치 보정 → show + set_focus. None일 때 100ms 후 1회 재시도 (DEC-9-6).
+///
+/// 위치 보정 (Phase 21 사용자 피드백): 트레이 click이 일어나기 전(첫 부팅 onboarding)에는
+/// `tray-click` 이벤트가 아직 emit되지 않아 trayPopup.ts의 setPosition이 트리거되지 않는다.
+/// 결과적으로 Tauri 기본 "화면 중앙"에 윈도우가 떠 사용자 경험과 어긋남. 트레이 아이콘 정확
+/// 위치는 클릭 전까지 알 수 없으므로 OS별 트레이 영역 근사 위치로 미리 배치한다:
+///
+/// - macOS: 메뉴바 우상단 (x = right - width - 20, y = 32)
+/// - Windows / 기타: 작업표시줄 우하단 (x = right - width - 20, y = bottom - height - 50)
+///
+/// 사용자가 트레이 아이콘을 처음 클릭하면 trayPopup.ts의 정확한 위치 계산으로 재배치된다.
 fn attempt_show<R: Runtime>(app: AppHandle<R>, retries_left: u32) {
     if let Some(window) = app.get_webview_window("main") {
+        if let Some(monitor) = window.primary_monitor().ok().flatten() {
+            let pos = monitor.position();
+            let size = monitor.size();
+            let sf = monitor.scale_factor();
+            let popup_w_phys = (320.0 * sf).round() as i32;
+            let popup_h_phys = (470.0 * sf).round() as i32;
+            let margin_x = (20.0 * sf).round() as i32;
+            let (x, y) = if cfg!(target_os = "macos") {
+                let menubar_y = (32.0 * sf).round() as i32;
+                (
+                    pos.x + size.width as i32 - popup_w_phys - margin_x,
+                    pos.y + menubar_y,
+                )
+            } else {
+                let taskbar_h = (50.0 * sf).round() as i32;
+                (
+                    pos.x + size.width as i32 - popup_w_phys - margin_x,
+                    pos.y + size.height as i32 - popup_h_phys - taskbar_h,
+                )
+            };
+            if let Err(e) = window.set_position(tauri::PhysicalPosition::new(x, y)) {
+                eprintln!("[mohashim] show_window: set_position failed: {e}");
+            }
+        } else {
+            eprintln!("[mohashim] show_window: primary_monitor unavailable, using default center position");
+        }
         if let Err(e) = window.show() {
             eprintln!("[mohashim] show_window: window.show failed: {e}");
         }
