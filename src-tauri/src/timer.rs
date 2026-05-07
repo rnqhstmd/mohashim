@@ -157,6 +157,11 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         // sessions와 session_logs 부분 일관성을 회피한다 (Q1 결정).
         // 후속 phase 처리(store_phase Idle 등)는 그대로 수행 — phase 정상 복귀 보장.
         // FOCUS_START_AT_MS도 cleanup하여 stale 시각이 남지 않도록 한다 (DEC-10-7).
+        //
+        // Phase 13 MA-3 (silent drop): 본 분기에서 SESSION_TODOS_DONE buffer를 drain하지
+        // 않는다. 후속 store_phase(Idle)의 collateral clear가 buffer를 비우므로 todo ID는
+        // silent drop된다. sessions/session_logs 적재 실패 시 todo도 함께 폐기하여 일관성을
+        // 유지하는 정책 — todo만 별도 저장소가 없는 상태에서 분리 적재는 부분 일관성을 만든다.
         FOCUS_START_AT_MS.store(0, Ordering::Release);
     } else {
         // 2. SessionLog 적재 (FR-4, DEC-10-2/3, DEC-10-7 swap cleanup).
@@ -183,6 +188,9 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         };
         let duration_mins = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES) as u32;
         let id = format!("sl-{}-{}", end_ms, avg);
+        // Phase 13 FR-16: success path에서만 buffer drain → session_logs 적재.
+        // 실패 path는 위 분기에서 silent drop (MA-3).
+        let todos_done = crate::score::shared::drain_todos();
         let log_ok = match crate::storage::append_session_log(
             app,
             &id,
@@ -191,6 +199,7 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
             &end_at_iso,
             duration_mins,
             avg,
+            todos_done,
         ) {
             Ok(()) => true,
             Err(e) => {

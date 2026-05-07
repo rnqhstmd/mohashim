@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import {
   GRASS_COLORS,
   type MonthData,
@@ -17,6 +18,11 @@ type ContributionGraphProps = {
    * monthOffset이 minOffset 이하이면 이전 월 버튼 disabled. undefined면 비활성화하지 않음 (하위 호환).
    */
   minOffset?: number;
+  /**
+   * Phase 13 FR-1, BR-1: 클릭 가능 셀(미래 X + 데이터 있음) 클릭 시 호출.
+   * 미전달 시 클릭 비활성 — ShareCard 등 기존 호출자 하위 호환.
+   */
+  onDayClick?: (date: string) => void;
 };
 
 /**
@@ -50,6 +56,7 @@ export function ContributionGraph({
   onMonthChange,
   hideNav = false,
   minOffset,
+  onDayClick,
 }: ContributionGraphProps) {
   const prevDisabled = shouldDisablePrev(monthOffset, minOffset);
   return (
@@ -88,28 +95,54 @@ export function ContributionGraph({
 
       <div className="grid grid-cols-7 gap-1">
         {(data?.cells ?? []).map((cell, idx) => (
-          <Cell key={idx} cell={cell} />
+          <Cell key={idx} cell={cell} onDayClick={onDayClick} />
         ))}
       </div>
     </div>
   );
 }
 
-function Cell({ cell }: { cell: DayCell }) {
+function Cell({
+  cell,
+  onDayClick,
+}: {
+  cell: DayCell;
+  onDayClick?: (date: string) => void;
+}) {
   if (cell.date === null) {
     return <div className="aspect-square" aria-hidden="true" />;
   }
   const tooltip = cell.isFuture
     ? cell.date
     : `${cell.date}: ${cell.sessions}회, 평균 ${cell.avg}점`;
+  // Phase 13 FR-2 / BR-2: 미래 X + (sessions>0 || todos>0) + onDayClick 전달 시에만 클릭 가능.
+  const clickable =
+    !cell.isFuture &&
+    cell.date !== null &&
+    (cell.sessions > 0 || cell.todos > 0) &&
+    onDayClick != null;
+  const handleClick = () => {
+    if (clickable && cell.date !== null) onDayClick!(cell.date);
+  };
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!clickable) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleClick();
+    }
+  };
   return (
     <div
       title={tooltip}
-      role="img"
+      role={clickable ? "button" : "img"}
       aria-label={tooltip}
-      tabIndex={0}
+      tabIndex={clickable ? 0 : -1}
+      onClick={clickable ? handleClick : undefined}
+      onKeyDown={clickable ? handleKeyDown : undefined}
       style={{ backgroundColor: GRASS_COLORS[cell.level] }}
-      className="aspect-square rounded-sm transition-transform hover:scale-110 hover:border hover:border-ink hover:shadow-sm focus:scale-110 focus:border focus:border-ink focus:shadow-sm focus:outline-none"
+      className={`aspect-square rounded-sm transition-transform hover:scale-110 hover:border hover:border-ink hover:shadow-sm focus:scale-110 focus:border focus:border-ink focus:shadow-sm focus:outline-none${
+        clickable ? " cursor-pointer" : ""
+      }`}
     />
   );
 }

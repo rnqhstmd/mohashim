@@ -87,6 +87,49 @@ export function formatDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+/**
+ * Phase 13 FR-8: 날짜 헤딩 — "2026년 5월 6일 화요일" 형식.
+ * 로컬 시간대 기준. zero-padding 없음 (헤딩은 자연 표기).
+ */
+export function formatDateHeading(d: Date): string {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const dow = WEEKDAY_KO[d.getDay()];
+  return `${y}년 ${m}월 ${day}일 ${dow}요일`;
+}
+
+/** 12시간제 "오전/오후 h:mm" 포맷. 0시는 12로 표기 (BR-4 로컬 시간대). */
+function formatHM12(d: Date): string {
+  const h = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const period = h >= 12 ? "오후" : "오전";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${period} ${h12}:${mm}`;
+}
+
+/** 종료 시각 — period 생략 "h:mm" 포맷 (시작 시각과 페어 표기 시 가독성). */
+function formatHM12End(d: Date): string {
+  const h = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${mm}`;
+}
+
+/**
+ * Phase 13 FR-9: 세션 시각 — "오전/오후 h:mm~h:mm" 형식 (12시간제, 로컬).
+ * 시작에만 period 표기, 종료는 시:분만 — 같은 세션 내 자정 경계는 드물어 단순화.
+ * RFC3339 입력 파싱 실패 시 빈 문자열 반환 (UI 측 안전 폴백).
+ */
+export function formatSessionTime(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+  return `${formatHM12(start)}~${formatHM12End(end)}`;
+}
+
 /**
  * D-G4: 월별 달력 데이터 — monthOffset에 따라 해당 월 1~말일을 표시.
  * leading blank: 1일 요일(0=일~6=토)만큼.

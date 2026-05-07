@@ -47,7 +47,7 @@ export type SessionLog = {
   end_at: string;        // RFC3339 with offset
   duration_mins: number;
   score: number;         // 0~100
-  todos_done: string[];  // 본 Phase 항상 [] (Phase 12 todo ID 적재)
+  todos_done: string[];  // Phase 13: Focus/Break 중 완료된 todo의 ID 목록 (FR-13~17). 미체크 세션은 [].
 };
 export type ActivePhase = "idle" | "focus" | "break";
 
@@ -319,7 +319,15 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
 export async function getSessionLogs(): Promise<SessionLog[]> {
   const raw = await get("session_logs");
   if (!Array.isArray(raw)) return [];
-  return raw as SessionLog[];
+  // PR #14 리뷰: 손상/레거시 데이터 방어 — todos_done이 배열이 아닌 경우(string/null/undefined)
+  // for-of 순회 시 string 문자 단위 이터레이션이나 TypeError 발생 가능.
+  return (raw as unknown[]).map((r) => {
+    const log = r as Record<string, unknown>;
+    return {
+      ...(log as object),
+      todos_done: Array.isArray(log?.todos_done) ? (log.todos_done as string[]) : [],
+    } as SessionLog;
+  });
 }
 
 /**
