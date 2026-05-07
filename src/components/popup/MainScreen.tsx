@@ -101,7 +101,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
 
   return (
     <div
-      className="relative flex h-[460px] w-[320px] flex-col bg-paperBg font-pretendard text-ink"
+      className="relative flex h-[460px] w-[320px] flex-col overflow-hidden rounded-[18px] bg-paperBg font-pretendard text-ink"
       style={NOTE_PAPER_BG}
     >
       {/* Phase 17 FR-D3 / Phase 20 design.html 정렬: NOTE_PAPER_BG가 fractalNoise + 가로 ruled

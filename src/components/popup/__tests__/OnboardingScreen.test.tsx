@@ -36,17 +36,18 @@ describe("OnboardingScreen", () => {
   });
 
   it("shows privacy footer text", () => {
-    const { container } = render(
-      <OnboardingScreen {...baseProps} permissions={allNotDetermined} />
-    );
+    render(<OnboardingScreen {...baseProps} permissions={allNotDetermined} />);
     expect(
       screen.getByText("모든 정보는 PC에만 저장돼요")
     ).toBeInTheDocument();
-    // 기존 자물쇠 뱃지(🔒 / rounded-full border) 부재 검증.
+    // 기존 카피("모든 데이터는 내 컴퓨터에만") 부재 검증.
     expect(
       screen.queryByText(/모든 데이터는 내 컴퓨터에만/)
     ).not.toBeInTheDocument();
-    expect(container.querySelector(".rounded-full.border")).toBeNull();
+    // Phase 20 design.html 정렬: 자물쇠 🔒 뱃지가 footer에 노출되지 않는다.
+    // (status indicator 칩은 권한 카드 내부의 rounded-full border 요소이므로
+    //  본 검증은 footer 영역에 한정.)
+    expect(screen.queryByText("🔒")).not.toBeInTheDocument();
   });
 
   it("shows consent button label when idle", () => {
