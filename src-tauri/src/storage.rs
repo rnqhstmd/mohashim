@@ -330,6 +330,50 @@ pub(crate) fn apply_todo_delta(
     }
 }
 
+/// 주어진 ID 목록 순서를 보존하여 (id, tag) 페어 반환 (Phase 19 FR-B2).
+///
+/// store 조회 실패 또는 todos 키 부재/비배열: 빈 Vec 반환 → 호출자(`timer::compute_session_tag`)가 None 폴백.
+/// ID가 todos에 없으면 결과에서 제외 (산정 제외). tag가 string이 아니거나 빈 문자열이면 None
+/// — TS `getTodos` 폴백 정합 (storage.ts).
+pub(crate) fn read_todo_tags<R: Runtime>(
+    app: &AppHandle<R>,
+    ids: &[String],
+) -> Vec<(String, Option<String>)> {
+    use std::collections::HashMap;
+    let store = match app.store(STORE_FILE) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[mohashim] read_todo_tags store open failed: {e}");
+            return Vec::new();
+        }
+    };
+    let value = match store.get("todos") {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let arr = match value.as_array() {
+        Some(a) => a.clone(),
+        None => return Vec::new(),
+    };
+    let mut lookup: HashMap<String, Value> = HashMap::with_capacity(arr.len());
+    for item in arr {
+        if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+            lookup.insert(id.to_string(), item);
+        }
+    }
+    let mut result = Vec::with_capacity(ids.len());
+    for id in ids {
+        let Some(item) = lookup.get(id) else { continue };
+        let tag = item
+            .get("tag")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        result.push((id.clone(), tag));
+    }
+    result
+}
+
 /// Todo 완료 카운트 +1 (Phase 12 FR-2) + 세션 buffer 적재 (Phase 13 FR-14).
 ///
 /// sessions[date].todos_completed += 1. 레코드 미존재 시 신규 생성 (sessions=0, avg=0, sum=0).
