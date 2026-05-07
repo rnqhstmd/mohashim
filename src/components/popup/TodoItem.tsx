@@ -104,11 +104,11 @@ export function TodoItem({
   const showActive = todo.active && !todo.done;
 
   // 외곽 카드 클래스 — 표준 border-deep/10 + active 시 좌측만 4px deep로 오버라이드.
-  // PR phase-review 반영: 4면 모두 deep 진하게 보이던 문제 해소 (FR-D4 + AC-A7).
+  // PR #18 gemini G1: bg-white와 bg-cream 동시 적용 시 cascade 충돌 가능 → active 분기에서 명시 분리.
   // mb-2 제거 — 카드 간격은 부모 TodosTab의 gap-2가 담당.
   const cardClass = [
-    "rounded-xl border border-deep/10 bg-white relative overflow-hidden",
-    showActive ? "border-l-4 border-l-deep bg-cream" : "",
+    "rounded-xl border border-deep/10 relative overflow-hidden",
+    showActive ? "border-l-4 border-l-deep bg-cream" : "bg-white",
     todo.done ? "opacity-60" : "",
   ]
     .filter(Boolean)

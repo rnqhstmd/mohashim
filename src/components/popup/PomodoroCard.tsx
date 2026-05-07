@@ -50,7 +50,9 @@ export function PomodoroCard({
             <span className="text-2xl font-bold tabular-nums text-deep">
               {formatMmSs(timeLeft)}
             </span>
-            <span className="text-xs text-deep/50">▶ 탭해서 보기</span>
+            {!isComplete && (
+              <span className="text-xs text-deep/50">▶ 탭해서 보기</span>
+            )}
           </button>
         </div>
       </div>

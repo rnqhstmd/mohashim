@@ -131,7 +131,7 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
             <button
               type="button"
               onClick={() => setView("work")}
-              className="px-2 text-xs text-red-500"
+              className="px-2 text-xs text-deep/30"
               aria-label="작업 태그 편집으로 이동"
             >
               ×
