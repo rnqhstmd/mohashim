@@ -112,44 +112,71 @@ export async function attachTrayClickListener(
     "tray-click",
     async (event) => {
       try {
+        console.log("[mohashim] tray-click received", event.payload);
         const isVisible = await win.isVisible();
+        console.log("[mohashim] window isVisible=", isVisible);
         if (isVisible) {
           await win.hide();
           return;
         }
         const monitors = await availableMonitors();
-        const monitor = pickMonitorForPoint(
+        let monitor = pickMonitorForPoint(
           monitors,
           event.payload.x,
           event.payload.y,
         );
+        // Phase 21 사용자 피드백: 팝업 안 뜸 — pickMonitorForPoint 매칭 실패 시
+        // primary monitor로 강제 폴백 (이전: setPosition 없이 그냥 show만 호출 →
+        // 윈도우가 이전 좌표(off-screen 가능)에 그대로 머무름).
         if (!monitor) {
-          await win.show();
-          await win.setFocus();
-          return;
+          monitor = monitors[0];
+          console.warn(
+            "[mohashim] tray-click monitor 매칭 실패 — monitors[0] 폴백",
+          );
         }
-        const sf = monitor.scaleFactor;
+        const sf = monitor?.scaleFactor ?? 2;
         const popupPhysical: PopupGeometryPhysical = {
           width: Math.round(320 * sf),
           height: Math.round(470 * sf),
         };
-        const monB: MonitorBoundsPhysical = {
-          x: monitor.position.x,
-          y: monitor.position.y,
-          width: monitor.size.width,
-          height: monitor.size.height,
-        };
-        const { x, y } = computePopupPosition(
-          event.payload,
-          popupPhysical,
-          monB,
-          os,
+
+        let targetX: number;
+        let targetY: number;
+        if (monitor) {
+          const monB: MonitorBoundsPhysical = {
+            x: monitor.position.x,
+            y: monitor.position.y,
+            width: monitor.size.width,
+            height: monitor.size.height,
+          };
+          const { x, y } = computePopupPosition(
+            event.payload,
+            popupPhysical,
+            monB,
+            os,
+          );
+          targetX = x;
+          targetY = y;
+        } else {
+          // 어떤 모니터도 없으면 (0,0) — 보호적 폴백.
+          targetX = 0;
+          targetY = 0;
+        }
+        console.log(
+          `[mohashim] tray-click setPosition x=${targetX} y=${targetY} sf=${sf}`,
         );
-        await win.setPosition(new PhysicalPosition(x, y));
+        await win.setPosition(new PhysicalPosition(targetX, targetY));
         await win.show();
         await win.setFocus();
       } catch (e) {
         console.error("[mohashim] tray-click handler failed", e);
+        // 마지막 시도: 좌표 무시하고 그냥 show — 최소한 어딘가에는 뜨도록.
+        try {
+          await win.show();
+          await win.setFocus();
+        } catch (ee) {
+          console.error("[mohashim] fallback show failed", ee);
+        }
       }
     },
   );

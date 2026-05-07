@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 전체 캔버스를 solid cream으로 채움 — macOS가 squircle mask 자동 적용 -->
+  <rect width="1024" height="1024" fill="#fef3d8"/>
+
+  <!-- Potato 손그림 (popup.jsx line 287 MohashimAppIcon scale 4 정렬) -->
+  <g transform="translate(112, 100) scale(4)">
+    <!-- 새싹 stem -->
+    <path d="M100 38 Q99.5 28 100 22" stroke="#5a3d1f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <!-- 새싹 잎 -->
+    <path d="M99 24 Q90 18 84 8 Q88 9 93 12 Q98 18 101 23 Z" fill="#7dc89a" stroke="#5a3d1f" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M101 24 Q110 18 116 8 Q112 9 107 12 Q102 18 99 23 Z" fill="#7dc89a" stroke="#5a3d1f" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+
+    <!-- 몸통 hand-drawn body -->
+    <path d="M 50 100 C 49 88, 53 75, 62 64 C 70 53, 84 45, 100 44 C 117 43, 132 51, 142 64 C 151 76, 153 90, 153 105 C 154 122, 149 138, 138 152 C 127 165, 113 173, 100 173 C 87 173, 72 167, 61 154 C 51 141, 49 124, 50 100 Z" fill="#fdeed1" stroke="#5a3d1f" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+
+    <!-- 하이라이트 -->
+    <ellipse cx="74" cy="68" rx="11" ry="14" fill="#fff7e3" opacity="0.6" transform="rotate(-18 74 68)"/>
+
+    <!-- calm 표정 — 점눈 + 굵은 미소 + cheek -->
+    <ellipse cx="86" cy="112" rx="3.4" ry="3.8" fill="#5a3d1f"/>
+    <ellipse cx="114" cy="112" rx="3.4" ry="3.8" fill="#5a3d1f"/>
+    <path d="M94 124 Q100 129 106 124" stroke="#5a3d1f" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="76" cy="125" rx="6" ry="3" fill="#f9c4b0" opacity="0.6"/>
+    <ellipse cx="124" cy="125" rx="6" ry="3" fill="#f9c4b0" opacity="0.6"/>
+  </g>
+</svg>
