@@ -57,6 +57,15 @@ pub async fn permission_status(app: AppHandle) -> PermissionState {
 #[tauri::command]
 pub async fn request_microphone_permission(app: AppHandle) -> Result<PermissionStatus, String> {
     let status = platform::request_microphone().await?;
+    // Phase 21 (Windows): mic privacy 다이얼로그가 없으므로 Settings deep-link로
+    // 사용자가 직접 활성화하도록 안내. macOS는 platform::request_microphone이
+    // AVCaptureDevice.requestAccess로 다이얼로그를 트리거하므로 별도 deep-link 불필요.
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app
+            .opener()
+            .open_url("ms-settings:privacy-microphone", None::<&str>);
+    }
     sync_runtime_grants(&app, status, platform::accessibility_status());
     Ok(status)
 }
@@ -90,6 +99,20 @@ pub async fn open_permission_settings(
     app: AppHandle,
     kind: PermissionKind,
 ) -> Result<(), String> {
+    // Phase 21 사용자 피드백 (Windows): 사용자가 Settings를 한 번이라도 열면 해당 권한을
+    // INTERACTED로 마킹하여 후속 permission_status가 granted를 반환하도록 한다 — Windows는
+    // OS API로 권한 검증이 불가하므로 trust-on-first-use 정책 (BR-9). macOS는 변경 없음.
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::atomic::Ordering::Relaxed;
+        match kind {
+            PermissionKind::Microphone => platform::MIC_INTERACTED.store(true, Relaxed),
+            PermissionKind::Accessibility => platform::AX_INTERACTED.store(true, Relaxed),
+            PermissionKind::Notification => {
+                // 알림은 Tauri plugin (web Notification API)이 별도로 status를 관리.
+            }
+        }
+    }
     let url = platform::settings_url(kind);
     app.opener()
         .open_url(url, None::<&str>)
@@ -206,18 +229,40 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
+    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+
     use super::PermissionKind;
     use super::PermissionStatus;
 
+    /// Phase 21 사용자 피드백 (Windows): mic/accessibility 권한을 OS API로 직접 검증할 수
+    /// 없으므로 trust-on-first-use로 동작. 사용자가 토글을 눌러 Settings를 열면 INTERACTED
+    /// 플래그를 set하고, 후속 status 조회는 granted를 반환한다. 이로써 macOS와 동일한
+    /// 토글 → Settings 안내 → 시작하기 활성화 UX가 Windows에서도 가능.
+    pub static MIC_INTERACTED: AtomicBool = AtomicBool::new(false);
+    pub static AX_INTERACTED: AtomicBool = AtomicBool::new(false);
+
     pub fn mic_status() -> PermissionStatus {
-        PermissionStatus::Granted
+        if MIC_INTERACTED.load(Relaxed) {
+            PermissionStatus::Granted
+        } else {
+            PermissionStatus::NotDetermined
+        }
     }
 
     pub fn accessibility_status() -> PermissionStatus {
-        PermissionStatus::Granted
+        if AX_INTERACTED.load(Relaxed) {
+            PermissionStatus::Granted
+        } else {
+            PermissionStatus::NotDetermined
+        }
     }
 
     pub async fn request_microphone() -> Result<PermissionStatus, String> {
+        // Windows는 mic privacy 다이얼로그를 앱에서 트리거할 수 없다. 토글 호출 자체를
+        // 사용자 의도 표시로 받아들여 INTERACTED를 마킹 → 후속 status가 granted.
+        // 호출자(request_microphone_permission Tauri command)에서 Settings deep-link를
+        // 별도로 연다.
+        MIC_INTERACTED.store(true, Relaxed);
         Ok(PermissionStatus::Granted)
     }
 

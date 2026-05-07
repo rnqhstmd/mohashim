@@ -239,6 +239,7 @@ fn apply_initial_position<R: Runtime>(
     let sf = monitor.scale_factor_or_1();
     // Phase 21 사용자 피드백: 팝업 좌측 선을 아이콘 좌측 끝에 정렬.
     let icon_left_logical = icon_pos_phys.x as f64 / sf;
+    let icon_right_logical = (icon_pos_phys.x as f64 + icon_size_phys.width as f64) / sf;
     let icon_bottom_y_logical = (icon_pos_phys.y as f64 + icon_size_phys.height as f64) / sf;
     let icon_top_y_logical = icon_pos_phys.y as f64 / sf;
 
@@ -247,7 +248,16 @@ fn apply_initial_position<R: Runtime>(
     let mon_right_logical = mon_left_logical + monitor.size().width as f64 / sf;
     let mon_bottom_logical = mon_top_logical + monitor.size().height as f64 / sf;
 
-    let mut x = icon_left_logical.round();
+    // Phase 21 사용자 피드백 (Windows): 작업표시줄 트레이 아이콘이 우측 끝 클러스터에
+    // 위치하면 popup_left = icon_left가 화면 우측 경계를 넘어 clamp으로 좌측 시프트되며
+    // 아이콘과 팝업의 시각 정렬이 어긋난다. icon_left + popup_w가 화면 밖으로 나가면
+    // popup_right = icon_right로 우측 정렬하여 아이콘이 팝업 하단 우측 모서리 근처에
+    // 위치하도록 한다 — "아이콘 바로 위" UX.
+    let mut x = if icon_left_logical + POPUP_W > mon_right_logical {
+        (icon_right_logical - POPUP_W).round()
+    } else {
+        icon_left_logical.round()
+    };
     #[cfg(target_os = "macos")]
     let mut y = icon_bottom_y_logical.round();
     #[cfg(not(target_os = "macos"))]

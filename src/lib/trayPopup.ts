@@ -129,6 +129,8 @@ export async function attachTrayClickListener(
 
         const sf = monitor.scaleFactor;
         const iconLeftLogical = event.payload.x / sf;
+        const iconRightLogical =
+          (event.payload.x + event.payload.iconWidth) / sf;
         const iconCenterXLogical =
           (event.payload.x + event.payload.iconWidth / 2) / sf;
         const iconBottomYLogical =
@@ -141,7 +143,14 @@ export async function attachTrayClickListener(
 
         const popupW = 320;
         const popupH = 470;
-        let x = Math.round(iconLeftLogical);
+        // Phase 21 사용자 피드백 (Windows): 우측 끝 트레이 아이콘 케이스에서
+        // popup_left = icon_left가 화면 밖으로 나가는 회귀 — popup_right = icon_right로
+        // 폴백하여 아이콘이 팝업 우측 하단 모서리 근처에 위치하도록.
+        let x = Math.round(
+          iconLeftLogical + popupW > monRightLogical
+            ? iconRightLogical - popupW
+            : iconLeftLogical,
+        );
         let y: number;
         if (os === "macos") {
           y = Math.round(iconBottomYLogical);
