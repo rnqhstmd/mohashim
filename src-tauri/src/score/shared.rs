@@ -47,6 +47,17 @@ pub static LAST_TICK_WALL_MS: AtomicU64 = AtomicU64::new(0);
 /// Phase 14: drift detection 임계값. 5초 점프 → sleep 합성.
 pub const WAKE_DRIFT_THRESHOLD_MS: u64 = 5000;
 
+/// Phase 14 FR-2: next_tick polution 차단 임계값. now-next_tick이 이 값 이상이면
+/// next_tick = now로 reset → 1Hz 정상 진행 복구. sleep/wake 후 monotonic Instant
+/// 점프 케이스에서 누적 틱 폭주 방지.
+pub const TICK_POLLUTION_RESET_THRESHOLD_SECS: u64 = 2;
+
+/// Phase 14 FR-2: next_tick reset 판정 (순수 함수).
+/// PRD FR-7 [Should]: AC-5 회귀 차단을 위한 단위 테스트 가능 헬퍼.
+pub fn should_reset_next_tick(elapsed_past: std::time::Duration) -> bool {
+    elapsed_past >= std::time::Duration::from_secs(TICK_POLLUTION_RESET_THRESHOLD_SECS)
+}
+
 /// FR-2 / BR-noise-80: phase=Idle 상태에서 db_ema > NOISE_LOUD_THRESHOLD_DB 인 1Hz tick 카운터.
 /// hysteresis 활용: NOISE_LOUD_HYSTERESIS_TICKS 도달 시 noiseLoud 활성, db≤80 또는
 /// phase 전환 시 0 리셋 (Phase 11 FR-7~9, BR-5).
@@ -513,6 +524,34 @@ mod tests {
         assert!(!det);
         assert_eq!(sleep_at, None);
         assert!(!wake);
+    }
+
+    // ---------- Phase 14 FR-7: next_tick polution reset 단위 테스트 (PR #15 cross-review) ----------
+
+    #[test]
+    fn should_reset_next_tick_below_threshold() {
+        use std::time::Duration;
+        // 0초/0.5초/1초/1.999초 — 임계 미만이라 reset 안 함.
+        assert!(!should_reset_next_tick(Duration::from_secs(0)));
+        assert!(!should_reset_next_tick(Duration::from_millis(500)));
+        assert!(!should_reset_next_tick(Duration::from_secs(1)));
+        assert!(!should_reset_next_tick(Duration::from_millis(1999)));
+    }
+
+    #[test]
+    fn should_reset_next_tick_at_or_above_threshold() {
+        use std::time::Duration;
+        // 정확히 2초 + 그 이상은 reset 발화.
+        assert!(should_reset_next_tick(Duration::from_secs(2)));
+        assert!(should_reset_next_tick(Duration::from_millis(2001)));
+        assert!(should_reset_next_tick(Duration::from_secs(60)));
+        assert!(should_reset_next_tick(Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn tick_pollution_reset_threshold_constant() {
+        // 임계 상수 회귀 차단 (의도적 변경 시 PRD 갱신 필요).
+        assert_eq!(TICK_POLLUTION_RESET_THRESHOLD_SECS, 2);
     }
 
     // ---------- Phase 13 FR-13~17 buffer 테스트 ----------

@@ -87,11 +87,14 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         if let Some(remaining) = next_tick.checked_duration_since(Instant::now()) {
             std::thread::sleep(remaining);
         } else {
-            // Phase 14 FR-2: next_tick이 과거 2초 이상으로 누적되면 폭주 방지를 위해 재정렬.
+            // Phase 14 FR-2: next_tick polution 차단. should_reset_next_tick 헬퍼로
+            // 단위 테스트 가능하게 분리 (PR #15 cross-review 반영).
             // 정상 본문이 1초 이내 실행되는 한 거의 발화하지 않음. sleep/wake 후 monotonic Instant
-            // 점프 케이스에서 1Hz 정상 진행을 복구한다.
+            // 점프 케이스에서 1Hz 정상 진행을 복구한다. 다음 루프 선두 += 1초로 1Hz 회복.
             let now_inst = Instant::now();
-            if now_inst.saturating_duration_since(next_tick) >= Duration::from_secs(2) {
+            if crate::score::shared::should_reset_next_tick(
+                now_inst.saturating_duration_since(next_tick),
+            ) {
                 next_tick = now_inst;
             }
             // 그 외(1초 미만 늦은 케이스)는 즉시 진행 — 기존 동작 유지.
