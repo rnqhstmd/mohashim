@@ -51,6 +51,12 @@ const config: Config = {
           "0%, 100%": { opacity: "0.85" },
           "50%": { opacity: "1" },
         },
+        // Phase 15 FR-5 (AC-4, BR-4): DayDetailPanel mount 슬라이드업 트랜지션.
+        // 200ms ease-out — 사용자 인지 가능한 정도 (BR-4: 150~200ms 균형).
+        "slide-up": {
+          "0%": { transform: "translateY(20px)", opacity: "0" },
+          "100%": { transform: "translateY(0)", opacity: "1" },
+        },
       },
       animation: {
         // Phase 3: timer 도메인이 사용하는 mhpulse는 자체 keyframe(1.2s scale) 사용.
@@ -59,6 +65,8 @@ const config: Config = {
         // Phase 4: character 도메인 애니메이션.
         "mh-bob": "mh-bob 3.2s ease-in-out infinite",
         "mh-pulse": "mh-pulse 0.6s ease-in-out infinite",
+        // Phase 15 FR-5: DayDetailPanel slide-up (1회 재생).
+        "slide-up": "slide-up 200ms ease-out",
       },
     },
   },

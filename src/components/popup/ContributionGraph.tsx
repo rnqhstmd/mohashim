@@ -140,8 +140,10 @@ function Cell({
       onClick={clickable ? handleClick : undefined}
       onKeyDown={clickable ? handleKeyDown : undefined}
       style={{ backgroundColor: GRASS_COLORS[cell.level] }}
-      className={`aspect-square rounded-sm transition-transform hover:scale-110 hover:border hover:border-ink hover:shadow-sm focus:scale-110 focus:border focus:border-ink focus:shadow-sm focus:outline-none${
-        clickable ? " cursor-pointer" : ""
+      className={`aspect-square rounded-sm transition-transform${
+        clickable
+          ? " hover:scale-110 hover:border hover:border-ink hover:shadow-sm focus:scale-110 focus:border focus:border-ink focus:shadow-sm focus:outline-none cursor-pointer"
+          : ""
       }`}
     />
   );
