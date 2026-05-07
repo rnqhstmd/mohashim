@@ -172,12 +172,29 @@ export function TodoItem({
             <button
               type="button"
               onClick={() => onToggleActive(todo.id)}
-              aria-label={todo.active ? "현재 작업 해제" : "현재 작업으로 설정"}
-              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm ${
-                todo.active ? "text-amber-600" : "text-deep/50"
+              aria-label={todo.active ? "현재 작업 해제" : "현재 작업으로 고정"}
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors ${
+                todo.active
+                  ? "text-amber-500"
+                  : "text-ink/35 hover:text-ink/65"
               }`}
             >
-              {todo.active ? "★" : "▶"}
+              {/* Phase 21 사용자 피드백: ▶/★ 텍스트 글리프 → 핀(고정) SVG 아이콘으로 교체.
+                  todo.active=true: 채워진 핀(현재 작업). false: 빈 핀(고정 가능). */}
+              {todo.active ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M16 4l-1 1 .5 1L13 9 9 8 7 10l3.5 3.5L7 17v3l3.5-3.5L14 20l2-2-1-4 2.5-2.5 1 .5 1-1-3.5-3.5z" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M16 4l-1 1 .5 1L13 9 9 8 7 10l3.5 3.5L7 17v3l3.5-3.5L14 20l2-2-1-4 2.5-2.5 1 .5 1-1-3.5-3.5z"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
             </button>
           )}
         </div>

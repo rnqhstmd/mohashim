@@ -136,7 +136,7 @@ describe("TodoItem", () => {
   it("미완료 active 토글 버튼이 노출된다 (★/▶)", () => {
     render(<TodoItem {...baseProps} todo={baseTodo} />);
     expect(
-      screen.getByRole("button", { name: "현재 작업으로 설정" })
+      screen.getByRole("button", { name: "현재 작업으로 고정" })
     ).toBeInTheDocument();
   });
 
@@ -144,7 +144,7 @@ describe("TodoItem", () => {
     const done: Todo = { ...baseTodo, done: true, completedAt: "2026-01-01T00:00:00.000Z" };
     render(<TodoItem {...baseProps} todo={done} />);
     expect(
-      screen.queryByRole("button", { name: "현재 작업으로 설정" })
+      screen.queryByRole("button", { name: "현재 작업으로 고정" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "현재 작업 해제" })

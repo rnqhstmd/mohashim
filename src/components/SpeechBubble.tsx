@@ -24,7 +24,7 @@ export function SpeechBubble({ text, color = PAPER_DEFAULT, className }: SpeechB
       <span
         aria-hidden="true"
         data-testid="bubble-tail"
-        className="absolute -bottom-[6px] left-3 h-3 w-3 rotate-45 border-[1.5px] border-l-ink border-b-ink border-r-transparent border-t-transparent"
+        className="absolute -bottom-[6px] left-5 h-3 w-3 rotate-45 border-[1.5px] border-r-ink border-b-ink border-l-transparent border-t-transparent"
         style={{ backgroundColor: color }}
       />
     </div>

@@ -22,15 +22,20 @@ describe("SpeechBubble", () => {
 });
 
 describe("SpeechBubble — bubble tail", () => {
-  it("renders the bottom-left tail with rotate and ink borders (AC-19)", () => {
+  // Phase 21: Mohashim Design.html(popup.jsx line 282-303)의 SpeechBubble 패턴과 정렬.
+  // border-r + border-b + rotate-45 → ▽ (아래 향함) 모양. 기존 border-l + border-b는
+  // < 모양이라 사용자가 "꼬리 방향이 이상하다"고 피드백.
+  it("renders the bottom tail (downward ▽) with right+bottom ink borders (AC-19)", () => {
     render(<SpeechBubble text="테스트" />);
     const tail = screen.getByTestId("bubble-tail");
     expect(tail).toBeInTheDocument();
     expect(tail.className).toContain("rotate-45");
-    expect(tail.className).toContain("border-l-ink");
+    expect(tail.className).toContain("border-r-ink");
     expect(tail.className).toContain("border-b-ink");
+    expect(tail.className).toContain("border-l-transparent");
+    expect(tail.className).toContain("border-t-transparent");
     expect(tail.className).toContain("absolute");
-    expect(tail.className).toContain("left-3");
+    expect(tail.className).toContain("left-5");
     expect(tail.className).toContain("-bottom-[6px]");
   });
 });
