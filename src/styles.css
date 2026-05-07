@@ -35,15 +35,15 @@
   src: url("./assets/fonts/Pretendard-ExtraBold.woff2") format("woff2");
 }
 
-/* Phase 17 FR-D2: 교보손글씨 2019. TTF 미배치 시 fetch 404 → fontFamily.kyobo 폴백 체인의
-   Pretendard로 자연 폴백 (BR-D). 사용자가 src/assets/fonts/KyoboHandwriting2019.ttf를 배치하면
-   재빌드 후 자동 적용. */
+/* Phase 17 FR-D2 / Phase 20: 교보손글씨 2019 woff 번들 (출처: noonnu @noonnu/kyobo-hand,
+   font_page/419, 라이센스: 임베딩 허용 — 인쇄/웹/모바일/광고/영상 + 앱 임베딩).
+   파일 부재 시 fetch 404 → fontFamily.kyobo 폴백 체인의 Pretendard로 자연 폴백 (BR-D). */
 @font-face {
   font-family: "KyoboHandwriting2019";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("./assets/fonts/KyoboHandwriting2019.ttf") format("truetype");
+  src: url("./assets/fonts/KyoboHandwriting2019.woff") format("woff");
 }
 
 html,

@@ -14,18 +14,22 @@
 
 ## KyoboHandwriting2019 (TodoItem 라벨)
 
-- **Path**: `src/assets/fonts/KyoboHandwriting2019.ttf` (저장소 미동봉 — 사용자가 직접 배치)
-- **License**: 인쇄·웹·임베딩 허용. 상세 조건은 아래 Source/Download 링크 참조.
-- **Source**: 교보문고 — https://www.kyobobook.co.kr
-- **Fallback**: TTF 부재 시 `@font-face` fetch 404 → Tailwind `fontFamily.kyobo`
+- **Path**: `src/assets/fonts/KyoboHandwriting2019.woff` (Phase 20에서 저장소 동봉)
+- **License**: 교보문고 무료 한글 폰트. 인쇄·웹·모바일·광고·영상 + 앱 임베딩 허용.
+  수정/이름 변경/재배포/상업 양도/재판매 금지. 본 프로젝트는 앱 내부 임베딩 용도만 사용.
+- **Source**: noonnu npm 패키지 `@noonnu/kyobo-hand` v0.1.0 (교보문고 — 12살 어린이의 동글동글 글씨)
+  - npm: https://www.npmjs.com/package/@noonnu/kyobo-hand
+  - 원출처: https://noonnu.cc/font_page/419
+  - 교보문고 공식: https://store.kyobobook.co.kr/handwriting/font
+- **Fallback**: 파일 부재 시 `@font-face` fetch 404 → Tailwind `fontFamily.kyobo`
   체인의 `Pretendard`로 자연 폴백 (Phase 17 FR-D2 / BR-D). 코드 수정 없이 동작한다.
-- **Download**: 교보문고 공식 페이지 또는 눈누(https://noonnu.cc)에서 "교보손글씨2019"로 검색.
 
-배치 절차:
+배치 절차 (이미 Phase 20에서 완료):
 
-1. 위 링크에서 `KyoboHandwriting2019.ttf` 파일 다운로드.
-2. `src/assets/fonts/KyoboHandwriting2019.ttf` 경로에 저장.
+1. `npm install --save-dev @noonnu/kyobo-hand` 또는 tarball 직접 다운로드
+   (`https://registry.npmjs.org/@noonnu/kyobo-hand/-/kyobo-hand-0.1.0.tgz`).
+2. tarball의 `package/fonts/kyobohand-normal.woff`를 `src/assets/fonts/KyoboHandwriting2019.woff`로 복사.
 3. `npm run build` 또는 `npm run dev`로 재빌드.
 
-배치 후 `TodoItem` 라벨 등 `fontFamily.kyobo`를 사용하는 영역이 손글씨로 자동 전환된다.
-미배치 상태에서도 앱은 정상 동작하며 모든 텍스트는 Pretendard로 렌더된다.
+`TodoItem` 라벨 등 `fontFamily.kyobo`를 사용하는 영역이 손글씨로 렌더된다.
+파일을 삭제하면 자동으로 Pretendard 폴백으로 회귀한다.
