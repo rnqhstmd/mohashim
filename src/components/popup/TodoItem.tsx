@@ -103,12 +103,11 @@ export function TodoItem({
 
   const showActive = todo.active && !todo.done;
 
-  // 외곽 카드 클래스 — 표준 border-deep/10 + active 시 좌측만 4px deep로 오버라이드.
-  // PR #18 gemini G1: bg-white와 bg-cream 동시 적용 시 cascade 충돌 가능 → active 분기에서 명시 분리.
-  // mb-2 제거 — 카드 간격은 부모 TodosTab의 gap-2가 담당.
+  // 외곽 카드 클래스 — Phase 20 design.html 정렬: ink/15 stroke + paperWarm bg + 미세
+  // offset shadow. active는 좌측 4px deep로 시각 강조 + cream bg 유지.
   const cardClass = [
-    "rounded-xl border border-deep/10 relative overflow-hidden",
-    showActive ? "border-l-4 border-l-deep bg-cream" : "bg-white",
+    "rounded-xl border border-ink/15 relative overflow-hidden shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]",
+    showActive ? "border-l-4 border-l-ink bg-cream" : "bg-paperWarm",
     todo.done ? "opacity-60" : "",
   ]
     .filter(Boolean)
@@ -126,7 +125,7 @@ export function TodoItem({
         type="button"
         onClick={() => onDelete(todo.id)}
         aria-label="삭제 (×)"
-        className="absolute right-2 top-2 z-10 text-deep/30 hover:text-red-500"
+        className="absolute right-2 top-2 z-10 text-ink/35 hover:text-red-500"
       >
         ×
       </button>
@@ -158,10 +157,10 @@ export function TodoItem({
             type="button"
             onClick={() => onToggleDone(todo.id)}
             aria-label={todo.done ? "완료 해제" : "완료"}
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] ${
               todo.done
-                ? "border-deep bg-deep text-white"
-                : "border-deep/40 bg-white"
+                ? "border-ink bg-ink text-paperWarm"
+                : "border-ink/35 bg-paperWarm"
             }`}
           >
             {todo.done && <span className="text-[10px]">✓</span>}

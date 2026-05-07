@@ -51,29 +51,32 @@ const baseProps = {
 };
 
 describe("TodoItem", () => {
-  it("AC-A1: 외곽 카드에 rounded-xl border bg-white 클래스 적용", () => {
+  // Phase 20 design.html 정렬: bg-white → bg-paperWarm, border-deep/10 → border-ink/15.
+  it("AC-A1: 외곽 카드에 rounded-xl border bg-paperWarm 클래스 적용", () => {
     const { container } = render(<TodoItem {...baseProps} todo={baseTodo} />);
     const card = container.firstChild as HTMLElement | null;
     expect(card?.className).toContain("rounded-xl");
     expect(card?.className).toContain("border");
-    expect(card?.className).toContain("bg-white");
-    expect(card?.className).toContain("border-deep/10");
+    expect(card?.className).toContain("bg-paperWarm");
+    expect(card?.className).toContain("border-ink/15");
   });
 
+  // Phase 20 정렬: 체크박스 border-deep/40 → border-ink/35 + bg-paperWarm.
   it("AC-A2 (미완료): 체크박스가 원형(rounded-full)이며 ✓ 미표시", () => {
     render(<TodoItem {...baseProps} todo={baseTodo} />);
     const checkbox = screen.getByRole("button", { name: "완료" });
     expect(checkbox.className).toContain("rounded-full");
-    expect(checkbox.className).toContain("border-deep/40");
+    expect(checkbox.className).toContain("border-ink/35");
     expect(checkbox.textContent).toBe("");
   });
 
-  it("AC-A2 (완료): 체크박스가 bg-deep + ✓ 표시", () => {
+  // Phase 20 정렬: 완료 시 bg-deep → bg-ink + text-paperWarm.
+  it("AC-A2 (완료): 체크박스가 bg-ink + ✓ 표시", () => {
     const done: Todo = { ...baseTodo, done: true, completedAt: "2026-01-01T00:00:00.000Z" };
     render(<TodoItem {...baseProps} todo={done} />);
     const checkbox = screen.getByRole("button", { name: "완료 해제" });
     expect(checkbox.className).toContain("rounded-full");
-    expect(checkbox.className).toContain("bg-deep");
+    expect(checkbox.className).toContain("bg-ink");
     expect(checkbox.textContent).toContain("✓");
   });
 
@@ -105,7 +108,8 @@ describe("TodoItem", () => {
     expect(deleteBtn.className).toContain("absolute");
     expect(deleteBtn.className).toContain("right-2");
     expect(deleteBtn.className).toContain("top-2");
-    expect(deleteBtn.className).toContain("text-deep/30");
+    // Phase 20 정렬: text-deep/30 → text-ink/35.
+    expect(deleteBtn.className).toContain("text-ink/35");
     fireEvent.click(deleteBtn);
     expect(onDelete).toHaveBeenCalledWith("t1");
   });
@@ -118,12 +122,14 @@ describe("TodoItem", () => {
     expect(label.className).toContain("opacity-40");
   });
 
-  it("AC-A7: active 시 카드에 border-l-4 border-deep bg-cream 적용", () => {
+  // Phase 20 design.html 정렬: 좌측 4px 강조 색을 deep → ink로 변경 (디자인 popup.jsx
+  // line 860 `borderLeft: 4px solid INK`). bg-cream(#fffaed) 시각적 active 상태는 유지.
+  it("AC-A7: active 시 카드에 border-l-4 border-l-ink bg-cream 적용", () => {
     const active: Todo = { ...baseTodo, active: true };
     const { container } = render(<TodoItem {...baseProps} todo={active} />);
     const card = container.firstChild as HTMLElement | null;
     expect(card?.className).toContain("border-l-4");
-    expect(card?.className).toContain("border-deep");
+    expect(card?.className).toContain("border-l-ink");
     expect(card?.className).toContain("bg-cream");
   });
 
