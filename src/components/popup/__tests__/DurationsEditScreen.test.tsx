@@ -18,42 +18,50 @@ import {
 
 /**
  * FR-E3: isValidDuration — 빈 문자열 / 비정수 / 범위 외 false.
- * Phase 17 BR-4: 1~180/1~60 범위.
+ * Phase 22 P-E1 / FR-7~8 / AC-4~5: 25~60 / 1~30 범위.
  */
 describe("isValidDuration", () => {
-  it("returns true at lower/upper bounds", () => {
-    expect(isValidDuration("1", 1, 180)).toBe(true);
-    expect(isValidDuration("180", 1, 180)).toBe(true);
+  it("returns true at focus lower/upper bounds", () => {
+    expect(isValidDuration("25", 25, 60)).toBe(true);
+    expect(isValidDuration("60", 25, 60)).toBe(true);
   });
-  it("returns false below min / above max", () => {
-    expect(isValidDuration("0", 1, 180)).toBe(false);
-    expect(isValidDuration("181", 1, 180)).toBe(false);
+  it("returns true at break lower/upper bounds", () => {
+    expect(isValidDuration("1", 1, 30)).toBe(true);
+    expect(isValidDuration("30", 1, 30)).toBe(true);
+  });
+  it("returns false below focus min / above focus max", () => {
+    expect(isValidDuration("24", 25, 60)).toBe(false);
+    expect(isValidDuration("61", 25, 60)).toBe(false);
+  });
+  it("returns false below break min / above break max", () => {
+    expect(isValidDuration("0", 1, 30)).toBe(false);
+    expect(isValidDuration("31", 1, 30)).toBe(false);
   });
   it("returns false for empty / whitespace", () => {
-    expect(isValidDuration("", 1, 180)).toBe(false);
-    expect(isValidDuration("   ", 1, 180)).toBe(false);
+    expect(isValidDuration("", 25, 60)).toBe(false);
+    expect(isValidDuration("   ", 25, 60)).toBe(false);
   });
   it("returns false for non-integer (decimal/text)", () => {
-    expect(isValidDuration("25.5", 1, 180)).toBe(false);
-    expect(isValidDuration("abc", 1, 180)).toBe(false);
+    expect(isValidDuration("25.5", 25, 60)).toBe(false);
+    expect(isValidDuration("abc", 25, 60)).toBe(false);
   });
 });
 
 /**
- * FR-E4 + BR-4: canSave — 1~180 / 1~60 경계, dirty 미충족 false.
+ * FR-E4 + BR-4 + Phase 22 P-E1 / AC-4/5: canSave — 25~60 / 1~30 경계, dirty 미충족 false.
  */
 describe("canSave", () => {
-  it("returns false when focus < 1", () => {
-    expect(canSave("0", "10", 25, 5)).toBe(false);
+  it("returns false when focus = 24 (below min)", () => {
+    expect(canSave("24", "10", 25, 5)).toBe(false);
   });
-  it("returns false when focus > 180", () => {
-    expect(canSave("181", "10", 25, 5)).toBe(false);
+  it("returns false when focus = 61 (above max)", () => {
+    expect(canSave("61", "10", 25, 5)).toBe(false);
   });
-  it("returns false when break < 1", () => {
-    expect(canSave("25", "0", 25, 5)).toBe(false);
+  it("returns false when break = 0 (below min)", () => {
+    expect(canSave("30", "0", 25, 5)).toBe(false);
   });
-  it("returns false when break > 60", () => {
-    expect(canSave("25", "61", 25, 5)).toBe(false);
+  it("returns false when break = 31 (above max)", () => {
+    expect(canSave("30", "31", 25, 5)).toBe(false);
   });
   it("returns false when focus is empty / non-numeric", () => {
     expect(canSave("", "10", 25, 5)).toBe(false);
@@ -65,11 +73,11 @@ describe("canSave", () => {
   it("returns false when both inputs equal saved values", () => {
     expect(canSave("25", "5", 25, 5)).toBe(false);
   });
-  it("returns true at lower bounds (1,1) when different from saved", () => {
-    expect(canSave("1", "1", 25, 5)).toBe(true);
+  it("returns true at lower bounds (25,1) when different from saved", () => {
+    expect(canSave("25", "1", 25, 5)).toBe(true);
   });
-  it("returns true at upper bounds (180,60) when different from saved", () => {
-    expect(canSave("180", "60", 25, 5)).toBe(true);
+  it("returns true at upper bounds (60,30) when different from saved", () => {
+    expect(canSave("60", "30", 25, 5)).toBe(true);
   });
   it("returns false for non-integer (decimal) focus", () => {
     expect(canSave("25.5", "10", 25, 5)).toBe(false);
@@ -102,8 +110,9 @@ describe("DurationsEditScreen", () => {
       expect(screen.getByDisplayValue("25")).toBeInTheDocument();
     });
     const focusInput = screen.getByDisplayValue("25");
-    fireEvent.change(focusInput, { target: { value: "200" } });
-    expect(screen.getByText(/1~180분 사이로 입력해주세요/)).toBeInTheDocument();
+    fireEvent.change(focusInput, { target: { value: "61" } });
+    // Phase 22 P-E1: 25~60분 정책 정합.
+    expect(screen.getByText(/25~60분 사이로 입력해주세요/)).toBeInTheDocument();
   });
 
   it("restores last valid value on blur when input is invalid", async () => {
@@ -112,10 +121,10 @@ describe("DurationsEditScreen", () => {
       expect(screen.getByDisplayValue("25")).toBeInTheDocument();
     });
     const focusInput = screen.getByDisplayValue("25");
-    // 유효 → lastValidFocus = 30 갱신
+    // 유효 → lastValidFocus = 30 갱신 (25~60 범위 내).
     fireEvent.change(focusInput, { target: { value: "30" } });
-    // 무효 입력
-    fireEvent.change(focusInput, { target: { value: "200" } });
+    // 무효 입력 (61 > 60).
+    fireEvent.change(focusInput, { target: { value: "61" } });
     // blur → lastValid(30)으로 복구
     fireEvent.blur(focusInput);
     expect(screen.getByDisplayValue("30")).toBeInTheDocument();

@@ -14,7 +14,7 @@ pub const STORE_FILE: &str = ".store.json";
 /// `"idle"` | `"focus"` | `"break"` (Complete/Discarded는 즉시 idle로 기록).
 pub const ACTIVE_PHASE_KEY: &str = "active_phase";
 
-/// 12개 defaults 키 목록 (idempotent 시드, C9).
+/// 16개 defaults 키 목록 (idempotent 시드, C9).
 ///
 /// `active_phase` 9번째 키 영속 의도: PRD AC-12/13 (앱 재시작 시 진행 중이던 세션
 /// 자동 Discarded 처리)와 후속 grass 도메인의 비정상 종료 추적용.
@@ -22,7 +22,14 @@ pub const ACTIVE_PHASE_KEY: &str = "active_phase";
 /// 동기화 기준 — 기동 시 본 키 ↔ launcher 상태 비교 후 차이 발생 시 enable/disable.
 /// `session_logs` 11번째 키: Phase 10 FR-4. Focus 세션 단위 로그 (Rust 단일 writer, BR-1).
 /// `last_cleanup_year` 12번째 키: Phase 10 FR-7. yearly_cleanup 실행 연도 추적 (멱등 가드).
-fn defaults() -> [(&'static str, Value); 12] {
+///
+/// Phase 22 V2 economy 인프라 (P-D1, FR-1~5):
+/// `economy` 13번째 키: 새싹 잔액 + 출석 보상 멱등 가드 (FR-2). Rust 단일 writer (P-D4).
+/// `inventory` 14번째 키: 보유/장착 아이템 (FR-3). Phase 24 Shop write 경로 (시드만).
+/// `mailbox` 15번째 키: 편지 큐 (FR-4). Phase 23 Mailbox write 경로 (시드만).
+/// `last_monthly_letter_year_month` 16번째 키: 월간 인사이트 발송 추적 (FR-5).
+/// Phase 26 write 경로 (시드만).
+fn defaults() -> [(&'static str, Value); 16] {
     [
         ("onboarding_completed", json!(false)),
         ("focus_minutes", json!(25)),
@@ -36,6 +43,23 @@ fn defaults() -> [(&'static str, Value); 12] {
         ("auto_launch_enabled", json!(false)),
         ("session_logs", json!([])),
         ("last_cleanup_year", json!(0)),
+        // Phase 22 FR-2: economy 시드.
+        (
+            "economy",
+            json!({ "sprouts": 0, "lastTodoSproutDate": null }),
+        ),
+        // Phase 22 FR-3: inventory 시드 (3슬롯 캐릭터 레이어).
+        (
+            "inventory",
+            json!({
+                "owned": [],
+                "equipped": { "face": null, "head": null, "back": null }
+            }),
+        ),
+        // Phase 22 FR-4: mailbox 시드 (Phase 23 write 경로).
+        ("mailbox", json!([])),
+        // Phase 22 FR-5: 월간 인사이트 마지막 발송 YYYY-MM (Phase 26 write 경로).
+        ("last_monthly_letter_year_month", json!(null)),
     ]
 }
 
@@ -441,7 +465,7 @@ fn update_sessions_todo<R: Runtime>(
         .map_err(|e| format!("store save failed: {e}"))
 }
 
-/// SessionLog in-memory append (Phase 10 FR-4, DEC-10-8).
+/// SessionLog in-memory append (Phase 10 FR-4, DEC-10-8, Phase 22 FR-9~11).
 ///
 /// store.set만 수행하고 store.save()는 호출자가 묶음 단일 호출한다 — sessions 키 적재와
 /// session_logs 적재의 부분 일관성을 회피하기 위한 원자화 정책 (B3).
@@ -449,6 +473,11 @@ fn update_sessions_todo<R: Runtime>(
 ///
 /// Phase 13 FR-16: `todos_done`은 호출자(`timer::on_complete_consumed`)가 `score::shared::drain_todos`로
 /// 회수한 세션 todo ID 배열. 빈 배열도 허용 — todo 미체크 세션의 정상 케이스.
+///
+/// Phase 22 (FR-9~11, FR-16, AC-7/8):
+/// - `avg_db`: 세션 평균 마이크 dB. Phase 22에서 항상 0 (BR-5). Phase 26에서 실측 수집.
+/// - `earned_sprouts`: `economy::award_session_complete` 결과. Phase 22 FR-16에 따라
+///   세션 완료 보상 지급 후 함께 적재.
 pub(crate) fn append_session_log<R: Runtime>(
     app: &AppHandle<R>,
     id: &str,
@@ -458,6 +487,8 @@ pub(crate) fn append_session_log<R: Runtime>(
     duration_mins: u32,
     score: u32,
     todos_done: Vec<String>,
+    avg_db: u32,
+    earned_sprouts: u32,
 ) -> Result<(), String> {
     let store = app
         .store(STORE_FILE)
@@ -472,6 +503,10 @@ pub(crate) fn append_session_log<R: Runtime>(
         "duration_mins": duration_mins,
         "score": score,
         "todos_done": todos_done,
+        // Phase 22 FR-9 / FR-10: avg_db 필드. 본 Phase에서 항상 0.
+        "avg_db": avg_db,
+        // Phase 22 FR-11 / FR-16: 세션 완료 시 지급된 새싹 수.
+        "earned_sprouts": earned_sprouts,
     }));
     store.set("session_logs", Value::Array(arr));
     // save는 호출자가 단일 처리 (DEC-10-8).

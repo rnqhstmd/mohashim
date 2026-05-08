@@ -49,10 +49,12 @@ const DEFAULT_BREAK_MINUTES: u64 = 5;
 
 /// UI DurationsEditScreen canSave가 보장하는 focus/break 분(分) 범위.
 /// Phase 17 BR-4: 5/90/3/30 → 1/180/1/60으로 확대 (자유 입력 화면 도입).
-pub const FOCUS_MINUTES_MIN: u64 = 1;
-pub const FOCUS_MINUTES_MAX: u64 = 180;
+/// Phase 22 P-E1 / FR-7: 1/180/1/60 → 25/60/1/30으로 좁힘 (정책 정합).
+/// `read_minutes` clamp이 store 외부 편집 자연 보호 (DEC-22-5).
+pub const FOCUS_MINUTES_MIN: u64 = 25;
+pub const FOCUS_MINUTES_MAX: u64 = 60;
 pub const BREAK_MINUTES_MIN: u64 = 1;
-pub const BREAK_MINUTES_MAX: u64 = 60;
+pub const BREAK_MINUTES_MAX: u64 = 30;
 
 // =====================================================================
 // Tauri commands
@@ -222,6 +224,27 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         // 유지하는 정책 — todo만 별도 저장소가 없는 상태에서 분리 적재는 부분 일관성을 만든다.
         FOCUS_START_AT_MS.store(0, Ordering::Release);
     } else {
+        // Phase 22 (DEC-22-2, FR-14/16): 세션 완료 보상 지급. 호출 순서:
+        // append_session_record → economy::award_session_complete → append_session_log.
+        // economy 실패 시: append_session_log skip + store.save skip + drain_todos skip
+        // (부분 일관성 회피, MUST-3 정합). FOCUS_START_AT_MS만 cleanup + logger 기록.
+        let earned = match crate::economy::award_session_complete(app, avg) {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("[mohashim] award_session_complete failed: {e}");
+                logger::write(LogEvent::AudioError {
+                    message: format!("EconomyRewardFailed: {e}"),
+                });
+                FOCUS_START_AT_MS.store(0, Ordering::Release);
+                // 부분 일관성 회피: session_logs/save/drain_todos 모두 skip.
+                // sessions in-memory 변경은 다음 store load 시 폐기되어 자연 회복.
+                // phase 정상 복귀는 아래 store_phase(Idle)에서 수행 (DEC-22-2).
+                store_phase(Phase::Idle);
+                store_time_left(0);
+                write_active_phase(app, "idle");
+                return;
+            }
+        };
         // 2. SessionLog 적재 (FR-4, DEC-10-2/3, DEC-10-7 swap cleanup).
         let start_ms = FOCUS_START_AT_MS.swap(0, Ordering::AcqRel);
         let end_local = chrono::Local::now();
@@ -249,6 +272,7 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         // Phase 13 FR-16: success path에서만 buffer drain → session_logs 적재.
         // 실패 path는 위 분기에서 silent drop (MA-3).
         let todos_done = crate::score::shared::drain_todos();
+        // Phase 22 FR-9~11: avg_db는 본 Phase 항상 0 (BR-5), earned_sprouts는 economy 결과.
         let log_ok = match crate::storage::append_session_log(
             app,
             &id,
@@ -258,6 +282,8 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
             duration_mins,
             avg,
             todos_done,
+            0,
+            earned,
         ) {
             Ok(()) => true,
             Err(e) => {
@@ -266,9 +292,9 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
             }
         };
         // 3. 단일 save 원자화 (DEC-10-8): log 성공 시에만 save 호출.
-        // log 실패 시 save를 skip하여 sessions/session_logs 부분 일관성을 회피한다 —
-        // 두 적재가 모두 in-memory 성공한 경우에만 disk persist. log 실패 시 sessions
-        // in-memory 변경은 다음 store load 시 폐기되어 자연 회복 (Q1 정책 일관 확장).
+        // log 실패 시 save를 skip하여 sessions/session_logs/economy 부분 일관성을 회피한다 —
+        // 세 적재가 모두 in-memory 성공한 경우에만 disk persist. log 실패 시 in-memory 변경은
+        // 다음 store load 시 폐기되어 자연 회복 (Q1 정책 일관 확장).
         if log_ok {
             if let Ok(store) = app.store(STORE_FILE) {
                 if let Err(e) = store.save() {
@@ -440,6 +466,10 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
         // Phase 10 DEC-10-7: 부트 시점 자동 Discarded cleanup. in-memory atomic은 default 0이지만,
         // 미래에 부트 시 atomic을 미리 로드하더라도 안전하도록 명시 리셋.
         FOCUS_START_AT_MS.store(0, Ordering::Release);
+        // Phase 22 MUST-4: 부트 시 stale SESSION_FINAL_SCORE 인계값 차단 (폐쇄성).
+        // reset_runtime_state와 동일하게 boot 경로에서도 명시 리셋하여 다음 세션의
+        // on_complete_consumed가 이전 boot 인계값을 잘못 사용하지 않도록 보호한다.
+        SESSION_FINAL_SCORE.store(0, Ordering::Release);
         // Phase 18 FR-B5: boot_reset discard 기록.
         logger::write(LogEvent::SessionDiscarded {
             reason: "boot_reset".into(),
