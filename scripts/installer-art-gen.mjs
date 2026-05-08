@@ -104,23 +104,26 @@ const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="
   <text x="64" y="35" font-family="${KO_FONT_FAMILY}" font-size="18" font-weight="700" fill="${OUTLINE}">모하심</text>
 </svg>`;
 
-// Sidebar — 164x314. 가운데 큰 모하(140px) + 아래 "모하심" + 한글 부제.
+// Sidebar — 164x314. 모하 캐릭터만 크게 가운데 노출 (텍스트 무).
+// POTATO_GROUP은 200x200 viewBox 기준 — scale 0.7로 140x140 정사각 노출.
+// 위/아래 87px 여백, 좌/우 12px 여백으로 시각 중앙 정렬.
 const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="314" viewBox="0 0 164 314">
   <rect width="164" height="314" fill="${BG}"/>
-  <g transform="translate(12, 60) scale(0.7)">
+  <g transform="translate(12, 87) scale(0.7)">
     ${POTATO_GROUP}
   </g>
-  <text x="82" y="240" text-anchor="middle" font-family="${KO_FONT_FAMILY}" font-size="24" font-weight="800" fill="${OUTLINE}">모하심</text>
-  <text x="82" y="263" text-anchor="middle" font-family="${KO_FONT_FAMILY}" font-size="12" font-weight="500" fill="${OUTLINE}" opacity="0.7">집중 트래커</text>
-  <text x="82" y="294" text-anchor="middle" font-family="${KO_FONT_FAMILY}" font-size="10" fill="${OUTLINE}" opacity="0.5">내 PC에만 저장돼요</text>
 </svg>`;
 
 /**
  * SVG → 24-bit BMP (NSIS Modern UI 호환). 알파는 cream BG에 합성하여 평면화.
+ *
+ * 화질 향상: sharp `density` 옵션으로 SVG → raster 변환 시 DPI를 384(=72*5.33)로
+ * 올려 4× 크기로 supersampling한 뒤 lanczos3 커널로 정확한 BMP 사이즈(w×h)로
+ * 다운샘플링. 작은 사이드바/헤더에서도 모하 라인이 매끄럽게 보존된다.
  */
 async function svgToBmp(svg, w, h, outFile) {
-  const { data: rgba, info } = await sharp(Buffer.from(svg))
-    .resize(w, h)
+  const { data: rgba, info } = await sharp(Buffer.from(svg), { density: 384 })
+    .resize(w, h, { kernel: "lanczos3" })
     .flatten({ background: BG })
     .ensureAlpha()
     .raw()

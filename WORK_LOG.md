@@ -20,6 +20,39 @@
 
 ---
 
+## 2026-05-08 23:15 KST — NSIS 사이드바 — 텍스트 제거 + 모하 단일 노출 + 화질 개선
+
+### 요약
+NSIS 인스톨러 좌측 사이드바에서 텍스트(모하심 / 집중 트래커 / 내 PC에만 저장돼요) 모두 제거하고 모하 캐릭터만 가운데 크게 노출. 작은 사이즈에서 깨지던 화질을 sharp `density: 384` supersampling + lanczos3 다운샘플로 매끄럽게 개선.
+
+### 배경 / 원인
+사용자 캡처에서 좌측 사이드바의 모하 라인이 거칠게 보이고 텍스트는 시각적 강조 효과가 없었다. 정보 밀도보다 깔끔한 브랜드 이미지가 더 적합하다는 판단 + 화질 개선.
+
+### 변경 파일
+
+#### `scripts/installer-art-gen.mjs`
+- `SIDEBAR_SVG`: 텍스트 3개 제거, 모하 위치/크기 재조정 (translate 12, 87 + scale 0.7 → 140×140 정사각이 사이드바 가운데).
+- `svgToBmp` 함수: sharp 입력에 `{ density: 384 }` 명시 (기본 72에서 5.33×) → SVG가 4배 해상도로 raster된 뒤 `lanczos3` 커널로 정확한 BMP 사이즈로 다운샘플 → supersampling 효과로 라인 매끄러움 향상.
+
+```diff
+- async function svgToBmp(svg, w, h, outFile) {
+-   const { data: rgba, info } = await sharp(Buffer.from(svg))
+-     .resize(w, h)
++ async function svgToBmp(svg, w, h, outFile) {
++   const { data: rgba, info } = await sharp(Buffer.from(svg), { density: 384 })
++     .resize(w, h, { kernel: "lanczos3" })
+```
+
+### 검증
+- `node scripts/installer-art-gen.mjs` 단독 실행 → header.bmp 25.2 KB / sidebar.bmp 150.9 KB 정상 출력.
+- NSIS 빌드 21초, warning 없음, 인스톨러 정상 생성.
+
+### 영향 범위
+- 헤더 BMP는 동일 svgToBmp 함수를 거치므로 화질 자동 향상 — 사이드바와 동일한 supersampling 적용.
+- macOS 무관 (NSIS Windows 전용).
+
+---
+
 ## 2026-05-08 22:55 KST — 재실행 시 웰컴 페이지 회귀 픽스 + 트레이 메뉴 팝업 위치 픽스
 
 ### 요약
