@@ -55,12 +55,11 @@ function App() {
           getOnboardingCompleted(),
         ]);
         if (cancelled) return;
+        const isWin = platform() === "windows";
         // Windows TOFU 보강: oc=true이면 사용자가 이전에 권한 부여하여 메인에 진입한
         // 적이 있다는 의미. Rust MIC_INTERACTED atomic이 프로세스 종료 시 reset된
-        // 케이스를 자동 복원하여 disk의 onboarding_completed를 false로 영구 덮어쓰는
-        // 회귀를 차단한다 (mic_grant.flag disk 영속이 없는 옛 빌드에서 진입한
-        // 사용자도 한 번 이상 메인 통과 이력만 있으면 이 경로로 자동 복원됨).
-        if (oc && perms.mic !== "granted" && platform() === "windows") {
+        // 케이스를 자동 복원하여 권한 토글이 OFF로 보이는 시각 회귀를 차단한다.
+        if (oc && perms.mic !== "granted" && isWin) {
           try {
             const restoredMic = await restoreMicInteracted();
             perms = { ...perms, mic: restoredMic };
@@ -69,16 +68,16 @@ function App() {
           }
         }
         setPermissions(perms);
-        // Phase 21 사용자 피드백: 마이크 + 접근성 허용 후 알림 단계 없이 메인으로
-        // 자동 전환되는 회귀 — 이전 install에서 stale `onboarding_completed=true`가
-        // 디스크에 남아 있고 사용자가 OS에서 권한을 다시 부여하는 시점에
-        // canEnter=oc(true)&&canEnterMain(true)로 즉시 통과되던 케이스. 부팅 시
-        // 권한이 모두 부여된 상태가 아니면 oc를 강제로 false로 리셋해 사용자가
-        // **반드시 시작하기 버튼을 눌러야** 메인으로 진입하도록 한다 (BR-7).
+        // 부팅 시 권한이 모두 부여된 상태가 아니면 oc를 false로 리셋하던 가드는 macOS
+        // 한정으로 유지한다. Windows에서는 atomic 변수가 프로세스 휘발성이라 부팅 시점
+        // 에 mic=not_granted로 보일 수 있고, 가드가 disk oc=true를 false로 영구 덮어쓰면
+        // 매 재실행마다 웰컴 페이지로 돌아가는 무한 회귀가 발생하므로 비활성화한다.
+        // (사용자가 시스템 설정에서 마이크를 명시 거부한 경우는 OS API 부재로 검출 불가
+        // 하지만 audio thread가 dB=0 폴백으로 동작하여 앱은 살아있음.)
         const granted = canEnterMain(perms);
-        const effectiveOc = oc && granted;
-        if (oc && !effectiveOc) {
-          // 디스크에도 false 영속 — 다음 부팅에서 동일 게이트 통과 회피.
+        const effectiveOc = isWin ? oc : oc && granted;
+        if (oc && !isWin && !effectiveOc) {
+          // macOS 전용: 디스크에도 false 영속 — 다음 부팅에서 동일 게이트 통과 회피.
           void setOnboardingCompleted(false);
         }
         setOnboardingCompletedState(effectiveOc);

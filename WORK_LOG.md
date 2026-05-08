@@ -20,6 +20,71 @@
 
 ---
 
+## 2026-05-09 01:50 KST — Windows에서 onboarding_completed disk 덮어쓰기 가드 비활성화 (영구 회귀 차단)
+
+### 요약
+사용자 보고 (재발): "종료 후 재시작 시 마이크 권한 토글이 OFF로 되어있고 웰컴 페이지가 또 뜬다. 진짜 너무 크리티컬하다."
+
+진짜 원인 추적: 이전 픽스(disk 영속 86cabe8 / oc 보조 신호 d5d5b67)에도 불구하고 회귀가 풀리지 않은 이유는 App.tsx 부팅 가드 자체였다. **Windows에선 atomic 휘발 = 영구 disk oc=false 회귀**의 무한 루프 구조.
+
+```ts
+const granted = canEnterMain(perms);  // mic && accessibility — Windows에선 atomic 휘발로 mic ≠ granted
+const effectiveOc = oc && granted;     // oc=true && false = false
+if (oc && !effectiveOc) {
+  void setOnboardingCompleted(false);  // ← 매 부팅마다 disk oc=true를 false로 영구 덮어씀
+}
+```
+
+흐름:
+1. 사용자 토글 ON → 메인 진입 → `setOnboardingCompleted(true)` → disk oc=true
+2. 종료 → 재실행 → atomic 휘발 → mic=not_determined → 가드가 disk oc를 **false로 덮어씀**
+3. 다음 재실행: oc=false → 자동 복원(d5d5b67) skip → 웰컴 페이지
+4. 사용자가 또 토글 ON → 또 oc=true → 또 다음에 false로 덮임 → **영구 무한 루프**
+
+### 해결
+**Windows에선 disk oc 덮어쓰기 자체를 비활성화**. macOS는 OS API로 정확히 검증 가능하므로 기존 가드 유지.
+
+### 변경 파일
+
+#### `src/App.tsx`
+- 부팅 effect에서 `isWin = platform() === "windows"` 한 번 평가.
+- 자동 복원 시도는 `isWin`으로 정리 (이전 코드와 동일 의도).
+- `effectiveOc` 결정 로직 분기:
+
+```diff
++ const isWin = platform() === "windows";
+  ...
+- const effectiveOc = oc && granted;
+- if (oc && !effectiveOc) {
++ const effectiveOc = isWin ? oc : oc && granted;
++ if (oc && !isWin && !effectiveOc) {
+    void setOnboardingCompleted(false);
+  }
+```
+
+### 결과 흐름 (수정 후)
+- 첫 부팅: oc=false → 가드 효과 없음 → 자동 복원 시도 (disk flag 없으면 no-op) → 웰컴 페이지 (정상)
+- 사용자 토글 ON → 메인 진입 → oc=true 영속 + disk flag + atomic
+- 종료 → 재실행:
+  - 자동 복원(restoreMicInteracted) → atomic + disk flag 갱신 → mic=granted
+  - 가드 약화로 disk oc=true 보존
+  - effectiveOc = oc = true → **메인 직행**
+- 사용자가 OS 시스템 설정에서 마이크 명시 거부한 경우: OS API 부재로 검출 불가 (audio thread는 dB=0 폴백으로 앱 자체는 살아있음).
+
+### 검증
+- NSIS 빌드 26초 성공.
+- 사용자 직접 검증 시나리오: 새 인스톨러 깔고 토글 ON → 메인 진입 → 트레이 종료 → 시작 메뉴에서 다시 실행 → **메인 화면 직행** (이전 회귀 차단 확인).
+
+### 영향 범위
+- **Windows**: 영구 회귀 차단. 사용자가 한 번 메인 통과한 oc=true 신호를 atomic 휘발만으로 false로 덮어쓰지 않음.
+- **macOS**: 기존 가드 유지 — 시스템 설정에서 권한 거부 시 정확히 재온보딩.
+- **Linux**: macOS 분기 따라가 (정상 동작).
+
+### 후속 과제
+- Windows 사용자 명시 거부 케이스에 대한 안내 노출 (OS 시스템 설정 진입 안내) 검토.
+
+---
+
 ## 2026-05-09 01:30 KST — 할일 텍스트 줄바꿈 (truncate 제거)
 
 ### 요약
