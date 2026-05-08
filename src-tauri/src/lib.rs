@@ -1,4 +1,5 @@
 mod audio;
+mod economy;
 mod input;
 mod logger;
 mod permissions;
@@ -38,6 +39,8 @@ pub fn run() {
             storage::set_auto_launch,
             storage::record_todo_completion,
             storage::undo_todo_completion,
+            // Phase 22 FR-17 / BR-6: 출석 보상 IPC 단일 진입점.
+            economy::record_todo_added,
             logger::open_log_dir,
         ])
         .setup(|app| {

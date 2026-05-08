@@ -10,11 +10,12 @@ import { DiscardChangesModal } from "./DiscardChangesModal";
 type DurationsEditScreenProps = { onClose: () => void };
 
 // Phase 17 BR-4: 기존 DurationsEditorScreen 5~90/3~30 → 1~180/1~60.
+// Phase 22 P-E1 / FR-7~8 / AC-4/5: 1~180/1~60 → 25~60/1~30 (정책 정합).
 // timer.rs FOCUS_MINUTES_MIN/MAX, BREAK_MINUTES_MIN/MAX와 정합.
-const FOCUS_MIN = 1;
-const FOCUS_MAX = 180;
+const FOCUS_MIN = 25;
+const FOCUS_MAX = 60;
 const BREAK_MIN = 1;
-const BREAK_MAX = 60;
+const BREAK_MAX = 30;
 
 /**
  * 단일 입력값(분 문자열)이 정수이며 [min,max] 범위 내인지 검증 (FR-E3).

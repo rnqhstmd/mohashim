@@ -39,6 +39,9 @@ export type SessionRecord = {
  * Focus 세션 단위 로그 (FR-4). Rust 단일 writer (BR-1) — TS는 read-only.
  * id 포맷: `sl-{end_at_unix_ms}-{score}` (DEC-10-2).
  * 시각: chrono::Local::to_rfc3339() (DEC-10-3, offset 명시).
+ *
+ * Phase 22 (FR-9~11, DEC-22-4): `avg_db`, `earned_sprouts` 추가. 기존 로그에 부재 시
+ * `getSessionLogs` 폴백 정규화에서 0.
  */
 export type SessionLog = {
   id: string;
@@ -48,8 +51,41 @@ export type SessionLog = {
   duration_mins: number;
   score: number;         // 0~100
   todos_done: string[];  // Phase 13: Focus/Break 중 완료된 todo의 ID 목록 (FR-13~17). 미체크 세션은 [].
+  /** Phase 22 FR-9/10: 세션 평균 마이크 dB. 본 Phase에서 항상 0. Phase 26에서 실측. */
+  avg_db: number;
+  /** Phase 22 FR-11/16: 세션 완료 시 지급된 새싹 수. */
+  earned_sprouts: number;
 };
 export type ActivePhase = "idle" | "focus" | "break";
+
+/**
+ * 새싹 잔액 + 출석 보상 멱등 가드 (Phase 22 FR-2, BR-2/3).
+ * Rust 단일 writer (P-D4) — TS `set()` Exclude로 직접 쓰기 차단.
+ */
+export type Economy = {
+  sprouts: number;
+  /** YYYY-MM-DD Local. 미지급 시 null (FR-19). */
+  lastTodoSproutDate: string | null;
+};
+
+/**
+ * 보유/장착 아이템 (Phase 22 FR-3). Phase 24 Shop write 경로 (시드만).
+ * 3슬롯 캐릭터 레이어: face / head / back. 각 슬롯 미장착 시 null.
+ */
+export type Inventory = {
+  owned: string[];
+  equipped: {
+    face: string | null;
+    head: string | null;
+    back: string | null;
+  };
+};
+
+/**
+ * 편지 큐 (Phase 22 FR-4). Phase 23 Mailbox write 경로 (시드만).
+ * 본 Phase는 schema unknown — 후속 Phase에서 구체 타입 정의.
+ */
+export type Mailbox = unknown[];
 
 export type StoreSchema = {
   onboarding_completed: boolean;
@@ -64,9 +100,35 @@ export type StoreSchema = {
   active_phase: ActivePhase;
   session_logs: SessionLog[];
   last_cleanup_year: number;
+  // Phase 22 V2 economy 인프라 (FR-1, P-D1).
+  economy: Economy;
+  inventory: Inventory;
+  mailbox: Mailbox;
+  /** 월간 인사이트 마지막 발송 YYYY-MM. 미발송 시 null (Phase 26 write). */
+  last_monthly_letter_year_month: string | null;
 };
 
 export const STORE_FILE = ".store.json";
+
+/**
+ * Rust 단일 writer 키 런타임 가드 (P-D4, AC-20).
+ *
+ * `set<K>()`의 제너릭 Exclude로 컴파일 타임에는 차단되나, 동일 모듈 내 신규 코드가
+ * `storeInstance.set(key, value)`을 직접 호출하거나 타입 우회(`as any`) 시 차단되지
+ * 않는다. 본 Set은 `set()` 진입 시점에 키를 검사하여 **런타임 이중 방어**로 단일
+ * writer 정책을 보장한다 (P-D4 정책 보장).
+ */
+const RUNTIME_READONLY_KEYS: ReadonlySet<string> = new Set([
+  "active_phase",
+  "sessions",
+  "auto_launch_enabled",
+  "session_logs",
+  "last_cleanup_year",
+  "economy",
+  "inventory",
+  "mailbox",
+  "last_monthly_letter_year_month",
+]);
 
 export const STORE_DEFAULTS: StoreSchema = {
   onboarding_completed: false,
@@ -81,6 +143,11 @@ export const STORE_DEFAULTS: StoreSchema = {
   active_phase: "idle",
   session_logs: [],
   last_cleanup_year: 0,
+  // Phase 22 FR-2~5: V2 economy 인프라 시드.
+  economy: { sprouts: 0, lastTodoSproutDate: null },
+  inventory: { owned: [], equipped: { face: null, head: null, back: null } },
+  mailbox: [],
+  last_monthly_letter_year_month: null,
 };
 
 type StoreInstance = Awaited<ReturnType<typeof Store.load>>;
@@ -136,12 +203,12 @@ export type SetOptions = {
 
 /**
  * 스토어 키 set. Rust 단일 writer 키(`active_phase`, `sessions`, `auto_launch_enabled`,
- * `session_logs`, `last_cleanup_year`)는 제너릭 Exclude로 컴파일 타임 차단된다.
+ * `session_logs`, `last_cleanup_year`, `economy`, `inventory`, `mailbox`,
+ * `last_monthly_letter_year_month`)는 제너릭 Exclude로 컴파일 타임 차단된다 (P-D4, AC-20).
  *
- * **단, TS 타입 차단은 런타임 보장이 아니다** — `ensureStore()`로 획득한 `storeInstance`를
- * 통해 `store.set(key, value)`을 직접 호출하면 차단되지 않는다. `storeInstance`는 모듈
- * private이므로 외부 우회는 불가능하나, 모듈 내부 신규 코드 추가 시 단일 writer 키를
- * 직접 쓰지 않도록 주의. 단일 writer 키 변경은 반드시 Rust IPC를 경유한다.
+ * **런타임 이중 방어 (P-D4 정책 보장)**: `RUNTIME_READONLY_KEYS` 가드로 진입 시 키를
+ * 재검사한다. 모듈 내부에서 `as any` 우회나 신규 코드의 실수가 발생해도 런타임 throw로
+ * 차단되어 잘못된 디스크 쓰기를 막는다. 단일 writer 키 변경은 반드시 Rust IPC를 경유한다.
  */
 export async function set<
   K extends Exclude<
@@ -151,12 +218,22 @@ export async function set<
     | "auto_launch_enabled"
     | "session_logs"
     | "last_cleanup_year"
+    | "economy"
+    | "inventory"
+    | "mailbox"
+    | "last_monthly_letter_year_month"
   >
 >(
   key: K,
   value: StoreSchema[K],
   options: SetOptions = {}
 ): Promise<void> {
+  // 런타임 이중 방어 (P-D4): 컴파일 타임 Exclude 우회 시 차단.
+  if (RUNTIME_READONLY_KEYS.has(key as string)) {
+    throw new Error(
+      `[mohashim] '${String(key)}' is a Rust single-writer key. Use Rust IPC instead of TS set().`
+    );
+  }
   const store = await ensureStore();
   await store.set(key, value);
   if (options.save !== false) {
@@ -315,6 +392,8 @@ export async function getSessions(): Promise<Record<string, SessionRecord>> {
 /**
  * 세션 로그 read-only 헬퍼 (FR-4). session_logs 키의 writer는 Rust 단일 (BR-1).
  * 비배열 잔존 데이터는 빈 배열로 폴백.
+ *
+ * Phase 22 (DEC-22-4): 기존 로그에 `avg_db` / `earned_sprouts` 부재 시 0 폴백.
  */
 export async function getSessionLogs(): Promise<SessionLog[]> {
   const raw = await get("session_logs");
@@ -324,12 +403,19 @@ export async function getSessionLogs(): Promise<SessionLog[]> {
   // - raw 항목 자체가 null/원시값이면 빈 SessionLog 골격으로 폴백 (스프레드 TypeError 방지)
   return (raw as unknown[]).map((r) => {
     if (typeof r !== "object" || r === null) {
-      return { todos_done: [] } as unknown as SessionLog;
+      return { todos_done: [], avg_db: 0, earned_sprouts: 0 } as unknown as SessionLog;
     }
     const log = r as Record<string, unknown>;
     return {
       ...log,
       todos_done: Array.isArray(log.todos_done) ? (log.todos_done as string[]) : [],
+      // Phase 22 DEC-22-4: 기존 로그(부재) / 비숫자 / 음수는 0 폴백.
+      avg_db:
+        typeof log.avg_db === "number" && log.avg_db >= 0 ? log.avg_db : 0,
+      earned_sprouts:
+        typeof log.earned_sprouts === "number" && log.earned_sprouts >= 0
+          ? log.earned_sprouts
+          : 0,
     } as SessionLog;
   });
 }
@@ -344,9 +430,100 @@ export async function getLastCleanupYear(): Promise<number> {
 }
 
 /**
+ * Economy read-only 헬퍼 (Phase 22 FR-21, FR-22, AC-18).
+ *
+ * 키 부재 / 비객체 / 필드 타입 불일치 시 모두 `{ sprouts: 0, lastTodoSproutDate: null }` 폴백.
+ * `getTodos()` 폴백 패턴 정합. Rust `economy::state::read_economy_state`와 동일 정책.
+ *
+ * 단일 writer는 Rust `economy` 모듈 — TS는 read만 (P-D4).
+ */
+export async function getEconomy(): Promise<Economy> {
+  const raw = await get("economy");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { sprouts: 0, lastTodoSproutDate: null };
+  }
+  const e = raw as Record<string, unknown>;
+  const sprouts =
+    typeof e.sprouts === "number" && e.sprouts >= 0 ? e.sprouts : 0;
+  const lastTodoSproutDate =
+    typeof e.lastTodoSproutDate === "string" && e.lastTodoSproutDate.length > 0
+      ? e.lastTodoSproutDate
+      : null;
+  return { sprouts, lastTodoSproutDate };
+}
+
+/**
+ * Inventory read-only 헬퍼 (Phase 22 FR-21, FR-22, AC-19).
+ *
+ * 키 부재 / 비객체 / 필드 타입 불일치 시 안전 기본값으로 폴백.
+ * Phase 24 Shop write 경로 — Phase 22는 시드만.
+ */
+export async function getInventory(): Promise<Inventory> {
+  const fallback: Inventory = {
+    owned: [],
+    equipped: { face: null, head: null, back: null },
+  };
+  const raw = await get("inventory");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fallback;
+  const i = raw as Record<string, unknown>;
+  const owned = Array.isArray(i.owned)
+    ? (i.owned as unknown[]).filter((x): x is string => typeof x === "string")
+    : [];
+  const eqRaw = i.equipped;
+  const equipped =
+    eqRaw && typeof eqRaw === "object" && !Array.isArray(eqRaw)
+      ? (eqRaw as Record<string, unknown>)
+      : {};
+  const slot = (k: string): string | null =>
+    typeof equipped[k] === "string" && (equipped[k] as string).length > 0
+      ? (equipped[k] as string)
+      : null;
+  return {
+    owned,
+    equipped: {
+      face: slot("face"),
+      head: slot("head"),
+      back: slot("back"),
+    },
+  };
+}
+
+/**
+ * Mailbox read-only 헬퍼 (Phase 22 FR-21, FR-22, AC-19).
+ *
+ * 비배열 잔존 데이터는 빈 배열로 폴백. 본 Phase는 schema unknown — Phase 23에서 정의.
+ */
+export async function getMailbox(): Promise<Mailbox> {
+  const raw = await get("mailbox");
+  return Array.isArray(raw) ? raw : [];
+}
+
+/**
+ * 월간 인사이트 마지막 발송 YYYY-MM read-only 헬퍼 (Phase 22 FR-21, FR-22, AC-19).
+ *
+ * 비문자열 / 빈 문자열은 null 폴백. Phase 26 write 경로.
+ */
+export async function getLastMonthlyLetter(): Promise<string | null> {
+  const raw = await get("last_monthly_letter_year_month");
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+/**
+ * 출석 보상 IPC fire-and-forget invoke (Phase 22 FR-17, BR-6, DEC-22-3).
+ *
+ * `TodosTab.persist`가 `storeSetTodos(next)` 성공 후 length 비교 없이 무조건 호출한다.
+ * Rust IPC가 단일 진위 판정자로 멱등 가드를 통과시킨다 (FR-18, AC-15/16).
+ *
+ * 호출자가 await 여부를 결정 — 일반적으로 fire-and-forget (UI 차단 금지).
+ */
+export async function recordTodoAdded(): Promise<void> {
+  await invoke("record_todo_added");
+}
+
+/**
  * 사용자 데이터 전체 초기화. Rust `reset_all` 커맨드를 호출한다.
  *
- * Rust 측에서 atomic 강제 → store clear → 12키 default 시드 순으로 처리한다.
+ * Rust 측에서 atomic 강제 → store clear → 16키 default 시드 순으로 처리한다 (Phase 22 FR-6).
  * 실패 시 에러를 호출자에게 재전파하여 상위(SettingsScreen)가 onResetDone 미호출 등
  * 후속 처리를 결정할 수 있도록 한다.
  */

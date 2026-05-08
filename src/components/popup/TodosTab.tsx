@@ -8,6 +8,7 @@ import {
   setTodos as storeSetTodos,
   getWorkTags,
   getLocations,
+  recordTodoAdded,
 } from "../../lib/storage";
 import {
   sortTodos,
@@ -116,12 +117,21 @@ export function TodosTab({
   // 저장 순서가 뒤바뀌거나 stale rollback이 최신 상태를 덮어쓰는 것을 방지.
   // 메모리 state는 즉시 반영(낙관적 업데이트), 디스크 write만 직렬화한다.
   // 실패 시 다음 persist가 그대로 진행하여 결과적 일관성 확보 (마지막 호출이 최종 상태).
+  //
+  // Phase 22 (FR-17, BR-6, DEC-22-3, MUST-1 해소): storeSetTodos 성공 후 length 비교 없이
+  // 무조건 `recordTodoAdded()` fire-and-forget. Rust IPC가 단일 진위 판정자로 멱등 가드를
+  // 통과시켜 `lastTodoSproutDate != today_local`인 경우만 1🌱 지급 (FR-18). 삭제/완료/편집에서도
+  // 호출되지만 mutex+읽기 후 즉시 no-op (AC-15/16). 실패는 console.error swallow.
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const persist = (next: Todo[]) => {
     setTodosState(next);
     writeQueueRef.current = writeQueueRef.current.then(async () => {
       try {
         await storeSetTodos(next);
+        // Phase 22 FR-17: persist 성공 후 출석 보상 IPC 호출. 실패는 swallow.
+        recordTodoAdded().catch((err) => {
+          console.error("[mohashim] recordTodoAdded failed", err);
+        });
       } catch (err) {
         console.error("[mohashim] todos persist failed", err);
       }
