@@ -46,6 +46,11 @@ pub fn run() {
             if let Err(err) = storage::init(app.handle()) {
                 eprintln!("[mohashim] storage init failed: {err}");
             }
+            // Windows TOFU 영속 복원: disk 파일에 영속된 마이크 권한을 atomic으로 복원한다.
+            // 사용자 회귀 방지(매 재실행마다 웰컴 페이지) — Rust atomic은 프로세스 수명이라
+            // disk 파일이 가장 견고한 단일 진실 소스. macOS/Linux에서는 no-op.
+            // score::start보다 먼저 호출하여 audio thread가 정상 기동되도록 한다.
+            permissions::load_persisted_mic_grant_into_atomic(app.handle());
             // Phase 18 FR-B2: 분석 로거 초기화. 실패 시 write no-op (BR-B3) — 앱 동작 무영향.
             // 내부에서 AppStart 이벤트 1건을 기록한다.
             if let Err(err) = logger::init(app.handle()) {

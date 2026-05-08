@@ -20,6 +20,54 @@
 
 ---
 
+## 2026-05-09 00:25 KST — Windows 마이크 권한 disk 영속 (재실행 웰컴 페이지 회귀 영구 차단)
+
+### 요약
+사용자 보고: "앱 종료 후 재실행 시 매번 웰컴 페이지로 돌아간다. 마이크 토글이 OFF로 보이지만 클릭하면 OS 설정창이 '이미 허용됨' 상태로 잠깐 떴다 닫히고 그제서야 토글이 ON으로 변한다."
+
+원인: Rust `MIC_INTERACTED` atomic이 프로세스 종료 시 reset되고, App.tsx 부팅 가드(`oc && !canEnterMain(perms) → setOnboardingCompleted(false)`)가 disk의 `onboarding_completed=true`를 false로 영구 덮어씌워 무한 회귀. 이전 시도(localStorage TOFU 영속)는 WebView2 storage가 비어있는 시나리오(빌드 사이 손실, 옛 빌드 시점 부여)에선 작동 안 함.
+
+해결: Rust측 disk 파일(`%LOCALAPPDATA%\com.mohashim.app\mic_grant.flag`)을 단일 진실 소스로 도입. 부팅 시 `lib.rs setup`이 파일 존재 여부로 atomic을 복원. 어떤 빌드에서든 권한 grant 시점에 즉시 disk write되어 영구 보존.
+
+### macOS 영향 분석
+**영향 없음.** macOS는 `AVCaptureDevice::authorizationStatusForMediaType`(마이크) / `AXIsProcessTrusted`(접근성) OS API로 매번 정확한 권한 상태를 검증한다. atomic 변수에 의존하지 않으므로 부팅 시 휘발 문제 부재. 사용자가 시스템 환경설정에서 권한을 명시 거부하지 않는 한 재실행 시 권한이 유지된다 (이는 의도된 정책 — 실제 거부 시 재온보딩).
+
+### 변경 파일
+
+#### 1. `src-tauri/src/permissions.rs`
+- `tauri::Manager` import 추가 (`app.path()` 사용용).
+- 신규 함수:
+  - `mic_grant_file_path(app)` — `%LOCALAPPDATA%\com.mohashim.app\mic_grant.flag` PathBuf 반환 (Windows 한정).
+  - `load_persisted_mic_grant_into_atomic(app)` — 부팅 시 호출. 파일 존재하면 `MIC_INTERACTED.store(true)` + `sync_runtime_grants` → audio thread 멱등 기동.
+  - `save_persisted_mic_grant(app)` — Granted 시점에 빈 마커 파일 write. 디렉토리 자동 생성.
+- `request_microphone_permission` Windows 분기: `status == Granted`이면 `save_persisted_mic_grant(&app)` 호출.
+- `restore_persisted_mic_interacted` Windows 분기: 호출 시점에 disk flag도 함께 저장 (이중 안전망).
+- macOS / Linux 분기는 `_ = app` no-op으로 빌드 호환성 유지.
+
+#### 2. `src-tauri/src/lib.rs`
+- `setup` 클로저의 `storage::init` 직후에 `permissions::load_persisted_mic_grant_into_atomic(app.handle())` 호출 추가.
+- score::start보다 먼저 실행되어 audio thread가 영속 권한 기반으로 정상 기동.
+
+### 검증
+1. **Cargo check**: 깨끗 (3.4s).
+2. **NSIS 빌드**: 37초 만에 인스톨러 정상 생성.
+3. **사용자 직접 검증** (Windows에서):
+   - 인스톨러로 깔고 마이크 권한 ON → 메인 진입 (이때 disk에 flag 파일 생성됨)
+   - 트레이 종료 → 시작 메뉴에서 다시 실행 → **메인 화면으로 직행** (atomic이 disk에서 자동 복원)
+   - 재부팅 후에도 동일 동작 (disk 파일 보존)
+
+### 영향 범위
+- **macOS**: OS API로 정확 검증 → 영향 없음.
+- **Windows**: 영구 회귀 차단. 단일 진실 소스가 disk 파일이므로 localStorage / WebView 데이터 손실에도 견고.
+- **Linux** (비공식): 분기 자체가 macOS와 동일한 fallback 경로 — no-op.
+- **삼중 안전망**: (1) Rust disk file, (2) localStorage TOFU, (3) macOS OS API. 어느 하나가 깨져도 나머지로 복원 가능.
+
+### 후속 과제 (선택)
+- 사용자가 명시적으로 권한 초기화를 원할 때를 위해 설정 화면에 "권한 재설정" 버튼 추가 검토 (disk flag 삭제 + onboarding_completed=false).
+- macOS도 향후 disk 영속 추가하면 일관성 향상이지만 OS API가 정확하므로 우선순위 낮음.
+
+---
+
 ## 2026-05-08 23:55 KST — 메인 화면 인사 변경 + 직전 점수 제거 + 실시간 점수 강조 + 헤더 BMP 화질
 
 ### 요약

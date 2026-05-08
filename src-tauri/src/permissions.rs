@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering::Relaxed;
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +31,58 @@ pub enum PermissionKind {
 // =====================================================================
 // 내부 헬퍼 (score 모듈 게이팅용)
 // =====================================================================
+
+/// Windows TOFU 영속 파일.
+///
+/// 마이크 권한 INTERACTED 플래그를 disk에 영속한다 — Rust atomic은 프로세스 수명에
+/// 한정되고 WebView2 localStorage는 인스톨러 재설치 등으로 손실 가능성이 있어,
+/// 가장 견고한 단일 진실 소스로 `%LOCALAPPDATA%\com.mohashim.app\mic_grant.flag`
+/// 파일을 사용한다 (앱 데이터 디렉토리에 빈 마커 파일).
+///
+/// 부팅 시점(lib.rs setup)에 `load_persisted_mic_grant_into_atomic`로 atomic을
+/// 복원하고, `request_microphone_permission` / `restore_persisted_mic_interacted`
+/// 가 granted를 반환할 때 `save_persisted_mic_grant`로 영속한다.
+#[cfg(target_os = "windows")]
+fn mic_grant_file_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("mic_grant.flag"))
+}
+
+/// 부팅 시점 호출 — 디스크 영속 파일이 있으면 atomic을 true로 복원.
+/// macOS / Linux에서는 no-op (OS API로 권한 검증 가능).
+pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(path) = mic_grant_file_path(app) {
+            if path.exists() {
+                platform::MIC_INTERACTED.store(true, Relaxed);
+                let mic = platform::mic_status();
+                let ax = platform::accessibility_status();
+                sync_runtime_grants(app, mic, ax);
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn save_persisted_mic_grant(app: &AppHandle) {
+    let Some(path) = mic_grant_file_path(app) else {
+        eprintln!("[mohashim] mic_grant_file_path: app_data_dir unavailable");
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("[mohashim] mic_grant create_dir_all err: {e}");
+            return;
+        }
+    }
+    if let Err(e) = std::fs::write(&path, "1") {
+        eprintln!("[mohashim] mic_grant write err: {e}");
+    }
+}
 
 /// score::start에서 권한 1회 조회용 동기 헬퍼.
 pub fn current_mic_status() -> PermissionStatus {
@@ -62,6 +114,10 @@ pub async fn request_microphone_permission(app: AppHandle) -> Result<PermissionS
     // AVCaptureDevice.requestAccess로 다이얼로그를 트리거하므로 별도 deep-link 불필요.
     #[cfg(target_os = "windows")]
     {
+        // Disk 영속 — 재실행 시 atomic 복원의 단일 진실 소스.
+        if status == PermissionStatus::Granted {
+            save_persisted_mic_grant(&app);
+        }
         let _ = app
             .opener()
             .open_url("ms-settings:privacy-microphone", None::<&str>);
@@ -127,6 +183,9 @@ pub async fn restore_persisted_mic_interacted(app: AppHandle) -> Result<Permissi
     {
         use std::sync::atomic::Ordering::Relaxed;
         platform::MIC_INTERACTED.store(true, Relaxed);
+        // Disk 영속도 갱신 — localStorage TOFU 신호로 호출됐다는 건 사용자가 이전에
+        // 권한 부여한 적 있다는 뜻이므로 disk flag도 보장한다 (이중 안전망).
+        save_persisted_mic_grant(&app);
         let status = platform::mic_status();
         sync_runtime_grants(&app, status, platform::accessibility_status());
         Ok(status)
