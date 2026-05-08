@@ -54,6 +54,7 @@ function renderTab({ phase }: RenderProps) {
       potatoState={"focused" as PotatoState}
       phrase="집중 중"
       db={50}
+      total={75}
       onFocusStart={() => Promise.resolve()}
     />
   );
@@ -85,6 +86,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         potatoState={"calm" as PotatoState}
         phrase="시작해볼까"
         db={50}
+        total={75}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -114,6 +116,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         potatoState={"focused" as PotatoState}
         phrase="완료"
         db={50}
+        total={75}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -145,6 +148,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         potatoState={"focused" as PotatoState}
         phrase="집중 중"
         db={50}
+        total={75}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -171,6 +175,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         potatoState={"calm" as PotatoState}
         phrase="휴식 중"
         db={50}
+        total={75}
         onFocusStart={() => Promise.resolve()}
       />
     );

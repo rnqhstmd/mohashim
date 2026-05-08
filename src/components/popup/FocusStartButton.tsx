@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import { Potato } from "../Potato";
 import type { PotatoState } from "../../lib/phrases";
-import {
-  getFocusMinutes,
-  getSessionLogs,
-  type SessionLog,
-} from "../../lib/storage";
-import { formatDate } from "../../lib/grass";
+import { getFocusMinutes } from "../../lib/storage";
 import { useIdleChipLabel } from "../../lib/idleChip";
 
 type FocusStartButtonProps = {
@@ -31,9 +26,8 @@ function envFromDb(db: number): { icon: string; label: string; danger: boolean }
  *
  * 레이아웃:
  *   - 우상단 절대 위치 "평상시" 칩.
- *   - 좌측 큰 Potato (size 88) + 우측 헤더("안녕 모하야 🥔") + 상태 행 + 멘트.
- *   - 상태 행: 오늘 세션이 1건 이상 있으면 [직전 점수] · [환경 라벨 dB] 노출.
- *     세션이 0건이면 [환경 라벨 dB]만 노출 — 데시벨 단독 row 제거 (단일 영역 통합).
+ *   - 좌측 큰 Potato (size 88) + 우측 헤더("안녕 난 모하야!") + 환경 라벨 + 멘트.
+ *   - 직전 세션 점수 표시는 제거 (사용자 피드백) — 잔디 탭 상세 조회로 일원화.
  *   - 하단 풀폭 [▶ 집중 시작 | N분] 버튼.
  */
 export function FocusStartButton({
@@ -42,27 +36,17 @@ export function FocusStartButton({
   db,
   onStart,
 }: FocusStartButtonProps) {
-  const [todaySession, setTodaySession] = useState<SessionLog | null>(null);
   const [focusMins, setFocusMins] = useState<number>(25);
-  // Phase 21 사용자 피드백 (재개정): "평상시" 고정 텍스트 → 8초 회전 무작위
-  // 멘트("음료 홀짝이는 중", "웹 서핑 중" 등)로 교체. 본 컴포넌트는 idle phase
-  // 마운트 동안 항상 active=true.
+  // Phase 21 사용자 피드백 (재개정): "평상시" 고정 텍스트 → 회전 무작위 멘트로
+  // 교체. 본 컴포넌트는 idle phase 마운트 동안 항상 active=true.
   const idleLabel = useIdleChipLabel(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [logs, mins] = await Promise.all([
-          getSessionLogs(),
-          getFocusMinutes(),
-        ]);
+        const mins = await getFocusMinutes();
         if (cancelled) return;
-        // 오늘 날짜의 세션 중 가장 마지막 로그 — 점수 노출 후보.
-        const todayStr = formatDate(new Date());
-        const todays = logs.filter((l) => l.date === todayStr);
-        const last = todays.length > 0 ? todays[todays.length - 1] : null;
-        setTodaySession(last);
         setFocusMins(mins);
       } catch (err) {
         console.error("[mohashim] FocusStartButton load failed", err);
@@ -95,20 +79,11 @@ export function FocusStartButton({
         </div>
         <div className="min-w-0 flex-1 pt-1">
           <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">
-            <span>안녕 모하야</span>
-            <span aria-hidden>🥔</span>
+            <span>안녕 난 모하야!</span>
           </h2>
 
-          {/* 상태 행: 오늘 세션 있으면 점수 + 환경 라벨 dB. 없으면 dB만. */}
+          {/* 상태 행: 환경 라벨 dB만 노출 (직전 세션 점수는 잔디 탭으로 일원화). */}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
-            {todaySession && typeof todaySession.score === "number" && (
-              <span className="inline-flex items-baseline gap-0.5 rounded-full border border-ink/20 bg-paperWarm px-2 py-0.5 tabular-nums text-ink">
-                <span className="text-[12px] font-extrabold">
-                  {todaySession.score}
-                </span>
-                <span className="text-[9px] font-bold opacity-60">/ 100</span>
-              </span>
-            )}
             <span
               className="inline-flex items-center gap-1 tabular-nums"
               style={{ color: dbColor }}

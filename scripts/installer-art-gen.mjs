@@ -90,9 +90,11 @@ const POTATO_GROUP = `
 `;
 
 // Header — 150x57. 모하 캐릭터만 좌측에 노출 (텍스트 무).
-// 사용자 피드백에 맞춰 사이드바와 동일하게 로고/부제 텍스트를 제거.
-// scale 0.27 → 약 54x54 — 헤더 높이(57)에 거의 꽉 차게 노출.
-const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+// 화질 향상: SVG의 raster 사이즈를 4×(600x228)로 명시 supersample. POTATO_GROUP의
+// 본체 stroke-width(2.8 SVG unit)가 50px 사이즈에서 1px 미만으로 줄어 사라지던
+// 문제를, raster 단계에서 4× 더 큰 픽셀 그리드로 그린 뒤 svgToBmp가 150×57로
+// 다운샘플하여 stroke이 매끄러우면서도 명확하게 보존되도록 한다.
+const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="228" viewBox="0 0 150 57">
   <rect width="150" height="57" fill="${BG}"/>
   <g transform="translate(2, 1) scale(0.275)">
     ${POTATO_GROUP}
@@ -100,9 +102,9 @@ const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="
 </svg>`;
 
 // Sidebar — 164x314. 모하 캐릭터만 크게 가운데 노출 (텍스트 무).
-// POTATO_GROUP은 200x200 viewBox 기준 — scale 0.7로 140x140 정사각 노출.
-// 위/아래 87px 여백, 좌/우 12px 여백으로 시각 중앙 정렬.
-const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="314" viewBox="0 0 164 314">
+// 화질 향상: 헤더와 동일하게 4× supersample(656x1256) — 헤더보다 모하가 크게
+// 노출되지만 같은 supersampling을 적용하면 라인이 더 매끄러움.
+const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="656" height="1256" viewBox="0 0 164 314">
   <rect width="164" height="314" fill="${BG}"/>
   <g transform="translate(12, 87) scale(0.7)">
     ${POTATO_GROUP}

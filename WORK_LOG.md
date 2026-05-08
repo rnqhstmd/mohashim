@@ -20,6 +20,65 @@
 
 ---
 
+## 2026-05-08 23:55 KST — 메인 화면 인사 변경 + 직전 점수 제거 + 실시간 점수 강조 + 헤더 BMP 화질
+
+### 요약
+사용자 피드백 3건 일괄 반영:
+1. 메인 화면 인사 텍스트 `"안녕 모하야 🥔"` → `"안녕 난 모하야!"` (모하 자기소개 톤).
+2. 메인(idle) 화면의 직전 세션 점수(`100 / 100`) 표시 제거 — 잔디 탭 상세 조회로 일원화.
+3. 세션 진행 중(`PomodoroCard`)에 실시간 점수를 큰 폰트(28px)로 노출.
+4. NSIS 인스톨러 헤더 BMP 화질 개선 — SVG 4× supersample.
+
+### 배경 / 원인
+- 사용자: "직전 세션 점수를 메인에 보여주는 게 이상하다 — 차라리 세션 중 실시간 점수를 크게 보여주는 게 가독성·타당성 모두 더 낫다."
+- 사용자: "헤더 위에 모하 아이콘 깨짐" — POTATO_GROUP의 stroke-width 2.8 SVG unit이 헤더 ~50px 사이즈에서 1px 미만으로 줄어 anti-aliasing으로 사라지던 문제.
+
+### 변경 파일
+
+#### 1. `src/components/popup/FocusStartButton.tsx`
+- 헤더 `"안녕 모하야 🥔"` → `"안녕 난 모하야!"`.
+- 직전 세션 점수 표시 블록 제거.
+- `getSessionLogs`, `formatDate`, `SessionLog`, `todaySession` state 모두 제거 (의존성 정리).
+
+#### 2. `src/components/popup/PomodoroCard.tsx`
+- 헤더 `"안녕 모하야 🥔"` → `"안녕 난 모하야!"`.
+- 새 prop `total: number` 추가 — 세션 진행 중 실시간 점수 (0~100).
+- 헤더 아래에 28px extrabold 큰 점수 표시 (clamp 0~100).
+
+#### 3. `src/components/popup/TodosTab.tsx`
+- `total: number` prop 추가, 분해 + PomodoroCard에 그대로 전달.
+
+#### 4. `src/components/popup/MainScreen.tsx`
+- TodosTab 호출에 `total={total}` 전달 (이미 useScoreTick에서 추출하던 값).
+
+#### 5. `src/components/popup/__tests__/TodosTab.test.tsx`
+- renderTab 헬퍼 + 4개 inline rerender 호출에 `total={75}` 추가 (TS 타입 에러 차단).
+
+#### 6. `scripts/installer-art-gen.mjs`
+- HEADER_SVG: `width="600" height="228"` 4× supersample 명시 (viewBox 그대로 150×57 유지).
+  → sharp가 4배 큰 raster grid로 그린 뒤 svgToBmp의 resize(150, 57)이 lanczos3로 다운샘플
+  → stroke이 픽셀 단위로 명확하게 보존되어 헤더의 모하가 깨지지 않음.
+- SIDEBAR_SVG도 동일 패턴(`656×1256`) 적용해 일관 화질 향상.
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 files / **357 tests passed**.
+2. **TypeScript 컴파일**: 깨끗 (TodosTab.test.tsx의 4개 추가 호출에 total 전달 후).
+3. **NSIS 빌드**: 27초 만에 인스톨러 정상 생성.
+4. **사용자 직접 검증**:
+   - idle 화면: 우상단 회전 멘트 + "안녕 난 모하야!" + 환경 라벨 dB만 표시 (직전 세션 점수 ✗).
+   - 세션 진행: 큰 점수 / 100 표시.
+   - 인스톨러 진행 페이지 우상단 헤더의 모하가 매끄럽게 노출.
+
+### 영향 범위
+- 점수 정보 흐름이 단일화: 진행 중 = PomodoroCard 실시간 / 완료 후 = 잔디 탭 상세.
+- macOS 영향 없음 (텍스트/UI 변경은 OS 무관, 헤더 BMP는 Windows 전용).
+
+### 후속 과제 (선택)
+- complete phase에서 `total`이 세션 평균 점수로 갱신되는지 score-tick 측 별도 검증 (현재 동작 가정).
+- 사용자가 idle 화면에서 "오늘 누적 점수" 같은 다른 통계를 원할 수도 — 잔디 탭 강화 검토.
+
+---
+
 ## 2026-05-08 23:35 KST — NSIS 헤더 텍스트 제거 + 트레이 아이콘 모하 캐릭터화
 
 ### 요약

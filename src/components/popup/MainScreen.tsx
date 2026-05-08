@@ -107,6 +107,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
             potatoState={potatoState}
             phrase={phrase}
             db={db}
+            total={total}
             onFocusStart={handleFocusStart}
           />
         )}
