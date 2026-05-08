@@ -20,6 +20,7 @@ vi.mock("../../../lib/storage", () => ({
   getWorkTags: vi.fn().mockResolvedValue([]),
   getLocations: vi.fn().mockResolvedValue([]),
   flush: vi.fn().mockResolvedValue(undefined),
+  recordTodoAdded: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -42,6 +43,9 @@ import { TodosTab } from "../TodosTab";
 import type { Phase } from "../../../lib/score";
 import type { PotatoState } from "../../../lib/phrases";
 
+// Phase 25 FR-1: 캐릭터 레이어 prop 회귀 — 모든 슬롯 미장착 기본값.
+const EMPTY_EQUIPPED = { face: null, head: null, back: null };
+
 type RenderProps = {
   phase: Phase;
 };
@@ -55,6 +59,7 @@ function renderTab({ phase }: RenderProps) {
       phrase="집중 중"
       db={50}
       total={75}
+      equipped={EMPTY_EQUIPPED}
       onFocusStart={() => Promise.resolve()}
     />
   );
@@ -87,6 +92,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         phrase="시작해볼까"
         db={50}
         total={75}
+        equipped={EMPTY_EQUIPPED}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -117,6 +123,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         phrase="완료"
         db={50}
         total={75}
+        equipped={EMPTY_EQUIPPED}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -149,6 +156,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         phrase="집중 중"
         db={50}
         total={75}
+        equipped={EMPTY_EQUIPPED}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -176,6 +184,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         phrase="휴식 중"
         db={50}
         total={75}
+        equipped={EMPTY_EQUIPPED}
         onFocusStart={() => Promise.resolve()}
       />
     );

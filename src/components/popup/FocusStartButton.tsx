@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Potato } from "../Potato";
+import { ItemOverlay } from "./ItemOverlay";
 import type { PotatoState } from "../../lib/phrases";
-import { getFocusMinutes } from "../../lib/storage";
+import { getFocusMinutes, type Inventory } from "../../lib/storage";
 import { useIdleChipLabel } from "../../lib/idleChip";
 
 type FocusStartButtonProps = {
@@ -9,6 +9,8 @@ type FocusStartButtonProps = {
   phrase: string;
   /** Phase 21: 데시벨 인라인 노출 — 캐릭터 헤더 내부에서 dB 라벨/숫자 표기. */
   db: number;
+  /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. */
+  equipped: Inventory["equipped"];
   onStart: () => Promise<void>;
 };
 
@@ -34,6 +36,7 @@ export function FocusStartButton({
   potatoState,
   phrase,
   db,
+  equipped,
   onStart,
 }: FocusStartButtonProps) {
   const [focusMins, setFocusMins] = useState<number>(25);
@@ -75,7 +78,12 @@ export function FocusStartButton({
       {/* 1행: 큰 Potato + 우측 헤더 영역 */}
       <div className="flex items-start gap-3">
         <div className="shrink-0">
-          <Potato state={potatoState} size={88} animated={true} />
+          <ItemOverlay
+            equipped={equipped}
+            state={potatoState}
+            size={88}
+            animated={true}
+          />
         </div>
         <div className="min-w-0 flex-1 pt-1">
           <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">

@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { getMailbox } from "../../lib/storage";
+import { getInventory, getMailbox, type Inventory } from "../../lib/storage";
 import { onMailboxDeeplink, onMailboxUpdated } from "../../lib/mailbox";
+import { onInventoryUpdated } from "../../lib/shop";
 import { useScoreTick } from "../../lib/score";
 import { focusStart } from "../../lib/timer";
 import { useToastQueue } from "../../lib/toast";
@@ -53,6 +54,12 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   const snap = useScoreTick();
   const [tab, setTab] = useState<Tab>("todos");
   const [unreadCount, setUnreadCount] = useState(0);
+  // Phase 25 FR-1: 캐릭터 레이어 장착 상태. Rust inventory-updated 이벤트로 갱신.
+  const [equipped, setEquipped] = useState<Inventory["equipped"]>({
+    face: null,
+    head: null,
+    back: null,
+  });
 
   // Phase 23 FR-14: mailbox 뱃지 초기화 + mailbox-updated 이벤트로 갱신.
   useEffect(() => {
@@ -65,17 +72,53 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
     let unlistenUpdated: (() => void) | undefined;
     let unlistenDeeplink: (() => void) | undefined;
     void onMailboxUpdated(() => { void refreshUnread(); }).then((ul) => {
+      if (cancelled) {
+        ul();
+        return;
+      }
       unlistenUpdated = ul;
     });
     void onMailboxDeeplink(() => {
       setTab("mailbox");
     }).then((ul) => {
+      if (cancelled) {
+        ul();
+        return;
+      }
       unlistenDeeplink = ul;
     });
     return () => {
       cancelled = true;
       unlistenUpdated?.();
       unlistenDeeplink?.();
+    };
+  }, []);
+
+  // Phase 25 FR-1, BR-4: 마운트 + inventory-updated 이벤트 수신 시 equipped 재조회.
+  // mailbox 패턴과 동일 — cancelled flag + then-callback에서 cancelled 체크 후 unlisten 즉시 호출.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const inv = await getInventory().catch((err) => {
+        console.error("[mohashim] inventory load failed", err);
+        return null;
+      });
+      if (!cancelled && inv) setEquipped(inv.equipped);
+    };
+    void refresh();
+    let unlisten: (() => void) | undefined;
+    void onInventoryUpdated(() => {
+      void refresh();
+    }).then((ul) => {
+      if (cancelled) {
+        ul();
+        return;
+      }
+      unlisten = ul;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
   const phase = snap?.phase ?? "idle";
@@ -142,6 +185,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
             phrase={phrase}
             db={db}
             total={total}
+            equipped={equipped}
             onFocusStart={handleFocusStart}
           />
         )}
