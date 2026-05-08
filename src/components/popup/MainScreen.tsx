@@ -1,9 +1,12 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { getMailbox } from "../../lib/storage";
+import { onMailboxDeeplink, onMailboxUpdated } from "../../lib/mailbox";
 import { useScoreTick } from "../../lib/score";
 import { focusStart } from "../../lib/timer";
 import { useToastQueue } from "../../lib/toast";
 import { usePhrase } from "../../lib/usePhrase";
 import { BottomTabBar, type Tab } from "./BottomTabBar";
+import { MailboxScreen } from "./MailboxScreen";
 import { ModeChip } from "./ModeChip";
 import { SettingsScreen } from "./SettingsScreen";
 import { ToastContainer } from "./Toast";
@@ -48,6 +51,32 @@ const NOTE_PAPER_BG: CSSProperties = {
 export function MainScreen({ onResetDone }: MainScreenProps) {
   const snap = useScoreTick();
   const [tab, setTab] = useState<Tab>("todos");
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Phase 23 FR-14: mailbox 뱃지 초기화 + mailbox-updated 이벤트로 갱신.
+  useEffect(() => {
+    let cancelled = false;
+    const refreshUnread = async () => {
+      const letters = await getMailbox().catch(() => []);
+      if (!cancelled) setUnreadCount(letters.filter((l) => !l.read).length);
+    };
+    void refreshUnread();
+    let unlistenUpdated: (() => void) | undefined;
+    let unlistenDeeplink: (() => void) | undefined;
+    void onMailboxUpdated(() => { void refreshUnread(); }).then((ul) => {
+      unlistenUpdated = ul;
+    });
+    void onMailboxDeeplink(() => {
+      setTab("mailbox");
+    }).then((ul) => {
+      unlistenDeeplink = ul;
+    });
+    return () => {
+      cancelled = true;
+      unlistenUpdated?.();
+      unlistenDeeplink?.();
+    };
+  }, []);
   const phase = snap?.phase ?? "idle";
   const timeLeft = snap?.timeLeft ?? 0;
   const total = snap?.total ?? 0;
@@ -99,6 +128,8 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           <SettingsScreen onResetDone={onResetDone} />
         ) : tab === "grass" ? (
           <GrassTab key={tab} />
+        ) : tab === "mailbox" ? (
+          <MailboxScreen key={tab} />
         ) : (
           <TodosTab
             key={tab}
@@ -112,7 +143,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           />
         )}
       </main>
-      <BottomTabBar tab={tab} onChange={setTab} />
+      <BottomTabBar tab={tab} onChange={setTab} unreadCount={unreadCount} />
       <ToastContainer toasts={toastQueue.toasts} />
     </div>
   );

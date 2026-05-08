@@ -183,13 +183,12 @@ describe("storage", () => {
     ]);
   });
 
-  it("set은 active_phase 키를 컴파일 타임에 차단 (런타임 회피 시나리오 검증)", async () => {
+  it("set은 active_phase 키를 컴파일 타임에 차단 (Phase 22 P-D4: 런타임 이중 방어)", async () => {
     const mod = await import("../storage");
     // @ts-expect-error active_phase는 set 시그니처에서 Exclude로 제거됨 (BR-active-phase)
-    await mod.set("active_phase", "focus");
-    // 런타임 회피로 호출했을 때도 store가 받기는 하지만, 정상 경로에서는 컴파일 에러로 차단됨.
-    // 본 테스트는 타입 가드의 존재만 확인 (@ts-expect-error 미발생 시 테스트 실패).
-    expect(true).toBe(true);
+    await expect(mod.set("active_phase", "focus")).rejects.toThrow(
+      /single-writer/
+    );
   });
 
   // ---------- Phase 10 데이터 모델 확장 ----------
@@ -241,7 +240,8 @@ describe("storage", () => {
     await expect(mod.getSessionLogs()).resolves.toEqual([]);
   });
 
-  it("AC-7: getSessionLogs — 정상 배열은 그대로 반환", async () => {
+  it("AC-7: getSessionLogs — 정상 배열은 Phase 22 폴백 필드 포함하여 반환", async () => {
+    // Phase 22 (DEC-22-4): 기존 로그(avg_db / earned_sprouts 부재) 시 0 폴백.
     const log = {
       id: "sl-123-80",
       date: "2026-05-06",
@@ -253,7 +253,9 @@ describe("storage", () => {
     };
     inMemory.set("session_logs", [log]);
     const mod = await import("../storage");
-    await expect(mod.getSessionLogs()).resolves.toEqual([log]);
+    await expect(mod.getSessionLogs()).resolves.toEqual([
+      { ...log, avg_db: 0, earned_sprouts: 0 },
+    ]);
   });
 
   it("AC-10: getLastCleanupYear — 부재/비숫자는 0 폴백", async () => {
@@ -271,17 +273,110 @@ describe("storage", () => {
     await expect(mod.getLastCleanupYear()).resolves.toBe(2026);
   });
 
-  it("BR-1: set은 session_logs 키를 컴파일 타임에 차단", async () => {
+  it("BR-1: set은 session_logs 키를 컴파일 타임에 차단 (Phase 22 P-D4: 런타임 이중 방어)", async () => {
     const mod = await import("../storage");
     // @ts-expect-error session_logs는 Rust 단일 writer (BR-1) — set 시그니처에서 Exclude됨
-    await mod.set("session_logs", []);
-    expect(true).toBe(true);
+    await expect(mod.set("session_logs", [])).rejects.toThrow(/single-writer/);
   });
 
-  it("FR-7: set은 last_cleanup_year 키를 컴파일 타임에 차단", async () => {
+  it("FR-7: set은 last_cleanup_year 키를 컴파일 타임에 차단 (Phase 22 P-D4: 런타임 이중 방어)", async () => {
     const mod = await import("../storage");
     // @ts-expect-error last_cleanup_year는 Rust 단일 writer — set 시그니처에서 Exclude됨
-    await mod.set("last_cleanup_year", 2026);
-    expect(true).toBe(true);
+    await expect(mod.set("last_cleanup_year", 2026)).rejects.toThrow(
+      /single-writer/
+    );
+  });
+
+  // ---------- Phase 23 Mailbox 폴백 정규화 ----------
+
+  describe("getMailbox (Phase 23)", () => {
+    it("AC-26: get_mailbox IPC 성공 시 결과 그대로 반환", async () => {
+      const letters = [
+        {
+          id: "ml-1",
+          kind: "SESSION" as const,
+          title: "10:00~10:25 집중 완료",
+          body: "총 25분",
+          createdAt: "2026-05-08T10:25:00+09:00",
+          read: false,
+          sessionTag: null,
+        },
+      ];
+      invokeMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_mailbox") return letters;
+        return undefined;
+      });
+      const mod = await import("../storage");
+      await expect(mod.getMailbox()).resolves.toEqual(letters);
+    });
+
+    it("AC-26: IPC 실패 + store 비배열 → [] 폴백", async () => {
+      invokeMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_mailbox") throw new Error("ipc fail");
+        return undefined;
+      });
+      inMemory.set("mailbox", { not: "array" });
+      const mod = await import("../storage");
+      await expect(mod.getMailbox()).resolves.toEqual([]);
+    });
+
+    it("AC-26: IPC 실패 + 항목 부적합(id 빈/kind 무효/createdAt 부재) skip", async () => {
+      invokeMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_mailbox") throw new Error("ipc fail");
+        return undefined;
+      });
+      inMemory.set("mailbox", [
+        // id 빈 문자열 → skip
+        {
+          id: "",
+          kind: "SESSION",
+          title: "t",
+          body: "b",
+          createdAt: "2026-05-08T00:00:00+09:00",
+        },
+        // kind 무효 → skip
+        {
+          id: "ml-1",
+          kind: "INVALID",
+          title: "t",
+          body: "b",
+          createdAt: "2026-05-08T00:00:00+09:00",
+        },
+        // createdAt 부재 → skip
+        { id: "ml-2", kind: "SESSION", title: "t", body: "b" },
+      ]);
+      const mod = await import("../storage");
+      await expect(mod.getMailbox()).resolves.toEqual([]);
+    });
+
+    it("AC-26: IPC 실패 + 정상 항목은 보존, read 비bool은 false 폴백", async () => {
+      invokeMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_mailbox") throw new Error("ipc fail");
+        return undefined;
+      });
+      inMemory.set("mailbox", [
+        {
+          id: "ml-1",
+          kind: "SESSION",
+          title: "t1",
+          body: "b1",
+          createdAt: "2026-05-08T00:00:00+09:00",
+          read: "not-bool", // 비bool → false 폴백
+          sessionTag: 123, // 비문자열 → null 폴백
+        },
+      ]);
+      const mod = await import("../storage");
+      await expect(mod.getMailbox()).resolves.toEqual([
+        {
+          id: "ml-1",
+          kind: "SESSION",
+          title: "t1",
+          body: "b1",
+          createdAt: "2026-05-08T00:00:00+09:00",
+          read: false,
+          sessionTag: null,
+        },
+      ]);
+    });
   });
 });

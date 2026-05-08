@@ -5,6 +5,7 @@
 //! Rust 단일 writer 정책으로 race 차단 (MUST-1).
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -38,6 +39,17 @@ pub static FOCUS_START_AT_MS: AtomicU64 = AtomicU64::new(0);
 /// 사용해야 sessions 적재 회귀 없음. AtomicU32(0..=100 범위)로 인계 후 on_complete_consumed가
 /// load + 0 리셋한다. 정상 흐름은 Break→Complete 전이가 on_complete_consumed 호출보다 항상 선행.
 pub static SESSION_FINAL_SCORE: AtomicU32 = AtomicU32::new(0);
+
+/// Phase 23 (FR-3, AC-2): Break→Complete에서 산출한 session_tag를
+/// on_complete_consumed에 인계하기 위한 holder.
+///
+/// compute_session_tag는 Break→Complete에서 비파괴 buffer read로 산출하며,
+/// on_complete_consumed의 drain_todos가 buffer를 회수하므로 동일 함수를 재호출하면
+/// None이 반환된다. Break→Complete에서 holder에 저장 → on_complete_consumed에서
+/// take() 회수하여 record_session_letter에 전달한다.
+///
+/// **stale 차단**: 조기 return + Discarded/reset 경로에서 take()로 명시 비움.
+pub(crate) static SESSION_TAG_HOLDER: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 /// 슬립 grace 기준 (BR-sleep-1, DEC-10a/b). wall-clock 경과 ≤ 180s: 세션 유지.
 pub const SLEEP_GRACE_SECS: u64 = 180;
@@ -107,6 +119,14 @@ pub async fn discard_session<R: Runtime>(app: AppHandle<R>) -> Result<(), String
             store_phase(Phase::Idle);
             store_time_left(0);
             write_active_phase(&app, "idle");
+            // Phase 23 FR-6: Discarded 경로 보류 큐 drain.
+            crate::mailbox::notifier::drain_pending_notifs(&app);
+            // Phase 23 stale 차단: Discarded 경로에서 SESSION_TAG_HOLDER take() (Break→Complete race 보호).
+            let _ = SESSION_TAG_HOLDER
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take();
             // Phase 10 DEC-10-7: Discarded 경로 cleanup. SessionLog 미적재.
             FOCUS_START_AT_MS.store(0, Ordering::Release);
             // Phase 18 FR-B5 (D): manual discard 기록.
@@ -174,6 +194,11 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
             // Phase 19 FR-B1/B2: 세션 중 완료된 todo의 tag 다수결 (비파괴 buffer read).
             // drain은 후속 on_complete_consumed에서 발생하므로 이 시점에 buffer 조회 가능.
             let session_tag = compute_session_tag(app);
+            // Phase 23: session_tag를 SESSION_TAG_HOLDER에 적재 → on_complete_consumed에서 take() 회수.
+            *SESSION_TAG_HOLDER
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = session_tag.clone();
             logger::write(LogEvent::SessionComplete {
                 focus_mins: focus_minutes as u32,
                 break_mins: break_minutes as u32,
@@ -210,6 +235,10 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     // 호출하여 SESSION_FINAL_SCORE atomic에 적재했다. 여기서 동일 함수를 재호출하면 0을 반환하므로
     // 인계 atomic을 load + 0 리셋하여 같은 평균을 사용한다.
     let avg = SESSION_FINAL_SCORE.swap(0, Ordering::AcqRel);
+    // Phase 23 (BR-3, FR-5): (focus_mins, todos_count, end_ms, start_ms) — record_session_letter 인자 인계 (log 성공 경로만).
+    // - end_ms: session_log id와 mailbox letter id의 시각 기준 공유 (BR-3).
+    // - start_ms: 편지 제목 "{HH:MM}~{HH:MM}"의 정확한 focus 시작 시각 (FR-5). 0이면 fallback 사용.
+    let mut letter_args: Option<(u32, usize, u64, u64)> = None;
     // 1. sessions 적재 (in-memory only, DEC-10-8).
     if let Err(e) = append_session_record(app, avg) {
         eprintln!("[mohashim] append_session_record failed: {e}");
@@ -239,6 +268,12 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
                 // 부분 일관성 회피: session_logs/save/drain_todos 모두 skip.
                 // sessions in-memory 변경은 다음 store load 시 폐기되어 자연 회복.
                 // phase 정상 복귀는 아래 store_phase(Idle)에서 수행 (DEC-22-2).
+                // Phase 23: 조기 return 시 SESSION_TAG_HOLDER stale 차단.
+                let _ = SESSION_TAG_HOLDER
+                    .get_or_init(|| Mutex::new(None))
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .take();
                 store_phase(Phase::Idle);
                 store_time_left(0);
                 write_active_phase(app, "idle");
@@ -272,6 +307,7 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         // Phase 13 FR-16: success path에서만 buffer drain → session_logs 적재.
         // 실패 path는 위 분기에서 silent drop (MA-3).
         let todos_done = crate::score::shared::drain_todos();
+        let todos_count = todos_done.len(); // Phase 23: move 전 count 확보.
         // Phase 22 FR-9~11: avg_db는 본 Phase 항상 0 (BR-5), earned_sprouts는 economy 결과.
         let log_ok = match crate::storage::append_session_log(
             app,
@@ -301,12 +337,32 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
                     eprintln!("[mohashim] on_complete_consumed save failed: {e}");
                 }
             }
+            // Phase 23: log 성공 시에만 편지 생성 인자 인계 (BR-3 end_ms + FR-5 start_ms).
+            letter_args = Some((duration_mins, todos_count, end_ms, start_ms));
         }
     }
     // record 실패 여부와 무관하게 phase 정상 복귀 보장 (Q1).
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
+    // Phase 23: record_session_letter — 반드시 store_phase(Idle) + write_active_phase("idle") 이후.
+    // SESSION_TAG_HOLDER는 항상 take()하여 stale 차단 (log 실패 시에도 비움).
+    let tag = SESSION_TAG_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    if let Some((rec_focus_mins, rec_todos, rec_end_ms, rec_start_ms)) = letter_args {
+        crate::mailbox::record_session_letter(
+            app,
+            rec_end_ms,
+            rec_start_ms,
+            avg,
+            rec_focus_mins,
+            rec_todos,
+            tag.as_deref(),
+        );
+    }
 }
 
 /// sessions 키 적재 (R-G1, FR-16, BR-G4).
@@ -437,6 +493,14 @@ pub fn on_sleep_overflow_discard<R: Runtime>(app: &AppHandle<R>) {
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
+    // Phase 23 FR-6: sleep discard 보류 큐 drain.
+    crate::mailbox::notifier::drain_pending_notifs(app);
+    // Phase 23 stale 차단: sleep_overflow 경로에서 SESSION_TAG_HOLDER take() (Break→Complete race 보호).
+    let _ = SESSION_TAG_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
     // Phase 10 DEC-10-7: Discarded 경로 cleanup. SessionLog 미적재.
     FOCUS_START_AT_MS.store(0, Ordering::Release);
     emit_toast(
@@ -463,6 +527,8 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
     let active = value.as_str().unwrap_or("idle");
     if active == "focus" || active == "break" {
         write_active_phase(app, "idle");
+        // Phase 23 FR-6: boot discard 보류 큐 drain (boot 시 buffer 항상 비어 있음 → no-op).
+        crate::mailbox::notifier::drain_pending_notifs(app);
         // Phase 10 DEC-10-7: 부트 시점 자동 Discarded cleanup. in-memory atomic은 default 0이지만,
         // 미래에 부트 시 atomic을 미리 로드하더라도 안전하도록 명시 리셋.
         FOCUS_START_AT_MS.store(0, Ordering::Release);
@@ -481,7 +547,7 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
 /// atomic 강제 리셋 (storage::reset_all에서 호출).
 ///
 /// store는 reset_all 내에서 clear→seed로 처리되므로 본 함수는 atomic만 담당한다.
-pub fn reset_runtime_state() {
+pub fn reset_runtime_state<R: Runtime>(app: &AppHandle<R>) {
     store_phase(Phase::Idle);
     store_time_left(0);
     // Phase 10 DEC-10-7: reset_all 후 stale FOCUS_START_AT_MS 차단.
@@ -490,6 +556,13 @@ pub fn reset_runtime_state() {
     // 인계값 stale 오염 차단. on_phase_transition Break→Complete가 set한 값이
     // on_complete_consumed 호출 없이 reset되는 케이스 보호.
     SESSION_FINAL_SCORE.store(0, Ordering::Release);
+    // Phase 23: SESSION_TAG_HOLDER stale 차단 + 보류 큐 drain.
+    let _ = SESSION_TAG_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    crate::mailbox::notifier::drain_pending_notifs(app);
 }
 
 // =====================================================================

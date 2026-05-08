@@ -1,6 +1,7 @@
 mod audio;
 mod economy;
 mod input;
+mod mailbox;
 mod logger;
 mod permissions;
 mod power;
@@ -42,6 +43,10 @@ pub fn run() {
             // Phase 22 FR-17 / BR-6: 출석 보상 IPC 단일 진입점.
             economy::record_todo_added,
             logger::open_log_dir,
+            // Phase 23 FR-10~13: 편지함 IPC.
+            mailbox::get_mailbox,
+            mailbox::mark_all_mailbox_read,
+            mailbox::mark_mailbox_letter_read,
         ])
         .setup(|app| {
             // setup 순서: storage 시드 → boot discard → power observer → tray → score.
@@ -91,6 +96,11 @@ pub fn run() {
                 // 카운트다운 부재. 후속 Phase에서 시각적 fallback 검토 필요.
                 eprintln!("[mohashim] score start failed: {err}");
             }
+            // Phase 23 FR-8: 알림 액션 타입 등록 + 딥링크 핸들러 설치.
+            if let Err(err) = mailbox::register_notification_actions(app.handle()) {
+                eprintln!("[mohashim] mailbox register_notification_actions failed: {err}");
+            }
+            mailbox::install_notification_action_handler(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
