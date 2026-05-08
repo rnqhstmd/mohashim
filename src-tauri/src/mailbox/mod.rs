@@ -125,7 +125,7 @@ pub async fn get_mailbox<R: Runtime>(app: AppHandle<R>) -> Result<Vec<Letter>, S
 /// 편지함 전체 읽음 처리 IPC (FR-9, AC-7 멱등, AC-20 즉시 뱃지 해제).
 #[tauri::command]
 pub async fn mark_all_mailbox_read<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    let changed = {
+    {
         let _guard = lock_mailbox();
         let store = app
             .store(STORE_FILE)
@@ -136,17 +136,13 @@ pub async fn mark_all_mailbox_read<R: Runtime>(app: AppHandle<R>) -> Result<(), 
             store
                 .save()
                 .map_err(|e| format!("store save failed: {e}"))?;
-            true
-        } else {
-            false
         }
-    };
+    }
     // AC-20: MailboxScreen 진입 후 mark_all_read 완료 시 MainScreen 뱃지 즉시 해제.
-    // 멱등 no-op(이미 모두 read)인 경우에도 emit하여 일관성 유지 (수신측은 read 카운트 재계산).
-    if changed {
-        if let Err(e) = app.emit("mailbox-updated", ()) {
-            eprintln!("[mohashim] mark_all_mailbox_read emit failed: {e}");
-        }
+    // 멱등 no-op(이미 모두 read)인 경우에도 emit하여 일관성 유지 — 수신측이 read 카운트
+    // 재계산을 통해 stale 뱃지를 항상 해제하도록 보장한다.
+    if let Err(e) = app.emit("mailbox-updated", ()) {
+        eprintln!("[mohashim] mark_all_mailbox_read emit failed: {e}");
     }
     Ok(())
 }
@@ -194,12 +190,19 @@ pub fn register_notification_actions<R: Runtime>(_app: &AppHandle<R>) -> Result<
 /// - 메인 윈도우 focus 이벤트 수신 시 LAST_NOTIF_AT_MS와 비교하여 NOTIF_DEEPLINK_WINDOW_MS
 ///   (10초) 이내이면 알림 클릭으로 추정 → mailbox-deeplink emit + LAST_NOTIF_AT_MS swap(0).
 ///
+/// **재시도**: setup 시점에 main window가 아직 생성되지 않을 수 있으므로
+/// `lib.rs::install_main_window_close_guard` 패턴(100ms 후 1회 재시도)을 따른다.
+///
 /// **제약**: 사용자가 알림 발화 직후 트레이/dock 등으로 수동 focus 시에도 trigger 가능 (false positive).
 /// **제약**: letter_id 전달 미지원 (현재 가장 최신 편지로 라우팅하는 단순화).
 /// Phase 24에서 tauri-plugin-notification action API 또는 별도 채널로 정확한 trigger 구현 예정.
 pub fn install_notification_action_handler<R: Runtime>(app: &AppHandle<R>) {
-    let app_clone = app.clone();
+    attempt_install_notification_handler(app.clone(), 1);
+}
+
+fn attempt_install_notification_handler<R: Runtime>(app: AppHandle<R>, retries_left: u32) {
     if let Some(window) = app.get_webview_window("main") {
+        let app_clone = app.clone();
         window.on_window_event(move |event| {
             if let tauri::WindowEvent::Focused(true) = event {
                 let now_ms = SystemTime::now()
@@ -215,9 +218,16 @@ pub fn install_notification_action_handler<R: Runtime>(app: &AppHandle<R>) {
                 }
             }
         });
-    } else {
-        eprintln!(
-            "[mohashim] mailbox: main window unavailable for notification action handler"
-        );
+        return;
     }
+    if retries_left == 0 {
+        eprintln!(
+            "[mohashim] install_notification_action_handler: main window unavailable after retry"
+        );
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        attempt_install_notification_handler(app, retries_left - 1);
+    });
 }

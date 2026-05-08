@@ -124,14 +124,16 @@ pub fn drain_pending_notifs<R: Runtime>(app: &AppHandle<R>) {
 
 /// OS 알림 즉시 발송. 실패 시 stderr 로그만 남기고 무시 (UX 비차단).
 ///
-/// 성공 시 `LAST_NOTIF_AT_MS`에 현재 시각을 기록 — FR-8 minimal 딥링크 휴리스틱용
-/// (알림 발화 직후 윈도우 focus 시 알림 클릭으로 추정).
+/// FR-7 / BR-10: OS 알림 본문은 편지 content의 첫 60자(UTF-8 char)로 절단한다.
+/// mailbox 저장 본문은 별도 경로로 풀 보존 (write_mailbox에서 무손실 저장).
+/// 성공 시 `LAST_NOTIF_AT_MS`에 현재 시각을 기록 — FR-8 minimal 딥링크 휴리스틱용.
 fn send_now<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
+    let body_truncated = truncate60(body);
     if let Err(e) = app
         .notification()
         .builder()
         .title(title)
-        .body(body)
+        .body(&body_truncated)
         .show()
     {
         eprintln!("[mohashim] mailbox notification failed: {e}");

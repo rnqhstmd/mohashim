@@ -6,6 +6,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+// 설계서 정합 (FR-15): 편지함 read API + 도메인 타입을 본 모듈에서 일괄 노출.
+// 실제 IPC 호출 + 폴백 정규화는 storage.getMailbox에 위치하며, 본 모듈은 도메인 도구를 한곳에 모은다.
+export { getMailbox } from "./storage";
+export type { Letter, Mailbox, MailboxKind } from "./storage";
+
 /** 편지함 전체 읽음 처리 (FR-9, AC-7 멱등). */
 export async function markAllRead(): Promise<void> {
   await invoke("mark_all_mailbox_read");

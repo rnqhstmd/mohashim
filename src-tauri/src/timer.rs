@@ -345,6 +345,10 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     store_phase(Phase::Idle);
     store_time_left(0);
     write_active_phase(app, "idle");
+    // Phase 23 FR-6 / AC-8/9: Complete 경로 보류 큐 drain (record_session_letter 전 선행).
+    // record_session_letter 내 push_message는 Idle phase에서 즉시 발화 분기로 진입하므로
+    // 큐에 적재되지 않고, drain은 Focus/Break 중 적재된 외부 알림만 처리한다.
+    crate::mailbox::notifier::drain_pending_notifs(app);
     // Phase 23: record_session_letter — 반드시 store_phase(Idle) + write_active_phase("idle") 이후.
     // SESSION_TAG_HOLDER는 항상 take()하여 stale 차단 (log 실패 시에도 비움).
     let tag = SESSION_TAG_HOLDER
