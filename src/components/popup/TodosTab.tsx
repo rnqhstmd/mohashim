@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Phase } from "../../lib/score";
 import type { PotatoState } from "../../lib/phrases";
-import type { Todo, WorkTag, Location } from "../../lib/storage";
+import type { Todo, WorkTag, Location, Inventory } from "../../lib/storage";
 import {
   getTodos as storeGetTodos,
   setTodos as storeSetTodos,
@@ -34,6 +34,8 @@ type TodosTabProps = {
   db: number;
   /** 사용자 피드백: 세션 진행 중 PomodoroCard에 실시간 점수 큰 폰트 노출용 (0~100). */
   total: number;
+  /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. PomodoroCard/FocusStartButton에 전달. */
+  equipped: Inventory["equipped"];
   onFocusStart: () => Promise<void>;
 };
 
@@ -57,6 +59,7 @@ export function TodosTab({
   phrase,
   db,
   total,
+  equipped,
   onFocusStart,
 }: TodosTabProps) {
   const [todos, setTodosState] = useState<Todo[]>([]);
@@ -218,6 +221,7 @@ export function TodosTab({
           phrase={phrase}
           db={db}
           total={total}
+          equipped={equipped}
           onTimerClick={() => setView("timer-detail")}
         />
       ) : (
@@ -225,6 +229,7 @@ export function TodosTab({
           potatoState={potatoState}
           phrase={phrase}
           db={db}
+          equipped={equipped}
           onStart={onFocusStart}
         />
       )}

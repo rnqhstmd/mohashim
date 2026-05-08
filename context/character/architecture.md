@@ -121,6 +121,79 @@ function mapPhaseToPotatoState(ctx: PhraseCtx, engineState: PotatoState): Potato
 }
 ```
 
+## ItemOverlay 레이어 시스템 (Phase 25)
+
+상점에서 구매·장착한 아이템을 모하 캐릭터에 합성하여 표시하는 재사용 컴포넌트. `popup/ItemOverlay.tsx`에 위치한다.
+
+```ts
+type ItemOverlayProps = {
+  equipped: Inventory["equipped"];   // { face, head, back } 각 string|null
+  previewItem?: ShopItem | null;      // 상점 미리보기 한정. 동일 슬롯 equipped 대체
+  state?: PotatoState;                 // 기본 'calm'
+  size: number;                        // 컨테이너 한 변 px (메인=88, 상점=80)
+  animated?: boolean;                  // Potato에 그대로 전달 (mh-bob)
+};
+```
+
+### Z-index 레이어 순서
+
+| 레이어 | Z-index | 역할 |
+|--------|---------|------|
+| back 아이템 | z-0 | 망토·담요 (Potato 뒤) |
+| Potato 몸통 | z-10 | 캐릭터 본체 (`<Potato state size animated />`) |
+| head 아이템 | z-20 | 모자·핀 (Potato 위, 표정 아래) |
+| face 아이템 | z-30 | 안경·선글라스 (최상단) |
+
+컨테이너는 `relative` + inline `style={{ width: size, height: size }}`. 아이템 이미지는 `absolute inset-0 h-full w-full`로 컨테이너를 채워 Potato의 viewBox 200×200과 정렬된다.
+
+### resolveSlot 우선순위
+
+```ts
+function resolveSlot(slot, equippedId, previewItem) {
+  if (previewItem && previewItem.slot === slot) return previewItem.svgPath;  // 미리보기 우선
+  if (equippedId) return CATALOG.find(i => i.id === equippedId)?.svgPath ?? null;  // 장착 폴백
+  return null;  // 미장착 → 미렌더
+}
+```
+
+`null` 반환 시 `<img>` 자체를 렌더하지 않아 빈 DOM 노드가 남지 않는다.
+
+### 사용처
+
+| 컴포넌트 | size | animated | previewItem | 비고 |
+|----------|------|----------|------------|------|
+| `FocusStartButton` | 88 | true | undefined | idle phase |
+| `PomodoroCard` | 88 | true | undefined | focus/break/complete phase |
+| `ShopTab.PreviewArea` | 80 | false | 상점 카드 클릭 시 | 영역 탭 변경 시 null 초기화 |
+
+### 메인 화면 inventory 동기화
+
+`MainScreen`이 마운트 시 `getInventory()`로 초기 equipped를 로드하고, `onInventoryUpdated` 이벤트를 구독하여 상점에서 장착/해제한 결과를 즉시 반영한다. 구독 패턴은 mailbox와 동일하게 `cancelled flag + then-callback unlisten` 정리 방식을 따른다.
+
+```ts
+useEffect(() => {
+  let cancelled = false;
+  const refresh = async () => {
+    const inv = await getInventory().catch(err => { console.error(...); return null; });
+    if (!cancelled && inv) setEquipped(inv.equipped);
+  };
+  void refresh();
+  let unlisten;
+  void onInventoryUpdated(() => void refresh()).then((ul) => {
+    if (cancelled) { ul(); return; }
+    unlisten = ul;
+  });
+  return () => { cancelled = true; unlisten?.(); };
+}, []);
+```
+
+### 비목표
+
+- placeholder SVG → 시안 확정 SVG 교체 (별도 작업, 자산만 교체)
+- 신규 슬롯(예: 손/꼬리) 추가
+- TimerDetailScreen 모하에 ItemOverlay 통합 (후속 Phase로 분리)
+- 아이템 이미지 자체에 mh-bob 적용 (현재는 Potato body만 애니메이션)
+
 ## 트레이 아이콘 (`tray` 도메인 참조)
 
 - 22×22 라인 아트는 `PotatoTrayIcon` 컴포넌트 (이미 시안에 작성됨)

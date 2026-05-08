@@ -1,5 +1,6 @@
-import { Potato } from "../Potato";
+import { ItemOverlay } from "./ItemOverlay";
 import type { PotatoState } from "../../lib/phrases";
+import type { Inventory } from "../../lib/storage";
 
 type PomodoroCardProps = {
   phase: "focus" | "break" | "complete";
@@ -15,6 +16,8 @@ type PomodoroCardProps = {
    * total이 평균으로 갱신됨).
    */
   total: number;
+  /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. */
+  equipped: Inventory["equipped"];
   onTimerClick: () => void;
 };
 
@@ -47,6 +50,7 @@ export function PomodoroCard({
   phrase,
   db,
   total,
+  equipped,
   onTimerClick,
 }: PomodoroCardProps) {
   const isComplete = phase === "complete";
@@ -79,7 +83,12 @@ export function PomodoroCard({
       {/* 1행: 큰 Potato + 우측 헤더 영역 */}
       <div className="flex items-start gap-3">
         <div className="shrink-0">
-          <Potato state={potatoState} size={88} animated={true} />
+          <ItemOverlay
+            equipped={equipped}
+            state={potatoState}
+            size={88}
+            animated={true}
+          />
         </div>
         <div className="min-w-0 flex-1 pt-1">
           <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">

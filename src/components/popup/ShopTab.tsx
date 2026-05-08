@@ -4,12 +4,11 @@
  * 미리보기 + 영역 탭(face/head/back) + 카드 그리드 + 구매 확인 모달의 단일 컴포넌트.
  * 하위 PreviewArea / SlotTabs / ItemCard / ConfirmModal은 인라인 처리 (과잉 분해 회피).
  *
- * Phase 25에서 PreviewArea가 ItemOverlay 컴포넌트로 추출 예정 — 현재는 단순 absolute Z-index.
+ * Phase 25: PreviewArea의 Z-index/슬롯 해석은 ItemOverlay에 위임.
  */
 import { useEffect, useState } from "react";
-import { Potato } from "../Potato";
+import { ItemOverlay } from "./ItemOverlay";
 import {
-  CATALOG,
   computeItemState,
   equipItem,
   itemsBySlot,
@@ -50,51 +49,17 @@ type PreviewProps = {
 
 /**
  * 미리보기: 카드 클릭 시 previewItem이 같은 슬롯 equipped를 visually replace.
- * Phase 25에서 ItemOverlay 컴포넌트로 추출 예정.
+ * Z-index/슬롯 해석은 ItemOverlay에 위임.
  */
 function PreviewArea({ equipped, previewItem, sprouts }: PreviewProps) {
-  const overlay = (slot: Slot, equippedId: string | null): string | null => {
-    if (previewItem && previewItem.slot === slot) return previewItem.svgPath;
-    if (equippedId) {
-      const item = CATALOG.find((i) => i.id === equippedId);
-      return item?.svgPath ?? null;
-    }
-    return null;
-  };
-
-  const backSvg = overlay("back", equipped.back);
-  const headSvg = overlay("head", equipped.head);
-  const faceSvg = overlay("face", equipped.face);
-
   return (
     <div className="flex flex-col items-center gap-1.5 px-3 py-3">
-      <div className="relative h-20 w-20">
-        {/* z-0: back, z-10: potato, z-20: head, z-30: face */}
-        {backSvg && (
-          <img
-            src={backSvg}
-            alt=""
-            className="absolute inset-0 z-0 h-full w-full"
-          />
-        )}
-        <div className="absolute inset-0 z-10 flex items-center justify-center">
-          <Potato state="calm" size={80} animated={false} />
-        </div>
-        {headSvg && (
-          <img
-            src={headSvg}
-            alt=""
-            className="absolute inset-0 z-20 h-full w-full"
-          />
-        )}
-        {faceSvg && (
-          <img
-            src={faceSvg}
-            alt=""
-            className="absolute inset-0 z-30 h-full w-full"
-          />
-        )}
-      </div>
+      <ItemOverlay
+        equipped={equipped}
+        previewItem={previewItem}
+        size={80}
+        animated={false}
+      />
       <p className="text-[11px] font-semibold text-deep">
         잔액: 🌱 {sprouts.toLocaleString()}
       </p>
