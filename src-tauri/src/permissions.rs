@@ -52,13 +52,21 @@ fn mic_grant_file_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle) {
     #[cfg(target_os = "windows")]
     {
-        if let Some(path) = mic_grant_file_path(app) {
-            if path.exists() {
-                platform::MIC_INTERACTED.store(true, Relaxed);
-                let mic = platform::mic_status();
-                let ax = platform::accessibility_status();
-                sync_runtime_grants(app, mic, ax);
+        match mic_grant_file_path(app) {
+            Some(path) => {
+                let exists = path.exists();
+                eprintln!(
+                    "[mohashim] mic_grant load: path={path:?} exists={exists}"
+                );
+                if exists {
+                    platform::MIC_INTERACTED.store(true, Relaxed);
+                    let mic = platform::mic_status();
+                    let ax = platform::accessibility_status();
+                    sync_runtime_grants(app, mic, ax);
+                    eprintln!("[mohashim] mic_grant load: atomic restored → mic={mic:?}");
+                }
             }
+            None => eprintln!("[mohashim] mic_grant load: app_data_dir unavailable"),
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -70,17 +78,18 @@ pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle) {
 #[cfg(target_os = "windows")]
 fn save_persisted_mic_grant(app: &AppHandle) {
     let Some(path) = mic_grant_file_path(app) else {
-        eprintln!("[mohashim] mic_grant_file_path: app_data_dir unavailable");
+        eprintln!("[mohashim] mic_grant save: app_data_dir unavailable");
         return;
     };
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("[mohashim] mic_grant create_dir_all err: {e}");
+            eprintln!("[mohashim] mic_grant save: create_dir_all err: {e}");
             return;
         }
     }
-    if let Err(e) = std::fs::write(&path, "1") {
-        eprintln!("[mohashim] mic_grant write err: {e}");
+    match std::fs::write(&path, "1") {
+        Ok(_) => eprintln!("[mohashim] mic_grant save OK: {path:?}"),
+        Err(e) => eprintln!("[mohashim] mic_grant save: write err: {e} → {path:?}"),
     }
 }
 
@@ -109,6 +118,7 @@ pub async fn permission_status(app: AppHandle) -> PermissionState {
 #[tauri::command]
 pub async fn request_microphone_permission(app: AppHandle) -> Result<PermissionStatus, String> {
     let status = platform::request_microphone().await?;
+    eprintln!("[mohashim] request_microphone_permission: status={status:?}");
     // Phase 21 (Windows): mic privacy 다이얼로그가 없으므로 Settings deep-link로
     // 사용자가 직접 활성화하도록 안내. macOS는 platform::request_microphone이
     // AVCaptureDevice.requestAccess로 다이얼로그를 트리거하므로 별도 deep-link 불필요.
@@ -179,6 +189,7 @@ pub async fn request_accessibility_permission(
 /// macOS는 OS API로 정확한 권한 검증이 가능하므로 본 커맨드를 호출할 필요 없다.
 #[tauri::command]
 pub async fn restore_persisted_mic_interacted(app: AppHandle) -> Result<PermissionStatus, String> {
+    eprintln!("[mohashim] restore_persisted_mic_interacted invoked");
     #[cfg(target_os = "windows")]
     {
         use std::sync::atomic::Ordering::Relaxed;
@@ -187,6 +198,7 @@ pub async fn restore_persisted_mic_interacted(app: AppHandle) -> Result<Permissi
         // 권한 부여한 적 있다는 뜻이므로 disk flag도 보장한다 (이중 안전망).
         save_persisted_mic_grant(&app);
         let status = platform::mic_status();
+        eprintln!("[mohashim] restore_persisted_mic_interacted: returning {status:?}");
         sync_runtime_grants(&app, status, platform::accessibility_status());
         Ok(status)
     }

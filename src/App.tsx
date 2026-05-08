@@ -56,17 +56,24 @@ function App() {
         ]);
         if (cancelled) return;
         const isWin = platform() === "windows";
+        console.log(
+          "[mohashim] boot perms",
+          { platform: platform(), isWin, oc, perms }
+        );
         // Windows TOFU 보강: oc=true이면 사용자가 이전에 권한 부여하여 메인에 진입한
         // 적이 있다는 의미. Rust MIC_INTERACTED atomic이 프로세스 종료 시 reset된
         // 케이스를 자동 복원하여 권한 토글이 OFF로 보이는 시각 회귀를 차단한다.
         if (oc && perms.mic !== "granted" && isWin) {
+          console.log("[mohashim] boot: triggering mic atomic restore");
           try {
             const restoredMic = await restoreMicInteracted();
+            console.log("[mohashim] boot: restoreMicInteracted →", restoredMic);
             perms = { ...perms, mic: restoredMic };
           } catch (err) {
             console.error("[mohashim] mic atomic restore failed", err);
           }
         }
+        console.log("[mohashim] boot perms (after restore)", perms);
         setPermissions(perms);
         // 부팅 시 권한이 모두 부여된 상태가 아니면 oc를 false로 리셋하던 가드는 macOS
         // 한정으로 유지한다. Windows에서는 atomic 변수가 프로세스 휘발성이라 부팅 시점
@@ -76,6 +83,10 @@ function App() {
         // 하지만 audio thread가 dB=0 폴백으로 동작하여 앱은 살아있음.)
         const granted = canEnterMain(perms);
         const effectiveOc = isWin ? oc : oc && granted;
+        console.log(
+          "[mohashim] boot gate",
+          { granted, oc, isWin, effectiveOc }
+        );
         if (oc && !isWin && !effectiveOc) {
           // macOS 전용: 디스크에도 false 영속 — 다음 부팅에서 동일 게이트 통과 회피.
           void setOnboardingCompleted(false);
