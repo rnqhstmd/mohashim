@@ -9,6 +9,7 @@ import { BottomTabBar, type Tab } from "./BottomTabBar";
 import { MailboxScreen } from "./MailboxScreen";
 import { ModeChip } from "./ModeChip";
 import { SettingsScreen } from "./SettingsScreen";
+import { ShopTab } from "./ShopTab";
 import { ToastContainer } from "./Toast";
 import { TodosTab } from "./TodosTab";
 import { GrassTab } from "./GrassTab";
@@ -130,6 +131,8 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           <GrassTab key={tab} />
         ) : tab === "mailbox" ? (
           <MailboxScreen key={tab} />
+        ) : tab === "shop" ? (
+          <ShopTab key={tab} />
         ) : (
           <TodosTab
             key={tab}

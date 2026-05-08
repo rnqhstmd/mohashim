@@ -18,6 +18,82 @@ use crate::storage::STORE_FILE;
 use notifier::{lock_mailbox, push_message, LAST_NOTIF_AT_MS, NOTIF_DEEPLINK_WINDOW_MS};
 use state::{append_with_cap, mark_all_read_in_place, read_mailbox, write_mailbox, Letter};
 
+/// Letter를 mailbox에 append + persist + 알림 push + emit하는 도메인 무지 인프라 (Phase 24 v2).
+///
+/// **도메인 무지 원칙**: 본 함수는 letter가 SESSION/SYSTEM/MONTHLY 어느 종류인지 알지 않는다.
+/// 도메인(timer / shop)이 Letter struct를 만들어 호출하고, 인프라는 4단계를 수행한다:
+///   1) MAILBOX_MUTEX 획득 → read_mailbox → append_with_cap → write_mailbox → store.save
+///   2) push_message(title, body) — phase 분기 내장 (Focus/Break: 보류, Idle: 즉시 발화)
+///   3) app.emit("mailbox-updated", ()) — phase 무관 항상 emit (편지함 뱃지 갱신)
+///
+/// 실패 시 stderr 로그만 남기고 무시(반환 unit). 호출자는 letter 생성 책임 + 호출 시점
+/// phase 결정 책임만 가진다(예: timer는 Idle 전환 후, shop은 phase 무관 호출).
+pub fn append_letter_and_emit<R: Runtime>(app: &AppHandle<R>, letter: Letter) {
+    let title = letter.title.clone();
+    let body = letter.body.clone();
+    {
+        let _guard = lock_mailbox();
+        let store = match app.store(STORE_FILE) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[mohashim] append_letter_and_emit store open failed: {e}");
+                return;
+            }
+        };
+        let mut letters = read_mailbox(&store);
+        append_with_cap(&mut letters, letter);
+        write_mailbox(&store, &letters);
+        if let Err(e) = store.save() {
+            eprintln!("[mohashim] append_letter_and_emit store save failed: {e}");
+        }
+    }
+    push_message(app, &title, &body);
+    if let Err(e) = app.emit("mailbox-updated", ()) {
+        eprintln!("[mohashim] mailbox-updated emit failed: {e}");
+    }
+}
+
+/// 편지 제목용 focus 시간 범위 계산. start_ms=0 시 fallback (now - focus_mins).
+fn compute_session_title_range(
+    now: chrono::DateTime<Local>,
+    start_ms: u64,
+    focus_mins: u32,
+) -> (chrono::DateTime<Local>, chrono::DateTime<Local>) {
+    use chrono::TimeZone;
+    if start_ms > 0 {
+        let s = Local
+            .timestamp_millis_opt(start_ms as i64)
+            .single()
+            .unwrap_or(now);
+        let e = s + chrono::Duration::minutes(focus_mins as i64);
+        (s, e)
+    } else {
+        let e = now;
+        let s = e - chrono::Duration::minutes(focus_mins as i64);
+        (s, e)
+    }
+}
+
+/// 세션 편지 본문 포맷 (FR-5 양식: 5요소 + 줄바꿈 1회 + session_tag 1줄).
+fn format_session_body(
+    focus_mins: u32,
+    score: u32,
+    todos_done: usize,
+    earned: u32,
+    session_tag: Option<&str>,
+) -> String {
+    match session_tag {
+        Some(tag) => format!(
+            "총 {}분 / 집중도 평균 {}점 / 평균 소음 0dB / 완료한 할 일 {}개 / 🌱 +{}\n#{}",
+            focus_mins, score, todos_done, earned, tag
+        ),
+        None => format!(
+            "총 {}분 / 집중도 평균 {}점 / 평균 소음 0dB / 완료한 할 일 {}개 / 🌱 +{}",
+            focus_mins, score, todos_done, earned
+        ),
+    }
+}
+
 /// 세션 완료 편지 생성 + store persist + 알림 발화 + mailbox-updated emit (FR-3, FR-5, FR-7).
 ///
 /// **호출 계약 (Phase 23 CRITICAL)**: 반드시 `store_phase(Phase::Idle)` +
@@ -39,27 +115,12 @@ pub fn record_session_letter<R: Runtime>(
     todos_done: usize,
     session_tag: Option<&str>,
 ) {
-    use chrono::TimeZone;
-
     let now = Local::now();
     // BR-3: id는 on_complete_consumed의 end_ms 기반 — session_log id와 시각 기준 동일.
     let id = format!("ml-{}", end_ms);
 
     // 편지 제목: "{HH:MM}~{HH:MM} 집중 완료" (FR-5).
-    // start_ms 사용 시 정확한 focus 시작 시각 → focus_end = start + focus_mins.
-    // start_ms=0 fallback 시 break_minutes만큼 시각 밀림 발생 (정상 흐름에서는 도달 안 함).
-    let (title_start, title_end) = if start_ms > 0 {
-        let s = Local
-            .timestamp_millis_opt(start_ms as i64)
-            .single()
-            .unwrap_or(now);
-        let e = s + chrono::Duration::minutes(focus_mins as i64);
-        (s, e)
-    } else {
-        let e = now;
-        let s = e - chrono::Duration::minutes(focus_mins as i64);
-        (s, e)
-    };
+    let (title_start, title_end) = compute_session_title_range(now, start_ms, focus_mins);
     let title = format!(
         "{}~{} 집중 완료",
         title_start.format("%H:%M"),
@@ -68,49 +129,19 @@ pub fn record_session_letter<R: Runtime>(
 
     // 🌱 보상 계산 (economy FR-14 임계값 동일).
     let earned = crate::economy::reward::compute_session_reward(score);
-
-    // 편지 본문 (FR-5 양식: 5요소 + 줄바꿈 1회 + session_tag 1줄).
-    let body = match session_tag {
-        Some(tag) => format!(
-            "총 {}분 / 집중도 평균 {}점 / 평균 소음 0dB / 완료한 할 일 {}개 / 🌱 +{}\n#{}",
-            focus_mins, score, todos_done, earned, tag
-        ),
-        None => format!(
-            "총 {}분 / 집중도 평균 {}점 / 평균 소음 0dB / 완료한 할 일 {}개 / 🌱 +{}",
-            focus_mins, score, todos_done, earned
-        ),
-    };
+    let body = format_session_body(focus_mins, score, todos_done, earned, session_tag);
 
     let letter = Letter {
         id,
         kind: "SESSION".to_string(),
-        title: title.clone(),
-        body: body.clone(),
+        title,
+        body,
         created_at: now.to_rfc3339(),
         read: false,
         session_tag: session_tag.map(String::from),
     };
 
-    // MAILBOX_MUTEX: read-mutate-write 직렬화 (MUST-2, P-D4).
-    // push_message + emit은 mutex 해제 전이지만 두 함수 모두 MAILBOX_MUTEX를 요구하지 않으므로 safe.
-    let _guard = lock_mailbox();
-    let store = match app.store(STORE_FILE) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("[mohashim] mailbox record_session_letter store open failed: {e}");
-            return;
-        }
-    };
-    let mut letters = read_mailbox(&store);
-    append_with_cap(&mut letters, letter);
-    write_mailbox(&store, &letters);
-    if let Err(e) = store.save() {
-        eprintln!("[mohashim] mailbox store save failed: {e}");
-    }
-    push_message(app, &title, &body);
-    if let Err(e) = app.emit("mailbox-updated", ()) {
-        eprintln!("[mohashim] mailbox-updated emit failed: {e}");
-    }
+    append_letter_and_emit(app, letter);
 }
 
 /// 편지함 전체 조회 IPC (FR-10, AC-1).
@@ -230,4 +261,67 @@ fn attempt_install_notification_handler<R: Runtime>(app: AppHandle<R>, retries_l
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         attempt_install_notification_handler(app, retries_left - 1);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compute_session_title_range, format_session_body};
+    use chrono::{Local, TimeZone};
+
+    #[test]
+    fn format_session_body_with_tag() {
+        let body = format_session_body(25, 80, 3, 5, Some("study"));
+        assert!(
+            body.ends_with("🌱 +5\n#study"),
+            "body should end with reward + tag line, got: {body}"
+        );
+        assert!(body.contains("총 25분"));
+        assert!(body.contains("집중도 평균 80점"));
+        assert!(body.contains("완료한 할 일 3개"));
+    }
+
+    #[test]
+    fn format_session_body_no_tag() {
+        let body = format_session_body(25, 80, 3, 5, None);
+        assert!(
+            body.ends_with("🌱 +5"),
+            "body should end with reward (no newline), got: {body}"
+        );
+        assert!(!body.contains('\n'), "body must not contain newline when tag=None");
+    }
+
+    #[test]
+    fn format_session_body_zero_todos() {
+        let body = format_session_body(50, 70, 0, 5, None);
+        assert!(
+            body.contains("완료한 할 일 0개"),
+            "body should contain '완료한 할 일 0개', got: {body}"
+        );
+    }
+
+    #[test]
+    fn compute_session_title_range_with_start_ms() {
+        let now = Local::now();
+        // 2024-01-01 09:00:00 KST 기준 임의 시각
+        let start_ms = 1_704_067_200_000u64; // 2024-01-01 00:00:00 UTC
+        let focus_mins = 25u32;
+        let (s, e) = compute_session_title_range(now, start_ms, focus_mins);
+
+        let expected_start = Local
+            .timestamp_millis_opt(start_ms as i64)
+            .single()
+            .expect("valid millis");
+        assert_eq!(s, expected_start);
+        assert_eq!(e, expected_start + chrono::Duration::minutes(focus_mins as i64));
+    }
+
+    #[test]
+    fn compute_session_title_range_zero_start_ms_fallback() {
+        let now = Local::now();
+        let focus_mins = 25u32;
+        let (s, e) = compute_session_title_range(now, 0, focus_mins);
+
+        assert_eq!(e, now);
+        assert_eq!(s, now - chrono::Duration::minutes(focus_mins as i64));
+    }
 }

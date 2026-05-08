@@ -1,4 +1,4 @@
-export type Tab = "todos" | "grass" | "mailbox" | "settings";
+export type Tab = "todos" | "grass" | "mailbox" | "shop" | "settings";
 
 type BottomTabBarProps = {
   tab: Tab;
@@ -11,6 +11,7 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: "todos", label: "할 일" },
   { id: "grass", label: "잔디" },
   { id: "mailbox", label: "편지함" },
+  { id: "shop", label: "상점" },
   { id: "settings", label: "설정" },
 ];
 
@@ -111,6 +112,34 @@ function TabIcon({ kind, active }: { kind: Tab; active: boolean }) {
         />
         <path
           d="M3 9l9 6 9-6"
+          stroke={stroke}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  if (kind === "shop") {
+    return (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden
+        style={{ opacity }}
+      >
+        <path
+          d="M5 8h14l-1.4 10.5a2 2 0 01-2 1.5h-7.2a2 2 0 01-2-1.5L5 8z"
+          stroke={stroke}
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+          fill={active ? "currentColor" : "none"}
+          fillOpacity={active ? 0.08 : 0}
+        />
+        <path
+          d="M9 8V6a3 3 0 016 0v2"
           stroke={stroke}
           strokeWidth="1.8"
           strokeLinecap="round"

@@ -37,6 +37,47 @@ fn lock_economy() -> MutexGuard<'static, ()> {
     mutex.lock().unwrap_or_else(|p| p.into_inner())
 }
 
+/// 잔액 차감 순수 함수 (Phase 24 v2). store/AppHandle 무의존.
+///
+/// 입력 state + amount → (갱신된 state, 차감 후 잔액) Result.
+/// 잔액 < amount이면 Err(부족분) 반환.
+pub(crate) fn apply_charge(state: EconomyState, amount: u32) -> Result<(EconomyState, u32), u32> {
+    if state.sprouts < amount {
+        return Err(amount - state.sprouts);
+    }
+    let next_sprouts = state.sprouts - amount;
+    let next = EconomyState {
+        sprouts: next_sprouts,
+        last_todo_sprout_date: state.last_todo_sprout_date,
+    };
+    Ok((next, next_sprouts))
+}
+
+/// 새싹 잔액 차감 lock 캡슐화 도우미 (Phase 24 v2).
+///
+/// shop::purchase_item이 SHOP_MUTEX guard 보유 중 호출. 내부에서 ECONOMY_MUTEX 획득 후
+/// read → apply_charge → write까지 직렬화. **store.save()는 호출자 책임** — shop 트랜잭션
+/// 단일 save 정책 유지(부분 일관성 회피).
+///
+/// 반환:
+/// - `Ok(차감_후_잔액)`: 성공.
+/// - `Err("insufficient_sprouts:{부족분}")`: 잔액 < amount.
+/// - `Err("store_error:{원인}")`: store open 실패. 잔액 부족과 의미론 분리 (review HIGH).
+pub fn try_charge<R: Runtime>(app: &AppHandle<R>, amount: u32) -> Result<u32, String> {
+    let _guard = lock_economy();
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|e| format!("store_error:{e}"))?;
+    let state = read_economy_state(&store);
+    match apply_charge(state, amount) {
+        Ok((next, balance)) => {
+            write_economy_state(&store, &next);
+            Ok(balance)
+        }
+        Err(short) => Err(format!("insufficient_sprouts:{short}")),
+    }
+}
+
 /// 세션 완료 보상 상태 갱신 순수 함수 (FR-14, FR-16, AC-23).
 ///
 /// 입력 state + avg_score → 갱신된 state + 지급된 새싹 수 반환. store/AppHandle 무의존 —
@@ -140,7 +181,7 @@ pub async fn record_todo_added<R: Runtime>(app: AppHandle<R>) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::reward::compute_session_reward;
-    use super::{apply_session_reward, apply_todo_added, EconomyState};
+    use super::{apply_charge, apply_session_reward, apply_todo_added, EconomyState};
 
     /// FR-23 / AC-21 추가 검증: 보상 함수가 mod.rs 경로에서도 동일 결과.
     /// (단위 테스트 자체는 reward.rs::tests에서 수행 — 이중 검증 1건만 sanity)
@@ -275,5 +316,91 @@ mod tests {
         let (next, earned) = apply_session_reward(state, 80);
         assert_eq!(earned, 5);
         assert_eq!(next.sprouts, u32::MAX, "saturating_add로 u32::MAX 포화");
+    }
+
+    /// Phase 24 v2: 잔액 충분 → Ok((state with sprouts=70, 70)).
+    #[test]
+    fn apply_charge_sufficient_returns_balance() {
+        let state = EconomyState {
+            sprouts: 100,
+            last_todo_sprout_date: None,
+        };
+        match apply_charge(state, 30) {
+            Ok((next, balance)) => {
+                assert_eq!(next.sprouts, 70);
+                assert_eq!(balance, 70);
+            }
+            Err(_) => panic!("Ok 반환 기대"),
+        }
+    }
+
+    /// Phase 24 v2: 잔액 부족 → Err(부족분), state 무변경.
+    #[test]
+    fn apply_charge_insufficient_returns_short() {
+        let state = EconomyState {
+            sprouts: 50,
+            last_todo_sprout_date: Some("2026-05-08".into()),
+        };
+        // 사본을 따로 만들어 무변경 검증.
+        let snapshot_sprouts = state.sprouts;
+        let snapshot_date = state.last_todo_sprout_date.clone();
+        match apply_charge(state, 60) {
+            Ok(_) => panic!("Err 반환 기대"),
+            Err(short) => assert_eq!(short, 10, "amount(60) - 잔액(50) = 부족분 10"),
+        }
+        // 호출 전 state 값이 보존되어야 함을 snapshot으로 검증.
+        assert_eq!(snapshot_sprouts, 50);
+        assert_eq!(snapshot_date.as_deref(), Some("2026-05-08"));
+    }
+
+    /// Phase 24 v2: amount=0 → Ok((동일 state, 현재 잔액)).
+    #[test]
+    fn apply_charge_zero_amount_unchanged() {
+        let state = EconomyState {
+            sprouts: 42,
+            last_todo_sprout_date: None,
+        };
+        match apply_charge(state, 0) {
+            Ok((next, balance)) => {
+                assert_eq!(next.sprouts, 42);
+                assert_eq!(balance, 42);
+            }
+            Err(_) => panic!("Ok 반환 기대"),
+        }
+    }
+
+    /// Phase 24 v2: sprouts=30, amount=30 → Ok((state with sprouts=0, 0)).
+    #[test]
+    fn apply_charge_exact_balance_to_zero() {
+        let state = EconomyState {
+            sprouts: 30,
+            last_todo_sprout_date: None,
+        };
+        match apply_charge(state, 30) {
+            Ok((next, balance)) => {
+                assert_eq!(next.sprouts, 0);
+                assert_eq!(balance, 0);
+            }
+            Err(_) => panic!("Ok 반환 기대"),
+        }
+    }
+
+    /// Phase 24 v2: last_todo_sprout_date 보존 검증.
+    #[test]
+    fn apply_charge_preserves_last_todo_sprout_date() {
+        let state = EconomyState {
+            sprouts: 100,
+            last_todo_sprout_date: Some("2026-05-08".into()),
+        };
+        match apply_charge(state, 30) {
+            Ok((next, _balance)) => {
+                assert_eq!(
+                    next.last_todo_sprout_date.as_deref(),
+                    Some("2026-05-08"),
+                    "차감 후에도 last_todo_sprout_date 보존"
+                );
+            }
+            Err(_) => panic!("Ok 반환 기대"),
+        }
     }
 }
