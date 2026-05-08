@@ -1,7 +1,7 @@
 import { StrictMode, createElement, type ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { usePhrase } from "../usePhrase";
+import { usePhrase, PHRASE_ROTATE_MS } from "../usePhrase";
 import { POTATO_PHRASES } from "../phrases";
 import type { LiveState, Phase } from "../score";
 
@@ -62,17 +62,17 @@ describe("usePhrase", () => {
     const targetIdx = 1;
     mockRandom.mockReturnValueOnce(targetIdx / POTATO_PHRASES.idle.length);
     act(() => {
-      vi.advanceTimersByTime(8000);
+      vi.advanceTimersByTime(PHRASE_ROTATE_MS);
     });
     expect(result.current.phrase).toBe(POTATO_PHRASES.idle[targetIdx]);
   });
 
-  it("BR-1 경계: 7999ms에서는 멘트 변화 없음, +1ms 시점에 변경", () => {
+  it("BR-1 경계: PHRASE_ROTATE_MS-1에서는 멘트 변화 없음, +1ms 시점에 변경", () => {
     const { result } = renderHook(() => usePhrase(idleCtx));
     expect(result.current.phrase).toBe(POTATO_PHRASES.idle[0]);
 
     act(() => {
-      vi.advanceTimersByTime(7999);
+      vi.advanceTimersByTime(PHRASE_ROTATE_MS - 1);
     });
     expect(result.current.phrase).toBe(POTATO_PHRASES.idle[0]);
 
@@ -93,7 +93,7 @@ describe("usePhrase", () => {
     const targetIdx = 1;
     mockRandom.mockReturnValueOnce(targetIdx / POTATO_PHRASES.idle.length);
     act(() => {
-      vi.advanceTimersByTime(8000);
+      vi.advanceTimersByTime(PHRASE_ROTATE_MS);
     });
     expect(result.current.phrase).toBe(POTATO_PHRASES.idle[targetIdx]);
 

@@ -29,6 +29,7 @@ pub fn run() {
             permissions::permission_status,
             permissions::request_microphone_permission,
             permissions::request_accessibility_permission,
+            permissions::restore_persisted_mic_interacted,
             permissions::open_permission_settings,
             timer::focus_start,
             timer::discard_session,
@@ -45,6 +46,14 @@ pub fn run() {
             if let Err(err) = storage::init(app.handle()) {
                 eprintln!("[mohashim] storage init failed: {err}");
             }
+            // Windows TOFU 영속 복원: disk 파일 또는 onboarding_completed=true 신호 중
+            // 어느 하나라도 있으면 마이크 atomic을 복원한다. 한쪽이 손실되어도 영구 회귀가
+            // 발생하지 않도록 두 신호를 병행 — disk 파일은 권한 부여 시점에, oc는 사용자가
+            // 메인 진입한 시점에 각각 자연 영속됨.
+            // score::start보다 먼저 호출하여 audio thread가 정상 기동되도록 한다.
+            // macOS / Linux에서는 인자만 받고 no-op.
+            let oc_signal = storage::get_onboarding_completed(app.handle());
+            permissions::load_persisted_mic_grant_into_atomic(app.handle(), oc_signal);
             // Phase 18 FR-B2: 분석 로거 초기화. 실패 시 write no-op (BR-B3) — 앱 동작 무영향.
             // 내부에서 AppStart 이벤트 1건을 기록한다.
             if let Err(err) = logger::init(app.handle()) {

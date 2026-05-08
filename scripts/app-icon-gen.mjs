@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import url from "node:url";
 import sharp from "sharp";
+import pngToIco from "png-to-ico";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const ICON_DIR = path.resolve(__dirname, "..", "src-tauri/icons");
@@ -76,6 +77,18 @@ async function main() {
 
   await fs.writeFile(path.join(ICON_DIR, "icon.svg"), SVG);
   console.log(`  icon.svg saved`);
+
+  // Windows resource compiler (tauri-build) + NSIS Modern UI 둘 다 만족해야 한다.
+  // NSIS 3.x는 PNG-compressed ICO entry를 지원하지 않으므로, png-to-ico가 PNG로
+  // 인코딩하는 256+ 사이즈를 제외하고 32/128만 포함 (둘 다 BMP entry).
+  // 256 이상이 빠져도 Windows shell은 128을 자동 스케일링하여 표시한다.
+  const icoBuf = await pngToIco([
+    path.join(ICON_DIR, "32x32.png"),
+    path.join(ICON_DIR, "128x128.png"),
+  ]);
+  const icoPath = path.join(ICON_DIR, "icon.ico");
+  await fs.writeFile(icoPath, icoBuf);
+  console.log(`  icon.ico saved — ${(icoBuf.length / 1024).toFixed(1)} KB`);
 
   console.log("[app-icon-gen] done.");
 }

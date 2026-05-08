@@ -31,6 +31,8 @@ type TodosTabProps = {
   phrase: string;
   /** Phase 21: 캐릭터 카드 아래 NoiseMeter dB 표시. */
   db: number;
+  /** 사용자 피드백: 세션 진행 중 PomodoroCard에 실시간 점수 큰 폰트 노출용 (0~100). */
+  total: number;
   onFocusStart: () => Promise<void>;
 };
 
@@ -53,6 +55,7 @@ export function TodosTab({
   potatoState,
   phrase,
   db,
+  total,
   onFocusStart,
 }: TodosTabProps) {
   const [todos, setTodosState] = useState<Todo[]>([]);
@@ -204,6 +207,7 @@ export function TodosTab({
           potatoState={potatoState}
           phrase={phrase}
           db={db}
+          total={total}
           onTimerClick={() => setView("timer-detail")}
         />
       ) : (

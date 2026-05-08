@@ -1,0 +1,1096 @@
+# 작업 로그 (Work Log)
+
+`main` 브랜치의 코드 변경을 시간순으로 누적 기록한다.
+새 변경이 발생할 때마다 **최신 항목을 위쪽에 추가**한다 (최신이 위, 오래된 게 아래).
+
+---
+
+## 운용 규칙
+
+1. **포함 대상**: `main`에 머지되거나 머지 예정인 모든 코드/설정/스크립트 변경.
+2. **제외 대상**: 임시 빌드 산출물, 로컬 환경 설치(rust toolchain, VS Build Tools 등 시스템 레벨 작업).
+3. **엔트리 포맷**:
+   - 일시 (KST, ISO 8601 풍 `YYYY-MM-DD HH:MM`)
+   - 한 줄 요약
+   - **배경/원인** — 왜 이 변경이 필요했는지 (재현 시나리오, 에러 메시지 등)
+   - **변경 파일** — 경로별로 추가/수정/삭제 요약 + 핵심 diff
+   - **검증** — 어떻게 동작 확인했는지 (커맨드 + 기대 결과)
+   - **영향 범위** — 다른 플랫폼/플로우/CI에 미치는 영향
+   - (선택) **후속 과제** — 이번 작업에서 발견된 별도 이슈
+
+---
+
+## 2026-05-09 01:50 KST — Windows에서 onboarding_completed disk 덮어쓰기 가드 비활성화 (영구 회귀 차단)
+
+### 요약
+사용자 보고 (재발): "종료 후 재시작 시 마이크 권한 토글이 OFF로 되어있고 웰컴 페이지가 또 뜬다. 진짜 너무 크리티컬하다."
+
+진짜 원인 추적: 이전 픽스(disk 영속 86cabe8 / oc 보조 신호 d5d5b67)에도 불구하고 회귀가 풀리지 않은 이유는 App.tsx 부팅 가드 자체였다. **Windows에선 atomic 휘발 = 영구 disk oc=false 회귀**의 무한 루프 구조.
+
+```ts
+const granted = canEnterMain(perms);  // mic && accessibility — Windows에선 atomic 휘발로 mic ≠ granted
+const effectiveOc = oc && granted;     // oc=true && false = false
+if (oc && !effectiveOc) {
+  void setOnboardingCompleted(false);  // ← 매 부팅마다 disk oc=true를 false로 영구 덮어씀
+}
+```
+
+흐름:
+1. 사용자 토글 ON → 메인 진입 → `setOnboardingCompleted(true)` → disk oc=true
+2. 종료 → 재실행 → atomic 휘발 → mic=not_determined → 가드가 disk oc를 **false로 덮어씀**
+3. 다음 재실행: oc=false → 자동 복원(d5d5b67) skip → 웰컴 페이지
+4. 사용자가 또 토글 ON → 또 oc=true → 또 다음에 false로 덮임 → **영구 무한 루프**
+
+### 해결
+**Windows에선 disk oc 덮어쓰기 자체를 비활성화**. macOS는 OS API로 정확히 검증 가능하므로 기존 가드 유지.
+
+### 변경 파일
+
+#### `src/App.tsx`
+- 부팅 effect에서 `isWin = platform() === "windows"` 한 번 평가.
+- 자동 복원 시도는 `isWin`으로 정리 (이전 코드와 동일 의도).
+- `effectiveOc` 결정 로직 분기:
+
+```diff
++ const isWin = platform() === "windows";
+  ...
+- const effectiveOc = oc && granted;
+- if (oc && !effectiveOc) {
++ const effectiveOc = isWin ? oc : oc && granted;
++ if (oc && !isWin && !effectiveOc) {
+    void setOnboardingCompleted(false);
+  }
+```
+
+### 결과 흐름 (수정 후)
+- 첫 부팅: oc=false → 가드 효과 없음 → 자동 복원 시도 (disk flag 없으면 no-op) → 웰컴 페이지 (정상)
+- 사용자 토글 ON → 메인 진입 → oc=true 영속 + disk flag + atomic
+- 종료 → 재실행:
+  - 자동 복원(restoreMicInteracted) → atomic + disk flag 갱신 → mic=granted
+  - 가드 약화로 disk oc=true 보존
+  - effectiveOc = oc = true → **메인 직행**
+- 사용자가 OS 시스템 설정에서 마이크 명시 거부한 경우: OS API 부재로 검출 불가 (audio thread는 dB=0 폴백으로 앱 자체는 살아있음).
+
+### 검증
+- NSIS 빌드 26초 성공.
+- 사용자 직접 검증 시나리오: 새 인스톨러 깔고 토글 ON → 메인 진입 → 트레이 종료 → 시작 메뉴에서 다시 실행 → **메인 화면 직행** (이전 회귀 차단 확인).
+
+### 영향 범위
+- **Windows**: 영구 회귀 차단. 사용자가 한 번 메인 통과한 oc=true 신호를 atomic 휘발만으로 false로 덮어쓰지 않음.
+- **macOS**: 기존 가드 유지 — 시스템 설정에서 권한 거부 시 정확히 재온보딩.
+- **Linux**: macOS 분기 따라가 (정상 동작).
+
+### 후속 과제
+- Windows 사용자 명시 거부 케이스에 대한 안내 노출 (OS 시스템 설정 진입 안내) 검토.
+
+---
+
+## 2026-05-09 01:30 KST — 할일 텍스트 줄바꿈 (truncate 제거)
+
+### 요약
+사용자 보고: 할일 텍스트가 길어지면 한 줄로 잘려 `...`으로 표시됨 → 다중 라인으로 자연스럽게 줄바꿈되도록 수정. 글자수 제한은 이미 `maxLength={100}`으로 입력 단계에서 적용됨.
+
+### 변경 파일
+
+#### `src/components/popup/TodoItem.tsx`
+- `labelBaseClass`의 `truncate` → `whitespace-normal break-words`. 한국어/영문 모두 자연 줄바꿈.
+- 부모 row 정렬 `items-center` → `items-start`로 변경. 다중 라인 텍스트일 때 체크박스/액션 버튼이 첫 줄과 정렬되어 시각적으로 자연스러움.
+
+```diff
+- const labelBaseClass = todo.done
+-   ? "flex-1 truncate line-through opacity-40"
+-   : "flex-1 truncate text-ink cursor-text";
++ const labelBaseClass = todo.done
++   ? "flex-1 whitespace-normal break-words line-through opacity-40"
++   : "flex-1 whitespace-normal break-words text-ink cursor-text";
+
+- <div className="flex items-center gap-2 pr-1">
++ <div className="flex items-start gap-2 pr-1">
+```
+
+### 글자수 제한
+- `TodoInput.tsx` (신규 등록): `<input maxLength={100}>` 이미 적용됨.
+- `TodoItem.tsx` 인라인 편집: `<input maxLength={100}>` 이미 적용됨.
+- 즉 100자 이상은 입력 자체가 차단되며, 100자 이내 텍스트는 다중 라인으로 모두 표시.
+
+### 검증
+- NSIS 빌드 22초 성공.
+- 사용자 직접 검증: 긴 할일 텍스트 입력 시 `...` 잘림 없이 다중 라인으로 표시 + 리스트 스크롤 영역에서 자연 스크롤.
+
+### 영향 범위
+- macOS / Windows 모두 동일 적용.
+- 기존 단일 라인 할일 표시는 그대로 — `items-start` 정렬도 단일 라인에서는 시각적 차이 거의 없음.
+
+---
+
+## 2026-05-09 01:10 KST — 부팅 시 onboarding_completed 보조 신호로 마이크 atomic 자동 복원
+
+### 요약
+사용자 보고: "새 빌드(disk 영속 코드 포함)를 깔고 마이크 토글 한 번 ON → 메인 진입했는데, 종료 후 재실행하면 또 웰컴 페이지가 뜬다. 시스템 설정엔 마이크 권한 ON 상태로 보임."
+
+원인: `mic_grant.flag` disk 영속 코드를 새로 도입했지만, **사용자가 이전 빌드들에서 부여한 권한은 disk flag로 영속되지 않았던 케이스** — installer overwrite 시 사용자 데이터 보존되어 onboarding_completed=true 디스크 상태도 유지됐을 수 있는데, 우리 부팅 가드가 mic ≠ granted이면 false로 영구 덮어씌우던 회귀가 진행 중.
+
+해결: App.tsx 부팅 시점에 `oc=true && Windows && mic ≠ granted`이면 자동으로 `restore_persisted_mic_interacted` invoke 호출 → atomic + disk flag 둘 다 복원. oc 플래그를 mic 권한 영속의 보조 진실 소스로 활용.
+
+### 변경 파일
+
+#### 1. `src/lib/permissions.ts`
+신규 export `restoreMicInteracted()` — `restore_persisted_mic_interacted` Tauri 커맨드 wrapper. Rust 측이 disk file write까지 처리하므로 단일 진실 소스가 일관 유지됨.
+
+#### 2. `src/App.tsx`
+- import `restoreMicInteracted` + `platform` (이미 있음).
+- 부트 effect의 `getPermissionStatus` + `getOnboardingCompleted` 호출 직후, Windows 분기 추가:
+```ts
+if (oc && perms.mic !== "granted" && platform() === "windows") {
+  const restoredMic = await restoreMicInteracted();
+  perms = { ...perms, mic: restoredMic };
+}
+```
+- perms를 `let`으로 변경하여 자동 복원 결과를 갱신 가능하게.
+
+### 검증
+- NSIS 빌드 36초 성공.
+- 사용자 직접 검증: 한 번이라도 메인에 진입했던 사용자라면 oc=true 영속 → 다음 부팅에 자동 복원 → 웰컴 페이지 회귀 없음.
+
+### 영향 범위
+- **Windows**: 영구 회귀 차단. 영속 신호 두 가지(disk flag, oc=true) 중 어느 하나만 있어도 자동 복원.
+- **macOS**: `platform() === "windows"` 가드로 분기 회피 — 영향 없음.
+- **사용자 흐름**: 첫 설치 후 한 번만 마이크 ON 하면 그 이후 oc=true 영속 → atomic이 휘발돼도 자동 복원. flag 파일이 어떤 이유로 손실돼도 oc로 복원.
+
+### 후속 과제 (선택)
+- 사용자가 OS 시스템 설정에서 마이크를 명시 거부한 경우 우리는 검출 불가 (Windows OS API 한계). audio thread가 dB=0 폴백으로 동작 — 점수 측정 실패하지만 앱은 살아있음. 명시 안내 노출 검토.
+
+---
+
+## 2026-05-09 00:45 KST — 모하 말풍선 멘트 회전 주기 8초 → 15분
+
+### 요약
+사용자 보고: "모하 대사가 같은 상태인데도 몇 초마다 막 바뀐다. 15분으로 한다고 하지 않았어?"
+
+원인: 이전(22:10) 변경은 **idle chip 라벨**(우상단 "음료 홀짝이는 중" 등)만 15분으로 늘렸고, **모하 말풍선 멘트**는 별도 시스템(`usePhrase.ts`)이라 8초 회전 그대로 유지되어 있었다.
+
+해결: `PHRASE_ROTATE_MS`도 동일하게 15분으로 통일.
+
+### 변경 파일
+
+#### 1. `src/lib/usePhrase.ts`
+```diff
+- /** 멘트 회전 주기 (BR-1: 8초). score-tick(1Hz)마다 멘트가 바뀌지 않도록 분리. */
+- export const PHRASE_ROTATE_MS = 8000;
++ /**
++  * 멘트 회전 주기. score-tick(1Hz)마다 멘트가 바뀌지 않도록 분리하며, 같은 상태(bucket)
++  * 안에서도 너무 자주 변하지 않도록 15분 간격을 유지한다 (사용자 피드백: 8초 회전이
++  * 산만하다 — idle chip 라벨과 동일한 톤으로 통일).
++  */
++ export const PHRASE_ROTATE_MS = 15 * 60 * 1000;
+```
+
+#### 2. `src/lib/__tests__/usePhrase.test.ts`
+- 하드코딩된 `8000` / `7999`를 import한 `PHRASE_ROTATE_MS` / `PHRASE_ROTATE_MS - 1`로 일반화.
+- 미래에 주기 또 변경되어도 테스트 자동 적응.
+
+### 검증
+- `npm test src/lib/__tests__/usePhrase.test.ts`: **11/11 passed**.
+- NSIS 빌드: 27초 성공.
+
+### 영향 범위
+- bucket(상태) 변경 시에는 즉시 새 버킷의 첫 멘트로 갱신됨 (기존 동작 유지) — 변경된 건 같은 bucket 안에서의 회전 주기만.
+- macOS / Windows 모두 동일 적용 (플랫폼 무관).
+- idle chip 회전(15분)과 톤 통일 — "거의 안 바뀌는 듯하면서 가끔 환기".
+
+---
+
+## 2026-05-09 00:25 KST — Windows 마이크 권한 disk 영속 (재실행 웰컴 페이지 회귀 영구 차단)
+
+### 요약
+사용자 보고: "앱 종료 후 재실행 시 매번 웰컴 페이지로 돌아간다. 마이크 토글이 OFF로 보이지만 클릭하면 OS 설정창이 '이미 허용됨' 상태로 잠깐 떴다 닫히고 그제서야 토글이 ON으로 변한다."
+
+원인: Rust `MIC_INTERACTED` atomic이 프로세스 종료 시 reset되고, App.tsx 부팅 가드(`oc && !canEnterMain(perms) → setOnboardingCompleted(false)`)가 disk의 `onboarding_completed=true`를 false로 영구 덮어씌워 무한 회귀. 이전 시도(localStorage TOFU 영속)는 WebView2 storage가 비어있는 시나리오(빌드 사이 손실, 옛 빌드 시점 부여)에선 작동 안 함.
+
+해결: Rust측 disk 파일(`%LOCALAPPDATA%\com.mohashim.app\mic_grant.flag`)을 단일 진실 소스로 도입. 부팅 시 `lib.rs setup`이 파일 존재 여부로 atomic을 복원. 어떤 빌드에서든 권한 grant 시점에 즉시 disk write되어 영구 보존.
+
+### macOS 영향 분석
+**영향 없음.** macOS는 `AVCaptureDevice::authorizationStatusForMediaType`(마이크) / `AXIsProcessTrusted`(접근성) OS API로 매번 정확한 권한 상태를 검증한다. atomic 변수에 의존하지 않으므로 부팅 시 휘발 문제 부재. 사용자가 시스템 환경설정에서 권한을 명시 거부하지 않는 한 재실행 시 권한이 유지된다 (이는 의도된 정책 — 실제 거부 시 재온보딩).
+
+### 변경 파일
+
+#### 1. `src-tauri/src/permissions.rs`
+- `tauri::Manager` import 추가 (`app.path()` 사용용).
+- 신규 함수:
+  - `mic_grant_file_path(app)` — `%LOCALAPPDATA%\com.mohashim.app\mic_grant.flag` PathBuf 반환 (Windows 한정).
+  - `load_persisted_mic_grant_into_atomic(app)` — 부팅 시 호출. 파일 존재하면 `MIC_INTERACTED.store(true)` + `sync_runtime_grants` → audio thread 멱등 기동.
+  - `save_persisted_mic_grant(app)` — Granted 시점에 빈 마커 파일 write. 디렉토리 자동 생성.
+- `request_microphone_permission` Windows 분기: `status == Granted`이면 `save_persisted_mic_grant(&app)` 호출.
+- `restore_persisted_mic_interacted` Windows 분기: 호출 시점에 disk flag도 함께 저장 (이중 안전망).
+- macOS / Linux 분기는 `_ = app` no-op으로 빌드 호환성 유지.
+
+#### 2. `src-tauri/src/lib.rs`
+- `setup` 클로저의 `storage::init` 직후에 `permissions::load_persisted_mic_grant_into_atomic(app.handle())` 호출 추가.
+- score::start보다 먼저 실행되어 audio thread가 영속 권한 기반으로 정상 기동.
+
+### 검증
+1. **Cargo check**: 깨끗 (3.4s).
+2. **NSIS 빌드**: 37초 만에 인스톨러 정상 생성.
+3. **사용자 직접 검증** (Windows에서):
+   - 인스톨러로 깔고 마이크 권한 ON → 메인 진입 (이때 disk에 flag 파일 생성됨)
+   - 트레이 종료 → 시작 메뉴에서 다시 실행 → **메인 화면으로 직행** (atomic이 disk에서 자동 복원)
+   - 재부팅 후에도 동일 동작 (disk 파일 보존)
+
+### 영향 범위
+- **macOS**: OS API로 정확 검증 → 영향 없음.
+- **Windows**: 영구 회귀 차단. 단일 진실 소스가 disk 파일이므로 localStorage / WebView 데이터 손실에도 견고.
+- **Linux** (비공식): 분기 자체가 macOS와 동일한 fallback 경로 — no-op.
+- **삼중 안전망**: (1) Rust disk file, (2) localStorage TOFU, (3) macOS OS API. 어느 하나가 깨져도 나머지로 복원 가능.
+
+### 후속 과제 (선택)
+- 사용자가 명시적으로 권한 초기화를 원할 때를 위해 설정 화면에 "권한 재설정" 버튼 추가 검토 (disk flag 삭제 + onboarding_completed=false).
+- macOS도 향후 disk 영속 추가하면 일관성 향상이지만 OS API가 정확하므로 우선순위 낮음.
+
+---
+
+## 2026-05-08 23:55 KST — 메인 화면 인사 변경 + 직전 점수 제거 + 실시간 점수 강조 + 헤더 BMP 화질
+
+### 요약
+사용자 피드백 3건 일괄 반영:
+1. 메인 화면 인사 텍스트 `"안녕 모하야 🥔"` → `"안녕 난 모하야!"` (모하 자기소개 톤).
+2. 메인(idle) 화면의 직전 세션 점수(`100 / 100`) 표시 제거 — 잔디 탭 상세 조회로 일원화.
+3. 세션 진행 중(`PomodoroCard`)에 실시간 점수를 큰 폰트(28px)로 노출.
+4. NSIS 인스톨러 헤더 BMP 화질 개선 — SVG 4× supersample.
+
+### 배경 / 원인
+- 사용자: "직전 세션 점수를 메인에 보여주는 게 이상하다 — 차라리 세션 중 실시간 점수를 크게 보여주는 게 가독성·타당성 모두 더 낫다."
+- 사용자: "헤더 위에 모하 아이콘 깨짐" — POTATO_GROUP의 stroke-width 2.8 SVG unit이 헤더 ~50px 사이즈에서 1px 미만으로 줄어 anti-aliasing으로 사라지던 문제.
+
+### 변경 파일
+
+#### 1. `src/components/popup/FocusStartButton.tsx`
+- 헤더 `"안녕 모하야 🥔"` → `"안녕 난 모하야!"`.
+- 직전 세션 점수 표시 블록 제거.
+- `getSessionLogs`, `formatDate`, `SessionLog`, `todaySession` state 모두 제거 (의존성 정리).
+
+#### 2. `src/components/popup/PomodoroCard.tsx`
+- 헤더 `"안녕 모하야 🥔"` → `"안녕 난 모하야!"`.
+- 새 prop `total: number` 추가 — 세션 진행 중 실시간 점수 (0~100).
+- 헤더 아래에 28px extrabold 큰 점수 표시 (clamp 0~100).
+
+#### 3. `src/components/popup/TodosTab.tsx`
+- `total: number` prop 추가, 분해 + PomodoroCard에 그대로 전달.
+
+#### 4. `src/components/popup/MainScreen.tsx`
+- TodosTab 호출에 `total={total}` 전달 (이미 useScoreTick에서 추출하던 값).
+
+#### 5. `src/components/popup/__tests__/TodosTab.test.tsx`
+- renderTab 헬퍼 + 4개 inline rerender 호출에 `total={75}` 추가 (TS 타입 에러 차단).
+
+#### 6. `scripts/installer-art-gen.mjs`
+- HEADER_SVG: `width="600" height="228"` 4× supersample 명시 (viewBox 그대로 150×57 유지).
+  → sharp가 4배 큰 raster grid로 그린 뒤 svgToBmp의 resize(150, 57)이 lanczos3로 다운샘플
+  → stroke이 픽셀 단위로 명확하게 보존되어 헤더의 모하가 깨지지 않음.
+- SIDEBAR_SVG도 동일 패턴(`656×1256`) 적용해 일관 화질 향상.
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 files / **357 tests passed**.
+2. **TypeScript 컴파일**: 깨끗 (TodosTab.test.tsx의 4개 추가 호출에 total 전달 후).
+3. **NSIS 빌드**: 27초 만에 인스톨러 정상 생성.
+4. **사용자 직접 검증**:
+   - idle 화면: 우상단 회전 멘트 + "안녕 난 모하야!" + 환경 라벨 dB만 표시 (직전 세션 점수 ✗).
+   - 세션 진행: 큰 점수 / 100 표시.
+   - 인스톨러 진행 페이지 우상단 헤더의 모하가 매끄럽게 노출.
+
+### 영향 범위
+- 점수 정보 흐름이 단일화: 진행 중 = PomodoroCard 실시간 / 완료 후 = 잔디 탭 상세.
+- macOS 영향 없음 (텍스트/UI 변경은 OS 무관, 헤더 BMP는 Windows 전용).
+
+### 후속 과제 (선택)
+- complete phase에서 `total`이 세션 평균 점수로 갱신되는지 score-tick 측 별도 검증 (현재 동작 가정).
+- 사용자가 idle 화면에서 "오늘 누적 점수" 같은 다른 통계를 원할 수도 — 잔디 탭 강화 검토.
+
+---
+
+## 2026-05-08 23:35 KST — NSIS 헤더 텍스트 제거 + 트레이 아이콘 모하 캐릭터화
+
+### 요약
+사용자 피드백 두 가지 반영:
+1. **NSIS 인스톨러 헤더**도 사이드바와 동일하게 텍스트 제거, 모하만 노출.
+2. **시스템 트레이 아이콘**이 작은 사이즈에서 노란 점처럼 보이던 회귀 — 본체 색을 노란색(`#f4d160`)에서 모하 캐릭터 cream(`#fdeed1`)으로 일괄 교체하여 헤더/사이드바와 일관된 모하 인상 부여.
+
+### 배경 / 원인
+
+#### 헤더 BMP
+사이드바를 모하만 노출하는 디자인으로 단순화한 흐름의 일관성 — 헤더에도 영문 무관 텍스트 없는 깔끔한 브랜드 이미지.
+
+#### 트레이 아이콘
+- `src/assets/tray-master/*.svg` 5종(focused/calm/distracted/covering/stressed) 모두 본체 ellipse가 `fill="#f4d160"` (노란색).
+- 22×22 raster 시 본체 노란색 + 새싹/얼굴 디테일이 작아져 멀리서 보면 "노란 점" 인상.
+- 헤더/사이드바 모하 캐릭터의 본체 색은 cream(`#fdeed1`) — 일관성 부재.
+
+### 변경 파일
+
+#### 1. `scripts/installer-art-gen.mjs`
+- `HEADER_SVG`: "모하심" 텍스트 제거, 모하만 좌측에 scale 0.275로 노출 (헤더 높이 57에 거의 꽉 차게).
+- 미사용된 `KO_FONT_FAMILY` 상수 제거 (헤더/사이드바 모두 텍스트 없으므로).
+
+#### 2. `src/assets/tray-master/*.svg` (5종 일괄)
+- 본체 ellipse `fill="#f4d160"` → `fill="#fdeed1"` 일괄 교체.
+- 새싹 색(상태별로 다름)과 stroke는 그대로 유지하여 5단계 상태 분기 시각 효과 보존.
+
+```diff
+  <ellipse cx="11" cy="12.5" rx="6.5" ry="5.8"
+-   fill="#f4d160" stroke="#2b2520" stroke-width="0.25"/>
++   fill="#fdeed1" stroke="#2b2520" stroke-width="0.25"/>
+```
+
+### 검증
+- prebuild: tray:gen → icon:gen → installer:gen 자동 실행, 모든 자산 정상 생성.
+- NSIS 빌드 20초 성공.
+- 사용자 직접 검증: 새 인스톨러 깔고 트레이 아이콘이 cream 모하 캐릭터로 노출되는지 확인.
+
+### 영향 범위
+- 헤더/사이드바/트레이 모두 cream 본체 모하 캐릭터로 통일 → 브랜드 일관성 향상.
+- macOS 트레이는 `set_icon_as_template(true)` 사용 — 색상 무시되고 라이트/다크 자동 반전. 본 변경의 색 영향은 Windows에서만 시각적 차이.
+- 5단계 상태 분기(새싹 색)는 그대로 유지되어 score-tick 응답 회귀 없음.
+
+### 후속 과제 (선택)
+- macOS 메뉴바 아이콘은 template mode라 윤곽만 노출 — 새싹 디테일이 잘 보이는지 별도 시각 검증 필요. 잘 안 보이면 macOS 전용 SVG 분기 검토.
+
+---
+
+## 2026-05-08 23:15 KST — NSIS 사이드바 — 텍스트 제거 + 모하 단일 노출 + 화질 개선
+
+### 요약
+NSIS 인스톨러 좌측 사이드바에서 텍스트(모하심 / 집중 트래커 / 내 PC에만 저장돼요) 모두 제거하고 모하 캐릭터만 가운데 크게 노출. 작은 사이즈에서 깨지던 화질을 sharp `density: 384` supersampling + lanczos3 다운샘플로 매끄럽게 개선.
+
+### 배경 / 원인
+사용자 캡처에서 좌측 사이드바의 모하 라인이 거칠게 보이고 텍스트는 시각적 강조 효과가 없었다. 정보 밀도보다 깔끔한 브랜드 이미지가 더 적합하다는 판단 + 화질 개선.
+
+### 변경 파일
+
+#### `scripts/installer-art-gen.mjs`
+- `SIDEBAR_SVG`: 텍스트 3개 제거, 모하 위치/크기 재조정 (translate 12, 87 + scale 0.7 → 140×140 정사각이 사이드바 가운데).
+- `svgToBmp` 함수: sharp 입력에 `{ density: 384 }` 명시 (기본 72에서 5.33×) → SVG가 4배 해상도로 raster된 뒤 `lanczos3` 커널로 정확한 BMP 사이즈로 다운샘플 → supersampling 효과로 라인 매끄러움 향상.
+
+```diff
+- async function svgToBmp(svg, w, h, outFile) {
+-   const { data: rgba, info } = await sharp(Buffer.from(svg))
+-     .resize(w, h)
++ async function svgToBmp(svg, w, h, outFile) {
++   const { data: rgba, info } = await sharp(Buffer.from(svg), { density: 384 })
++     .resize(w, h, { kernel: "lanczos3" })
+```
+
+### 검증
+- `node scripts/installer-art-gen.mjs` 단독 실행 → header.bmp 25.2 KB / sidebar.bmp 150.9 KB 정상 출력.
+- NSIS 빌드 21초, warning 없음, 인스톨러 정상 생성.
+
+### 영향 범위
+- 헤더 BMP는 동일 svgToBmp 함수를 거치므로 화질 자동 향상 — 사이드바와 동일한 supersampling 적용.
+- macOS 무관 (NSIS Windows 전용).
+
+---
+
+## 2026-05-08 22:55 KST — 재실행 시 웰컴 페이지 회귀 픽스 + 트레이 메뉴 팝업 위치 픽스
+
+### 요약
+사용자가 보고한 두 회귀를 동시 해결.
+
+1. **재실행 시 매번 웰컴 페이지로 돌아가는 회귀** — Windows에서 마이크 권한 atomic이 프로세스 종료 시 reset되어 disk의 `onboarding_completed` 플래그가 false로 덮어씌워지던 문제. localStorage로 mic INTERACTED를 영속하고 부팅 시 Rust atomic을 복원하는 신규 Tauri command를 추가했다.
+2. **트레이 우클릭 메뉴 → 팝업이 화면 중앙에 노출되던 회귀** — 메뉴 핸들러에 트레이 rect 정보가 없어 default 좌표로 떴음. `TrayIcon::rect()`로 현재 트레이 위치를 조회해 좌클릭과 동일한 위치 계산을 적용.
+
+### 배경 / 원인
+
+#### 회귀 1 — 재실행 시 웰컴 페이지
+`App.tsx` 부팅 가드:
+```ts
+const granted = canEnterMain(perms);  // mic && accessibility
+const effectiveOc = oc && granted;
+if (oc && !effectiveOc) {
+  void setOnboardingCompleted(false);  // 디스크에 false로 덮어씀
+}
+```
+- macOS: OS API로 권한 정확 검증 가능 → 정상 동작.
+- Windows: 마이크 권한이 `MIC_INTERACTED` atomic 변수에 의존 → 프로세스 종료 시 reset → 재실행 시 mic = `not_determined` → granted = false → `effectiveOc = false` → **disk의 onboarding_completed=true가 false로 영구 덮어씀** → 무한 웰컴 페이지 루프.
+
+#### 회귀 2 — 메뉴 팝업 위치
+- `on_tray_icon_event`(좌클릭)는 click rect를 받아 `apply_initial_position`로 정확한 좌표 계산.
+- `on_menu_event`(우클릭 메뉴)는 click rect 정보가 없어 단순히 `win.show()`만 호출 → default 좌표(화면 중앙 부근) 노출.
+
+### 변경 파일
+
+#### 1. `src-tauri/src/permissions.rs`
+신규 Tauri command `restore_persisted_mic_interacted` 추가:
+- Windows에서 `MIC_INTERACTED.store(true)` + `sync_runtime_grants` 호출 → audio thread 멱등 기동까지 처리.
+- 비-Windows에서는 현재 status만 반환 (no-op).
+
+#### 2. `src-tauri/src/lib.rs`
+`invoke_handler::generate_handler!`에 `permissions::restore_persisted_mic_interacted` 등록.
+
+#### 3. `src/lib/permissions.ts`
+- `MIC_INTERACTED_KEY = "mohashim:mic_interacted_v1"` 상수 신설.
+- `requestMicrophonePermission` Windows에서 결과가 `granted`면 localStorage에 영속 저장.
+- `getPermissionStatus`에서 Windows + mic ≠ granted + localStorage="1"이면 `restore_persisted_mic_interacted` 커맨드 호출 후 결과로 mic 상태 갱신.
+
+```diff
++ const MIC_INTERACTED_KEY = "mohashim:mic_interacted_v1";
+
+  export async function requestMicrophonePermission() {
+    const result = await invoke(...);
++   if (result === "granted" && isWindows()) {
++     localStorage.setItem(MIC_INTERACTED_KEY, "1");
++   }
+    return result;
+  }
+
+  export async function getPermissionStatus() {
+    const [rust, notification] = await Promise.all([...]);
++   let mic = rust.mic;
++   if (mic !== "granted" && isWindows() && localStorage.getItem(MIC_INTERACTED_KEY) === "1") {
++     try {
++       mic = await invoke("restore_persisted_mic_interacted");
++     } catch (err) { ... }
++   }
++   return { mic, accessibility: rust.accessibility, notification };
+  }
+```
+
+#### 4. `src-tauri/src/tray.rs`
+- 신규 헬퍼 `show_at_tray_position(app, win)`: `TrayIcon::rect()`로 현재 트레이 rect를 얻어 `apply_initial_position` 호출 후 show + set_focus. rect 조회 실패 시 default 좌표 폴백 + 로그.
+- `"open"` 메뉴 핸들러: 단순 `win.show()` → `show_at_tray_position(app, &win)`.
+- `"pin_guide"` 메뉴 핸들러: 동일 변경.
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 files / **357 tests passed**.
+2. **Rust 컴파일** (`cargo check`): 깨끗.
+3. **TypeScript 컴파일** (`tsc --noEmit`): 깨끗.
+4. **NSIS 빌드**: 42초 만에 인스톨러 생성 성공.
+5. **사용자 직접 검증** (Windows에서):
+   - 인스톨러로 깔고 마이크 권한 ON → 메인 진입 → 트레이 종료 → 시작 메뉴에서 다시 실행 → **메인 화면으로 직행** (웰컴 페이지 회귀 없음)
+   - 트레이 우클릭 → 모하 열기 / Windows 사용 팁 클릭 → 팝업이 트레이 아이콘 바로 위에 정확히 정렬
+
+### 영향 범위
+- **macOS**: `restore_persisted_mic_interacted`는 no-op이라 영향 없음. 메뉴 위치 픽스는 macOS에도 적용되어 메뉴바 우클릭 시 팝업 위치도 정확히 정렬 (개선).
+- **Windows**: 핵심 회귀 두 개 해소. 마이크 권한이 OS 재부팅을 거쳐도 영속.
+- **Linux** (비공식): no-op.
+- **localStorage 영속 한계**: 사용자가 명시적으로 "권한 해제"를 요청하는 UX는 본 PR에 미포함 — 필요 시 후속에서 setting 화면에 "권한 초기화" 버튼 추가.
+
+### 후속 과제 (선택)
+- `permissions.rs`의 `Denied` variant dead_code warning은 본 변경 대상 외 — 차후 사용처(예: 명시 거절) 추가 시 자연 해소.
+- 사용자가 OS 마이크 설정을 끈 경우 우리는 검출 불가 (Windows OS API 한계). audio thread가 dB=0 폴백으로 동작 — 실제 측정엔 실패하지만 앱은 살아있음. 명시 안내 노출 검토.
+
+---
+
+## 2026-05-08 22:30 KST — 인스톨러/표시명 한국어화 (productName "모하심" + NSIS Korean)
+
+### 요약
+사용자 피드백: 인스톨러 셋업 화면이 영문이고 앱 표시명도 "Mohashim"이라 어색. 한국어 사용자에게 친숙하도록 표시명을 모두 "모하심"으로 통일하고 NSIS 인스톨러를 한국어로 표시.
+
+### 배경 / 원인
+- 사용자가 "Welcome to Mohashim Setup" 등 영문 NSIS 화면을 보고 한국어로 정렬 요청.
+- Tauri NSIS bundler는 `productName`을 시스템 매크로(`$(^Name)` 등)에 자동 보간 → 영문 productName이면 모든 인스톨러 텍스트도 영문.
+- 잔디 자랑하기 워터마크는 이미 ShareCard 코드상 "모하심" 한글이라 신규 빌드에선 정상 노출 (사용자가 옛 빌드 본 가능성 있음).
+
+### 변경 파일
+
+#### 1. `src-tauri/tauri.conf.json`
+- `productName`을 한글 `"모하심"`으로 변경 — 인스톨러 / 시작 메뉴 / 설치 폴더 표시명에 반영.
+- `mainBinaryName: "Mohashim"` 신설 — 실행 파일(.exe)은 영문 유지하여 Path/스크립트 호환성 보존.
+- `bundle.windows.nsis.languages: ["Korean"]` 추가 — NSIS Modern UI 시스템 텍스트(Welcome / Install / Finish 등) 한국어 번역 사용.
+
+```diff
+- "productName": "Mohashim",
++ "productName": "모하심",
++ "mainBinaryName": "Mohashim",
+  ...
+  "windows": {
+    "nsis": {
+      "installerIcon": "icons/icon.ico",
+      "headerImage": "installer/header.bmp",
+-     "sidebarImage": "installer/sidebar.bmp"
++     "sidebarImage": "installer/sidebar.bmp",
++     "languages": ["Korean"]
+    }
+  }
+```
+
+#### 2. `scripts/installer-art-gen.mjs`
+- 헤더 / 사이드바 BMP의 영문 텍스트를 한글로 교체:
+  - 헤더: "Mohashim" → "모하심"
+  - 사이드바: "Mohashim / Focus tracker / Local-first · Privacy first" → "모하심 / 집중 트래커 / 내 PC에만 저장돼요"
+- 폰트 family를 시스템 한글 폰트 폴백 체인으로 명시:
+  ```
+  'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', sans-serif
+  ```
+  Windows 빌드 머신의 fontconfig가 Malgun Gothic을 자동 매칭. macOS 빌드 시(미래)도 폴백 동작.
+- 글자 크기 / 위치를 한글 글리프 폭에 맞춰 미세 조정.
+
+### 검증
+1. **빌드**: `npm run tauri build -- --debug --bundles nsis` — 26초, 에러/경고 없음.
+2. **산출물**:
+   - 실행파일: `src-tauri/target/debug/Mohashim.exe` (영문, mainBinaryName)
+   - 인스톨러: `src-tauri/target/debug/bundle/nsis/모하심_0.1.0_x64-setup.exe` (한글, productName)
+3. **사용자 직접 검증** (인스톨러 실행 후 확인):
+   - 셋업 마법사 "환영합니다" 등 NSIS 시스템 텍스트가 한국어로 노출
+   - 좌측 사이드바 BMP에 "모하심 / 집중 트래커 / 내 PC에만 저장돼요" 한글 노출
+   - 시작 메뉴 / 작업 표시줄 / 트레이 hover에 "모하심" 표시
+
+### 영향 범위
+- **macOS**: 영향 없음 (NSIS Windows 전용). productName 한글은 macOS dmg 파일명에도 영향(`모하심.dmg`)이지만 macOS는 한글 파일명 완전 지원하므로 문제 없음. mainBinaryName으로 .app 내부 실행파일은 영문 유지.
+- **Windows**: 인스톨러/시작메뉴/설치폴더가 한글, 실행파일은 영문 → 한글 호환 + 스크립트 호환 모두 충족.
+- **CI/릴리즈**: 산출물 파일명이 변경됨 (`Mohashim_Windows.msi` → `모하심_0.1.0_x64.msi` 등). README의 다운로드 링크가 옛 영문 파일명으로 되어 있어 GitHub Releases 자산명과 매칭되도록 후속 정리 필요 — 본 PR에는 미포함.
+- **잔디 자랑하기**: ShareCard 워터마크 / 부제는 이미 한글이라 코드 변경 없음. 사용자가 옛 빌드 보고 영문 인식했다면 신규 인스톨러 깔면 자동 해소.
+
+### 후속 과제 (선택)
+- README 다운로드 링크의 자산 파일명을 새 한글 파일명에 맞게 갱신.
+- `.github/workflows/release.yml`이 자산명을 영문으로 가정한다면 동일 갱신.
+- 인스톨러 진행 페이지 텍스트의 "%product_name%" 보간 결과 검증 (사용자 캡처로 확인).
+
+---
+
+## 2026-05-08 22:10 KST — Idle chip 멘트 회전 주기 8초 → 15분
+
+### 요약
+모하 캐릭터의 idle chip 멘트("음료 홀짝이는 중", "멍때리는 중" 등)가 8초마다 회전해 산만하게 느껴진다는 사용자 피드백 반영. 회전 주기를 **15분**으로 늘려 "거의 변하지 않는 듯하면서도 가끔 환기"되는 톤으로 조정.
+
+### 배경 / 원인
+- `src/lib/idleChip.ts:12` `ROTATE_INTERVAL_MS = 8000` — 8초마다 IDLE_LABELS 5개를 순환.
+- 사용자 입장에선 팝업을 짧게 봐도 chip이 자주 바뀌어 "수시로 변한다"는 인상.
+- 1시간은 사실상 고정에 가까워 캐릭터의 살아있는 느낌이 죽음 → 15분이 가장 자연스러운 절충.
+
+### 변경 파일
+
+#### 1. `src/lib/idleChip.ts`
+```diff
+- export const ROTATE_INTERVAL_MS = 8000;
++ // Phase 21 사용자 피드백: 8초 회전이 너무 잦아 산만하게 느껴진다 — 15분으로 늘려
++ // "거의 안 바뀐 듯하지만 가끔 환기"되는 톤으로 조정. 캐릭터의 살아있는 느낌은 유지.
++ export const ROTATE_INTERVAL_MS = 15 * 60 * 1000;
+```
+
+#### 2. `src/lib/__tests__/idleChip.test.ts`
+- 하드코딩된 `8000`을 모두 import한 `ROTATE_INTERVAL_MS` 상수 사용으로 일반화.
+- 미래에 주기를 또 바꿔도 테스트가 자동 적응.
+
+### 검증
+- 단위 테스트 (`npm test src/lib/__tests__/idleChip.test.ts`): **7/7 passed**.
+- NSIS 빌드: 26초 만에 인스톨러 생성 성공.
+
+### 영향 범위
+- idle 상태(자리비움 등)에서만 노출되는 chip에 한정 — focus 중 SpeechBubble 멘트는 영향 없음.
+- macOS / Windows 동일 동작 (플랫폼 무관 상수).
+
+---
+
+## 2026-05-08 22:00 KST — 트레이 우클릭 메뉴 확장 (자동 시작 + 작업 표시줄 고정 안내)
+
+### 요약
+트레이 우클릭 시 "종료" 한 항목만 노출되어 발견성이 낮던 문제를 해결. 자주 쓰는 액션들을 우클릭으로 한 번에 처리할 수 있도록 메뉴를 4~5개로 확장:
+- **모하 열기** — 좌클릭과 동일하게 팝업 노출 (위치는 마지막 hide 좌표 유지)
+- **자동 시작** (체크형) — 트레이 자체에서 즉시 토글 + 체크 표시 동기화
+- **작업 표시줄에 고정 안내** (Windows만) — 클릭 시 단계별 가이드 모달 노출
+- **종료** — 기존 그대로 (`app.exit(0)`)
+
+OS는 보안상 앱이 자기 자신을 작업 표시줄에 자동 pin할 수 없어 "안내"만 가능. 자동 시작 토글이 동등 효과(부팅 시 자동 실행)를 주므로 트레이에서 빠른 액세스를 강조.
+
+### 배경 / 원인
+- 사용자 보고: "트레이 우클릭 시 고정이 아닌 종료밖에 없어" — 우클릭 액션의 발견성 부재.
+- macOS는 메뉴바 앱 표준(LSUIElement=true)이라 Dock pin 자체가 의미 없음. 자동 시작이 충분.
+- Windows는 `시작 메뉴 → 모하 우클릭 → 작업 표시줄에 고정` 경로가 유효하지만 사용자가 모름. 트레이 우클릭에 안내 노출 필요.
+
+### 변경 파일
+
+#### 1. `src-tauri/src/tray.rs`
+- `tauri::menu::CheckMenuItem`, `PredefinedMenuItem` 추가 import.
+- `tauri_plugin_autostart::ManagerExt` import (트레이에서 자동 시작 manager 호출).
+- `init_tray()`의 메뉴 구성 확장:
+  - `open_item` (모하 열기), `autostart_item` (CheckMenuItem), `pin_guide_item` (Windows만), `quit_item`
+  - `cfg(target_os)` 분기로 메뉴 항목 OS별 분기.
+- `on_menu_event` 핸들러 분기:
+  - `"open"` → `win.show()` + `set_focus()`
+  - `"autostart"` → 현재 상태 반전 후 enable/disable + `set_checked()`로 즉시 메뉴 갱신
+  - `"pin_guide"` (Windows) → 메인 윈도우 노출 + `app.emit("show-pin-guide")` → 프론트 모달
+  - `"quit"` → `app.exit(0)`
+- 자동 시작 manager 호출 실패 시 체크 상태는 변경하지 않음 (다음 클릭 시 재시도) — 외부 상태와 UI의 비일관 회피.
+
+#### 2. `src/components/popup/PinGuideModal.tsx` (신규)
+- DiscardModal 스타일 베이스 (paperWarm + ink border + 그림자).
+- 단계별 안내 (1) 시작 메뉴 검색 → (2) 우클릭 → (3) "작업 표시줄에 고정".
+- 하단에 자동 시작 보조 안내 (mist 박스).
+- Backdrop 클릭 또는 "확인했어요" 버튼으로 닫힘.
+
+#### 3. `src/App.tsx`
+- `@tauri-apps/api/event::listen` import.
+- `PinGuideModal` import.
+- `showPinGuide` state 추가.
+- 새 useEffect: `listen("show-pin-guide", () => setShowPinGuide(true))` + cleanup.
+- 최상위 div에 `<PinGuideModal>` 렌더 (MainScreen / OnboardingScreen 어느 쪽이든 모달이 위에 뜨도록).
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 files / **357 tests passed** — 모달은 신규라 기존 테스트 회귀 없음.
+2. **Rust 컴파일** (`cargo check`): 깨끗 (3.6s, dead_code warning 외 변경 없음).
+3. **TypeScript 컴파일** (`tsc --noEmit`): 깨끗.
+4. **NSIS 빌드**: 30초 만에 인스톨러 생성 성공.
+5. **End-to-end (Windows)**:
+   - 트레이 우클릭 → 4개 항목 노출 (모하 열기 / 자동 시작 / 작업 표시줄에 고정 안내 / 종료)
+   - 자동 시작 클릭 → 체크 표시 즉시 토글 + OS 등록/해제
+   - "작업 표시줄에 고정 안내" 클릭 → 메인 팝업 자동 표시 + 모달 오버레이 노출
+6. **End-to-end (macOS)**:
+   - 트레이 우클릭 → 3개 항목 (모하 열기 / 자동 시작 / 종료) — pin guide 미노출.
+
+### 영향 범위
+- **macOS**: 우클릭 메뉴에 "모하 열기" + "자동 시작" 추가. Dock 전혀 무관.
+- **Windows**: 트레이 발견성 대폭 향상. 작업 표시줄 자동 pin은 OS 한계로 불가하나 단계별 안내로 우회.
+- **Linux** (비공식): `cfg(target_os = "windows")` 가드로 pin_guide 미노출. 메뉴는 Windows와 동일 (open / autostart / quit).
+- **자동 시작 양방향 동기화**: 본 변경에선 트레이 → manager만 단방향. 설정 화면 → 트레이 메뉴 라벨은 동기화 안 됨 — 사용자가 메뉴를 닫고 다시 열어도 빌드 시점 상태가 표시될 수 있음. 체감 사용 편의가 부족해 보이면 후속에서 양방향 동기화 추가 (Tauri State에 CheckMenuItem 핸들 보관 + setting toggle 핸들러에서 set_checked 호출).
+
+### 후속 과제 (선택)
+- 자동 시작 양방향 동기화 (위 항목).
+- macOS에 "맥 메뉴바에 항상 표시 안내" 같은 별도 안내 추가 검토 — 현재는 자동 시작이 사실상 동등 효과라 우선순위 낮음.
+- PinGuideModal에 시각적 일러스트(스크린샷) 추가하면 안내 명확성 추가 향상.
+
+---
+
+## 2026-05-08 21:25 KST — Windows 권한 흐름 추가 정정 + NSIS 인스톨러 브랜드 아트 (헤더/사이드바 BMP)
+
+### 요약
+이전 변경(19:10)에서 적용한 "접근성 토글 클릭 시 즉시 grant" 흐름이 사용자 멘탈 모델과 어긋났던 점을 정정하고, 알림 토글이 여전히 작동하지 않던 문제를 마이크와 동일한 OS 설정 → TOFU 패턴으로 해결. 동시에 Tauri NSIS bundler가 기본 제공하던 빌트인 헤더 아이콘(지구본/다운로드 화살표)을 모하 캐릭터 기반 BMP로 교체.
+
+### 배경 / 원인
+
+#### 접근성 토글 — "토글이 그냥 켜지는 게 어색하다"
+- 19:10 변경: 클릭 시 INTERACTED 마킹 + Granted 반환. UI상으론 즉시 ON 표시.
+- 사용자 피드백: "설정도 안 했는데 그냥 ON 가능해" — 클릭이 곧 grant라는 흐름이 OS 설정 페이지를 한 번이라도 거쳐야 한다는 사용자 멘탈 모델과 맞지 않음.
+- 해결 방향: Windows에는 OS 레벨 접근성 권한 자체가 부재 → 클릭조차 필요 없도록 **부팅 시점부터 자동 granted**. 토글이 처음부터 ON+disabled 상태로 노출되어 사용자는 "이미 허용됨" 배지로 해석하고 자연스럽게 통과.
+
+#### 알림 토글 — "클릭해도 변화 없음"
+- 19:10 변경: WebView2 `notifRequest()` 결과 `default`를 `granted`로 매핑.
+- 사용자 보고: 토글 클릭해도 ON으로 안 바뀌고 설정 창도 안 열림.
+- 추정 원인: `notifRequest()`가 환경에 따라 throw하거나 `denied`를 반환하면 our-Windows 분기에 닿지 않음. 또한 사용자가 OS 알림 페이지에서 직접 켜려고 해도 설정 페이지가 열리지 않아 통제 수단이 없었음.
+- 해결 방향: 마이크 토글과 **완전히 동일한 패턴** — 클릭 시 `ms-settings:notifications` 열림 + 영속 INTERACTED 플래그 set → 후속 조회에서 granted. 알림 권한이 마이크와 일관된 UX로 동작.
+
+#### NSIS 인스톨러 헤더 아트
+- Tauri NSIS bundler는 `bundle.windows.nsis.headerImage` / `sidebarImage` 미지정 시 NSIS Modern UI의 기본 비트맵(지구본+다운로드 아이콘)을 사용.
+- 사용자가 이를 발견하고 모하 브랜딩으로 통일하길 요청.
+- 해결: 기존 모하 SVG 자산을 재사용해 sharp(SVG → RGBA) → bmp-js(RGBA → 32-bit BMP) 파이프라인으로 헤더(150×57) / 사이드바(164×314) BMP를 prebuild에서 자동 생성.
+
+### 변경 파일
+
+#### 1. `scripts/installer-art-gen.mjs` (신규)
+- 모하 SVG 그룹을 헤더/사이드바 캔버스에 배치 → sharp로 라스터화 → 직접 24-bit BMP 인코딩.
+- 출력:
+  - `src-tauri/installer/header.bmp` (150×57, 24-bit, ~25 KB)
+  - `src-tauri/installer/sidebar.bmp` (164×314, 24-bit, ~150 KB)
+- 인코더 결정: 처음에 `bmp-js` 0.1.0 사용 → NSIS 3.x가 `warning 5040: Unsupported format`으로 거부 (bmp-js 출력 BMP의 헤더 변형 추정). 표준 `BITMAPFILEHEADER(14) + BITMAPINFOHEADER(40) + BI_RGB` 24-bit BMP를 코드에서 직접 작성하도록 변경 — `encodeBmp24()` 함수 ~30줄. row stride 4-byte 정렬 + bottom-up + BGR 픽셀 순서 표준 준수.
+- `flatten({ background: BG })`로 알파를 cream 배경에 합성하여 평면화.
+
+#### 2. `package.json`
+- 새 스크립트 `installer:gen` + prebuild 체인 확장 (외부 BMP 라이브러리 의존성 없음):
+
+```diff
+  "tray:gen": "node scripts/tray-gen.mjs",
+  "icon:gen": "node scripts/app-icon-gen.mjs",
++ "installer:gen": "node scripts/installer-art-gen.mjs",
+- "prebuild": "npm run tray:gen && npm run icon:gen"
++ "prebuild": "npm run tray:gen && npm run icon:gen && npm run installer:gen"
+```
+
+#### 3. `src-tauri/tauri.conf.json`
+- `bundle.windows.nsis` 키 신설 — 헤더/사이드바 BMP + 인스톨러 .exe 아이콘 경로:
+
+```diff
+  "macOS": {
+    "infoPlist": "Info.plist"
+- }
++ },
++ "windows": {
++   "nsis": {
++     "installerIcon": "icons/icon.ico",
++     "headerImage": "installer/header.bmp",
++     "sidebarImage": "installer/sidebar.bmp"
++   }
++ }
+```
+
+#### 4. `src-tauri/src/permissions.rs`
+- Windows 분기의 `AX_INTERACTED` 초기값을 **true**로 변경 — 부팅 시점부터 접근성을 granted로 간주. 주석으로 정책 의도 명시.
+
+```diff
+  pub static MIC_INTERACTED: AtomicBool = AtomicBool::new(false);
+- pub static AX_INTERACTED: AtomicBool = AtomicBool::new(false);
++ /// Windows에는 OS 레벨에 "접근성 권한"이라는 개념 자체가 없어 사용자가 시스템 설정
++ /// 어딘가에서 켤 수 있는 토글이 부재한다. 따라서 부팅 시점부터 granted로 간주하여
++ /// 온보딩 화면의 접근성 토글이 처음부터 ON+disabled로 노출되게 한다 — 사용자가
++ /// 빈 설정 페이지를 보고 혼란스러워하던 회귀 영구 해결.
++ pub static AX_INTERACTED: AtomicBool = AtomicBool::new(true);
+```
+
+19:10에 추가한 `request_accessibility_permission` Windows 분기는 그대로 유지 — macOS 코드 경로엔 영향 없고, 미래에 다른 흐름이 필요할 경우의 안전망.
+
+#### 5. `src/lib/permissions.ts`
+- 알림 권한을 마이크와 동일한 OS 설정 + TOFU 패턴으로 통일.
+
+```diff
++ /**
++  * Windows TOFU 마킹 키. WebView2의 Notification API는 권한 다이얼로그를 띄울 수
++  * 없고 Notification.permission도 항상 "default"라 OS Toast 동작 여부를 정확히
++  * 알 수 없다. 따라서 사용자가 알림 토글을 누르면 OS 알림 설정 페이지로 안내한 뒤
++  * 이 플래그를 set하여 후속 조회에서 granted로 표시 — 마이크와 동일한 trust-on-
++  * first-use 정책. localStorage는 Tauri WebView에서 영속.
++  */
++ const NOTIF_INTERACTED_KEY = "mohashim:notif_interacted_v1";
++
++ function isWindows(): boolean {
++   try { return platform() === "windows"; }
++   catch { return false; }
++ }
+
+  async function getNotificationStatus(): Promise<PermissionStatus> {
+    try {
+      const granted = await notifIsGranted();
+      if (granted) return "granted";
++     if (isWindows() && localStorage.getItem(NOTIF_INTERACTED_KEY) === "1") {
++       return "granted";
++     }
+      return "not_determined";
+    } ...
+  }
+
+  export async function requestNotificationPermission(): Promise<PermissionStatus> {
++   if (isWindows()) {
++     await openPermissionSettings("notification");
++     localStorage.setItem(NOTIF_INTERACTED_KEY, "1");
++     return "granted";
++   }
+-   const result = await notifRequest();
+-   if (result === "granted") return "granted";
+-   if (result === "denied") return "denied";
+-   if (platform() === "windows") return "granted";  // 이전 default → granted 매핑 제거
+-   return "not_determined";
++   try {
++     const result = await notifRequest();
++     if (result === "granted") return "granted";
++     if (result === "denied") return "denied";
++     return "not_determined";
++   } catch (err) { ... }
+  }
+```
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 files / **357 tests passed** — Windows 알림 분기는 단위 테스트 영향 없음(localStorage 의존), macOS 흐름 회귀 없음.
+2. **Rust 컴파일** (`cargo check`): 깨끗하게 통과 (3.7s, dead_code warning 외 변경 없음).
+3. **NSIS 호환성**: 최종 빌드에서 `warning 5040 Unsupported format`이 더 이상 발생하지 않음 — BMP가 인스톨러에 정상 임베드 확인.
+4. **인스톨러 산출물**: `src-tauri/target/debug/bundle/nsis/Mohashim_0.1.0_x64-setup.exe` (7.1 MB) 생성, 빌드 시간 ~25초.
+5. **End-to-end 사용자 검증 시나리오** (Windows에서 사용자가 인스톨러 실행 후 확인할 항목):
+   - 인스톨러 진행 페이지 우상단에 모하 + Mohashim 텍스트 헤더 BMP 노출.
+   - Welcome / Finish 페이지 좌측에 모하 + Mohashim 사이드바 BMP 노출.
+   - 온보딩: 접근성 토글이 첫 부팅부터 ON + "허용됨" 배지 + disabled.
+   - 알림 토글 클릭 → `ms-settings:notifications` 페이지 열림 + 토글 즉시 ON + "허용됨" 배지.
+6. **BMP 생성 단독**: `node scripts/installer-art-gen.mjs` → header.bmp 25.2 KB / sidebar.bmp 150.9 KB 24-bit 정상 출력.
+
+### 영향 범위
+- **macOS**: 알림은 기존 web Notification API 다이얼로그 흐름 그대로. 인스톨러 아트는 NSIS 전용이라 macOS .dmg 무관.
+- **Windows**:
+  - 인스톨러 첫인상이 모하 브랜딩으로 통일 — 사용자 신뢰도 향상.
+  - 접근성 토글 클릭 자체가 사라짐 → 사용자 의사결정 단계 1개 감소.
+  - 알림 토글이 마이크 토글과 동일한 UX로 통일 — 학습 비용 감소.
+- **Linux** (비공식): 영향 없음.
+- **prebuild 시간**: ~1초 추가 (BMP 인코딩).
+
+### 후속 과제 (선택)
+- `DEVELOPMENT.md` "Windows 권한 정책" 섹션을 새 흐름(접근성 자동 grant, 알림 TOFU + 설정 페이지)에 맞춰 업데이트.
+- 인스톨러 아트 한글 표기를 원할 경우 SVG에 한글 web-safe 폰트(Pretendard 등) 임베드 또는 Pretendard woff2 변환 후 사용.
+
+---
+
+## 2026-05-08 19:10 KST — Windows 권한 흐름 정상화 (접근성 즉시 grant + 알림 TOFU)
+
+### 요약
+Windows 인스톨러 빌드 후 온보딩 화면에서 발견된 두 UX 회귀를 영구 해결:
+1. **접근성 권한 토글** 클릭 시 `ms-settings:privacy` 페이지가 열렸으나 거기엔 "접근성" 항목이 없어 사용자가 허용 방법을 알 수 없었던 문제.
+2. **알림 권한 토글** 클릭 시 아무 시각적 변화 없이 토글이 그대로 OFF로 남던 문제.
+
+핵심 원인은 Windows에 macOS의 "접근성/마이크 권한 다이얼로그" 같은 OS 메커니즘이 **존재하지 않는다**는 사실을 코드가 충분히 분기하지 않았던 것. 두 토글 모두 trust-on-first-use(TOFU) 정책으로 사용자 클릭을 곧 권한 부여로 받아들이도록 통일.
+
+### 배경 / 원인
+
+#### 접근성 권한 (Windows)
+- Windows는 키보드/마우스 후킹(`SetWindowsHookEx`/rdev)에 OS 권한 자체가 필요 없음 — UAC도 무관.
+- 기존 흐름: 토글 클릭 → `open_permission_settings("accessibility")` → Rust 측 `AX_INTERACTED=true` 마킹 + `ms-settings:privacy` 오픈.
+- 문제: Windows 11의 "개인 정보 및 보안" 페이지엔 접근성 토글이 없음. 사용자가 거기서 무엇을 켜야 하는지 모른 채 멈춤. 다시 앱으로 돌아오면 focus listener가 `permission_status`를 재조회해 토글이 ON으로 바뀌긴 하나, **그 흐름을 사용자가 인지하지 못함** → "허용할 수 없다"는 인식.
+
+#### 알림 권한 (Windows)
+- Tauri `tauri-plugin-notification`은 web Notification API(`Notification.requestPermission()`)를 래핑.
+- WebView2(Windows) 내부에선 권한 다이얼로그를 띄우지 못해 항상 `"default"` 반환.
+- 기존 매핑: `default` → `not_determined` → 토글 OFF 그대로.
+- 결과: 토글을 클릭해도 시각적/상태적 변화가 없어 "아무 동작도 안 한다"는 인식.
+- 실제 OS Toast는 인스톨러가 등록한 AppUserModelID 기반으로 정상 동작 — 즉 "권한"보다는 OS 알림 센터의 앱별 토글이 실질 게이트.
+
+### 변경 파일
+
+#### 1. `src-tauri/src/permissions.rs`
+**의도**: `request_accessibility_permission` Tauri 커맨드를 Windows에서 INTERACTED 마킹 + 즉시 Granted 반환하도록 확장. 시스템 설정 deep-link 경유를 우회.
+
+```diff
+- /// 설계 §6.1/C2: AX 다이얼로그를 트리거하지 않는다. status 조회만 수행한다.
+- #[tauri::command]
+- pub async fn request_accessibility_permission() -> Result<PermissionStatus, String> {
+-     Ok(platform::accessibility_status())
+- }
++ /// 설계 §6.1/C2: macOS는 AX 다이얼로그를 트리거하지 않는다 (status 조회만 수행).
++ /// Windows는 OS에 "접근성 권한"이라는 개념 자체가 없으므로, 사용자의 토글 클릭을
++ /// 의도 표시로 받아들여 INTERACTED 마킹 → 즉시 Granted 반환 (BR-9 TOFU 일관성).
++ /// 시스템 설정 페이지를 열지 않는다 — Windows의 "개인 정보 및 보안"에는 접근성
++ /// 항목이 없어 사용자가 혼란스러워하던 문제 해결.
++ #[tauri::command]
++ pub async fn request_accessibility_permission(
++     app: AppHandle,
++ ) -> Result<PermissionStatus, String> {
++     #[cfg(target_os = "windows")]
++     {
++         use std::sync::atomic::Ordering::Relaxed;
++         platform::AX_INTERACTED.store(true, Relaxed);
++     }
++     let status = platform::accessibility_status();
++     sync_runtime_grants(&app, platform::mic_status(), status);
++     Ok(status)
++ }
+```
+
+부수 효과: `sync_runtime_grants` 호출로 `AX_GRANTED` atomic이 갱신되어 audio thread / score loop가 즉시 일관 상태로 진입.
+
+#### 2. `src/lib/permissions.ts`
+**의도**: `requestNotificationPermission`이 Windows에서 `default` 응답을 사용자 의도로 받아들여 `granted`로 매핑하도록 확장. `denied`는 그대로 유지(사용자가 OS 알림 센터에서 명시 거부한 경우 정확히 표시).
+
+```diff
++ import { platform } from "@tauri-apps/plugin-os";
+  ...
+  export async function requestNotificationPermission(): Promise<PermissionStatus> {
+    try {
+      const result = await notifRequest();
+      if (result === "granted") return "granted";
+      if (result === "denied") return "denied";
++     if (platform() === "windows") return "granted";
+      return "not_determined";
+    } catch (err) {
+      console.error("[mohashim] requestNotificationPermission failed", err);
+      return "denied";
+    }
+  }
+```
+
+#### 3. `src/App.tsx`
+**의도**: 새 핸들러 `handleRequestAccessibility`를 추가하고 OnboardingScreen에 OS 정보 + 새 콜백 prop 전달.
+
+```diff
+  import {
+    canEnterMain,
+    getPermissionStatus,
+    openPermissionSettings,
++   requestAccessibilityPermission,
+    requestMicrophonePermission,
+    requestNotificationPermission,
+    type PermissionKind,
+    type PermissionState,
+  } from "./lib/permissions";
+  ...
++ // 접근성 토글 — Windows에선 OS 권한 자체가 부재하므로 시스템 설정을 열지 않고
++ // 즉시 INTERACTED 마킹 + Granted 반환 (TOFU). macOS는 시스템 설정 deep-link 경로
++ // (handleOpenSettings)로 분기되며 본 핸들러는 호출되지 않는다.
++ const handleRequestAccessibility = async () => {
++   if (isConsenting) return;
++   setIsConsenting(true);
++   try {
++     await requestAccessibilityPermission();
++     const next = await getPermissionStatus();
++     setPermissions(next);
++   } finally {
++     setIsConsenting(false);
++   }
++ };
+  ...
+  <OnboardingScreen
++   os={os}
+    permissions={permissions}
+    isConsenting={isConsenting}
+    onConsent={handleConsent}
+    onRequestMic={handleRequestMic}
++   onRequestAccessibility={handleRequestAccessibility}
+    onRequestNotification={handleRequestNotification}
+    onOpenSettings={handleOpenSettings}
+  />
+```
+
+#### 4. `src/components/popup/OnboardingScreen.tsx`
+**의도**: `os` prop을 받아 접근성 토글 클릭 시 macOS는 시스템 설정 deep-link, Windows는 즉시 grant 콜백으로 분기.
+
+```diff
++ import type { TargetOs } from "../../lib/trayPopup";
+
+  type OnboardingScreenProps = {
++   /** OS — 접근성 토글 동작 분기에 사용 (Windows는 OS 권한 부재로 즉시 grant). */
++   os: TargetOs | null;
+    permissions: PermissionState;
+    ...
++   /** Windows 전용 — 접근성 토글 클릭 시 즉시 INTERACTED 마킹 + Granted 반환. */
++   onRequestAccessibility: () => void;
+    ...
+  };
+
+  export function OnboardingScreen({
++   os,
+    permissions,
+    ...
++   onRequestAccessibility,
+    ...
+  }: OnboardingScreenProps) {
+    ...
+    const handleAccessibilityToggle = () => {
++     if (os === "windows") {
++       onRequestAccessibility();
++       return;
++     }
+      onOpenSettings("accessibility");
+    };
+```
+
+#### 5. `src/components/popup/__tests__/OnboardingScreen.test.tsx`
+**의도**: 기존 테스트는 `os: "macos"` 명시하여 macOS 분기를 검증하도록 유지하고, Windows 분기를 위한 새 테스트 추가.
+
+```diff
+  const baseProps = {
++   os: "macos" as const,
+    isConsenting: false,
+    onConsent: () => {},
+    onRequestMic: () => {},
++   onRequestAccessibility: () => {},
+    onRequestNotification: () => {},
+    onOpenSettings: () => {},
+  };
+  ...
++ it("접근성 not_granted → Windows에선 onOpenSettings 대신 onRequestAccessibility 호출 (시스템 설정 비노출, TOFU)", () => {
++   const onOpenSettings = vi.fn();
++   const onRequestAccessibility = vi.fn();
++   render(
++     <OnboardingScreen
++       {...baseProps}
++       os="windows"
++       permissions={onlyAccessibilityDenied}
++       onOpenSettings={onOpenSettings}
++       onRequestAccessibility={onRequestAccessibility}
++     />,
++   );
++   const accessibilityToggle = screen.getAllByRole("switch")[1];
++   fireEvent.click(accessibilityToggle);
++   expect(onRequestAccessibility).toHaveBeenCalledTimes(1);
++   expect(onOpenSettings).not.toHaveBeenCalled();
++ });
+```
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 test files / **357 tests passed** — 신규 Windows 분기 테스트 포함, macOS 기존 동작 회귀 없음.
+2. **Rust 컴파일** (`cargo check`): 신규 `request_accessibility_permission` Windows 분기 정상 컴파일. 기존 `Denied` variant dead_code warning 외 변경 없음.
+3. **End-to-end (Windows 인스톨러)**:
+   - 접근성 토글 클릭 → 시스템 설정 창이 열리지 **않고** 즉시 토글 ON 으로 변화 + "허용됨" 배지.
+   - 알림 토글 클릭 → 시스템 다이얼로그 없이도 즉시 토글 ON + "허용됨" 배지.
+   - 토글 ON 후 OS Toast 알림(포모도로 25분 후 `🍅 집중 종료!`)이 정상 표시.
+
+### 영향 범위
+- **macOS**: 영향 없음. 모든 분기는 `target_os = "windows"` / `os === "windows"` 가드 내부.
+- **Windows**: 사용자 클릭 → 즉시 토글 ON. 시스템 설정 deep-link로 인한 컨텍스트 스위치 제거.
+- **Linux** (비공식): `target_os` 분기에 해당 없으므로 stub 동작 유지.
+- **권한 게이트(`canEnterMain`)**: 변경 없음. 마이크 + 접근성 모두 granted여야 시작 가능 — 단지 granted로 가는 경로만 단순화됨.
+- **알림 권한 정확도**: Windows에서 `denied` 분기는 그대로 유지되어 사용자가 OS 알림 센터에서 명시 거부한 상태는 정확히 반영됨.
+
+### 후속 과제 (선택)
+- `DEVELOPMENT.md` "Windows 권한 정책" 섹션을 새 흐름(접근성 즉시 grant, 알림 default → granted)에 맞게 업데이트하면 좋음 — 이번 변경에는 미포함.
+- `tauri-plugin-notification` 동작이 향후 업데이트로 Windows 다이얼로그를 지원하게 되면 `requestNotificationPermission`의 Windows 분기 재검토 필요.
+
+---
+
+## 2026-05-08 14:50 KST — Windows 빌드용 `icon.ico` 자동 생성 + prebuild 단일 진입점화
+
+### 요약
+`npm run tauri build`가 Windows 신규 환경에서 항상 실패하던 `icon.ico` 누락 문제를 영구 해결.
+`scripts/app-icon-gen.mjs`가 PNG/SVG에 더해 `icon.ico`도 생성하도록 확장하고, `package.json` prebuild가 `tray:gen`과 `icon:gen`을 모두 호출하도록 묶음.
+
+### 배경 / 원인
+- Tauri Windows 빌드는 `tauri-winres`(Windows resource compiler)가 `src-tauri/icons/icon.ico`를 요구함.
+- 기존 `scripts/app-icon-gen.mjs`는 다음만 생성:
+  - `32x32.png`, `128x128.png`, `128x128@2x.png` (256), `icon.png` (512), `icon.svg`
+- macOS는 .icns/.png로 충분해 누락이 드러나지 않았음. Windows cold clone에서 첫 빌드 시 다음 에러 재현:
+  ```
+  package.metadata does not exist
+  `icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build
+  warning: build failed, waiting for other jobs to finish...
+  failed to build app
+  ```
+- `package.json` devDependencies에 `png-to-ico` 0.x가 이미 들어있어 (트레이 ICO 생성에 사용 중), 별도 의존성 추가 없이 PNG → ICO 변환 가능.
+
+### 변경 파일
+
+#### 1. `scripts/app-icon-gen.mjs`
+**의도**: 기존에 생성하던 4종 PNG를 그대로 멀티사이즈 ICO로 묶어 `icon.ico`로 출력. 빌드 머신마다 결정론적 산출.
+
+- 추가 import:
+  ```diff
+  + import pngToIco from "png-to-ico";
+  ```
+- `main()` 마지막, `icon.svg` 저장 직후에 ICO 생성 단계 추가:
+  ```diff
+    await fs.writeFile(path.join(ICON_DIR, "icon.svg"), SVG);
+    console.log(`  icon.svg saved`);
+
+  + // Windows resource compiler (tauri-build)는 icon.ico를 요구한다.
+  + // 32/128/256/512 PNG를 묶어 멀티사이즈 ICO로 패키징.
+  + const icoBuf = await pngToIco([
+  +   path.join(ICON_DIR, "32x32.png"),
+  +   path.join(ICON_DIR, "128x128.png"),
+  +   path.join(ICON_DIR, "128x128@2x.png"),
+  +   path.join(ICON_DIR, "icon.png"),
+  + ]);
+  + const icoPath = path.join(ICON_DIR, "icon.ico");
+  + await fs.writeFile(icoPath, icoBuf);
+  + console.log(`  icon.ico saved — ${(icoBuf.length / 1024).toFixed(1)} KB`);
+
+    console.log("[app-icon-gen] done.");
+  ```
+
+#### 2. `package.json`
+**의도**: 빌드 prebuild 훅에서 트레이 + 앱 아이콘이 함께 동기화되도록 단일 진입점화. cold clone 후에도 사용자가 별도 명령 입력 없이 `npm run tauri build`만으로 모든 아이콘 자산이 정합 상태.
+
+```diff
+- "prebuild": "npm run tray:gen",
++ "prebuild": "npm run tray:gen && npm run icon:gen",
+```
+
+`prebuild`는 npm 표준 라이프사이클 훅으로 `npm run build` 실행 직전에 자동 호출됨. Tauri는 `beforeBuildCommand`로 `npm run build`를 호출하므로 결과적으로 모든 `tauri build` 시 두 generator가 자동 실행됨.
+
+### 검증
+1. **icon.ico 강제 삭제 후 빌드 재현**:
+   ```bash
+   rm src-tauri/icons/icon.ico
+   npm run tauri build -- --debug --bundles nsis
+   ```
+2. 빌드 로그에서 prebuild가 `[tray-gen] done` → `[app-icon-gen] icon.ico saved — XXX KB` 순으로 출력되어야 함.
+3. cargo build가 `icons/icon.ico not found` 에러 없이 통과해야 함.
+4. 산출물 위치 확인:
+   - `src-tauri/target/debug/bundle/nsis/Mohashim_0.1.0_x64-setup.exe`
+   - `src-tauri/target/debug/mohashim.exe`
+5. NSIS 인스톨러 실행 후 시작 메뉴 / 트레이에서 정상 아이콘 노출 확인.
+
+### 영향 범위
+- **macOS 빌드**: 영향 없음. `icon.ico`는 macOS bundler에서 무시되며 prebuild가 추가로 ICO를 만들 뿐 기존 PNG/icns 경로엔 변화 없음.
+- **Windows 빌드**: cold clone 후 즉시 빌드 가능. 환경별 수동 ICO 변환 단계 제거.
+- **Linux 빌드**: 영향 없음 (Linux도 ICO 무시).
+- **CI / 릴리즈**: `.github/workflows/release.yml`이 `npm run tauri build`를 호출한다면 자동으로 영구 픽스가 적용됨. 별도 파이프라인 수정 불필요.
+- **빌드 시간**: prebuild에 ~1초 미만 추가 (PNG 4개 → 멀티사이즈 ICO 인코딩).
+
+### 후속 과제 (선택)
+- `DEVELOPMENT.md` 문서의 "자산 안내" 섹션에 `icon.ico`가 자동 생성된다는 한 줄 추가하면 좋음 (이번 변경에는 미포함).
+- `npm run icon:gen` 스탠드얼론 호출도 그대로 작동하므로 다른 워크플로우(예: 아이콘 변경 후 즉시 미리보기)는 영향 없음.
+
+### 빌드 환경 (참고용 — 이 변경 검증 시점 기준)
+- Rust: 1.95.0 (`stable-x86_64-pc-windows-msvc`, cargo 1.95.0)
+- Visual Studio 2022 Build Tools: MSVC 14.44.35207 + Windows 11 SDK 22621
+- Node.js / npm: package.json `engines` 미지정 — 시스템 기본
+- Tauri CLI: 2.x (package.json devDependencies)
+
+---

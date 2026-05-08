@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
 };
+use tauri_plugin_autostart::ManagerExt;
 
 use crate::score::phase::{LiveState, Phase};
 
@@ -75,17 +76,108 @@ fn load_icons<R: Runtime>(app: &AppHandle<R>) -> Result<HashMap<LiveState, Image
 }
 
 pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    // 사용자 피드백: 트레이 우클릭이 "종료"만 노출되어 발견성이 낮음. 자주 쓰는 액션을
+    // 펼쳐 우클릭만으로도 팝업 열기 / 자동 시작 토글 / (Windows) 작업표시줄 고정 안내 /
+    // 종료를 모두 처리할 수 있게 한다. 자동 시작은 CheckMenuItem으로 현재 상태 표시 +
+    // 토글 즉시 동기화 (트레이 자체 변경 한정 — 설정 화면 변경의 역방향 동기화는 후속 작업).
+    let open_item = MenuItem::with_id(app, "open", "모하 열기", true, None::<&str>)?;
+    let separator_top = PredefinedMenuItem::separator(app)?;
+
+    let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    let autostart_item = CheckMenuItem::with_id(
+        app,
+        "autostart",
+        "자동 시작",
+        true,
+        autostart_enabled,
+        None::<&str>,
+    )?;
+
+    #[cfg(target_os = "windows")]
+    let pin_guide_item = MenuItem::with_id(
+        app,
+        "pin_guide",
+        "Windows 사용 팁",
+        true,
+        None::<&str>,
+    )?;
+
+    let separator_bottom = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&quit_item])?;
+
+    #[cfg(target_os = "windows")]
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open_item,
+            &separator_top,
+            &autostart_item,
+            &pin_guide_item,
+            &separator_bottom,
+            &quit_item,
+        ],
+    )?;
+    #[cfg(not(target_os = "windows"))]
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open_item,
+            &separator_top,
+            &autostart_item,
+            &separator_bottom,
+            &quit_item,
+        ],
+    )?;
+
+    // 핸들러에서 set_checked로 즉시 갱신하기 위해 Clone된 핸들 캡처.
+    let autostart_item_for_handler = autostart_item.clone();
 
     let tray = TrayIconBuilder::with_id("main")
         .tooltip("모하심")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| {
-            if event.id.as_ref() == "quit" {
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            "open" => {
+                if let Some(win) = app.get_webview_window("main") {
+                    show_at_tray_position(app, &win);
+                }
+            }
+            "autostart" => {
+                let manager = app.autolaunch();
+                let new_state = !manager.is_enabled().unwrap_or(false);
+                let result = if new_state {
+                    manager.enable()
+                } else {
+                    manager.disable()
+                };
+                match result {
+                    Ok(()) => {
+                        if let Err(e) = autostart_item_for_handler.set_checked(new_state) {
+                            eprintln!("[mohashim] tray autostart set_checked failed: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[mohashim] tray autostart toggle failed: {e}");
+                        // 실패 시 체크 상태는 변경하지 않는다 — 다음 클릭 때 재시도.
+                    }
+                }
+            }
+            #[cfg(target_os = "windows")]
+            "pin_guide" => {
+                // 모달은 메인 팝업 내부에 렌더되므로 팝업이 hide 상태였다면 함께 노출.
+                // 트레이 좌클릭과 동일한 위치 계산을 적용해 default 좌표(화면 중앙)
+                // 노출 회귀를 차단한다.
+                if let Some(win) = app.get_webview_window("main") {
+                    show_at_tray_position(app, &win);
+                }
+                if let Err(e) = app.emit("show-pin-guide", ()) {
+                    eprintln!("[mohashim] show-pin-guide emit failed: {e}");
+                }
+            }
+            "quit" => {
                 app.exit(0);
             }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             use tauri::tray::{MouseButton, MouseButtonState};
@@ -160,6 +252,24 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     }
 
     Ok(())
+}
+
+/// 메뉴 경로(우클릭 → 모하 열기 / Windows 사용 팁)에서 사용한다.
+///
+/// `on_tray_icon_event`와 달리 `on_menu_event`는 클릭 rect를 직접 받지 않는다.
+/// `TrayIcon::rect()`로 현재 트레이 아이콘 rect를 조회해 좌클릭과 동일한 위치
+/// 계산(`apply_initial_position`)을 적용한 뒤 show 한다. rect 조회 실패 시
+/// default 좌표 폴백 — 일부 환경(예: macOS minimize 직후) 대비.
+fn show_at_tray_position<R: Runtime>(app: &AppHandle<R>, win: &tauri::WebviewWindow<R>) {
+    if let Some(tray) = app.tray_by_id("main") {
+        match tray.rect() {
+            Ok(Some(rect)) => apply_initial_position(app, win, &rect),
+            Ok(None) => eprintln!("[mohashim] tray.rect() returned None — default position"),
+            Err(e) => eprintln!("[mohashim] tray.rect() err: {e} — default position"),
+        }
+    }
+    let _ = win.show();
+    let _ = win.set_focus();
 }
 
 /// Phase 21 (사용자 피드백 재개정): 팝업 좌측 선을 트레이 아이콘의 좌측 끝과

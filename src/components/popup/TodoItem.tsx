@@ -93,14 +93,17 @@ export function TodoItem({
     .filter(Boolean)
     .join(" ");
 
+  // 사용자 피드백: 긴 텍스트가 한 줄 잘림(...)이 아닌 다중 라인으로 자연스럽게
+  // 줄바꿈되도록 처리. 글자수는 maxLength={100}으로 이미 입력 단계에서 제한됨.
   const labelBaseClass = todo.done
-    ? "flex-1 truncate line-through opacity-40"
-    : "flex-1 truncate text-ink cursor-text";
+    ? "flex-1 whitespace-normal break-words line-through opacity-40"
+    : "flex-1 whitespace-normal break-words text-ink cursor-text";
 
   return (
     <div className={cardClass}>
       <div className="px-3 py-2">
-        <div className="flex items-center gap-2 pr-1">
+        {/* 다중 라인 텍스트 시 체크박스/액션 버튼이 첫 줄과 정렬되도록 items-start. */}
+        <div className="flex items-start gap-2 pr-1">
           <button
             type="button"
             onClick={() => onToggleDone(todo.id)}

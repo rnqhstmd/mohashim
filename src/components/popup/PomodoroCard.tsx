@@ -8,6 +8,13 @@ type PomodoroCardProps = {
   phrase: string;
   /** Phase 21: 데시벨 인라인 노출 — 캐릭터 헤더 내부에서 dB 라벨/숫자 표기. */
   db: number;
+  /**
+   * 사용자 피드백: idle 화면에 직전 세션 점수를 노출하는 대신, 세션 진행 중에
+   * 실시간 점수(work_score + noise_score, 0~100)를 카드 헤더 우측에 큼지막하게
+   * 보여준다. complete phase에서는 세션 평균 점수가 표시된다 (score-tick에서
+   * total이 평균으로 갱신됨).
+   */
+  total: number;
   onTimerClick: () => void;
 };
 
@@ -39,6 +46,7 @@ export function PomodoroCard({
   potatoState,
   phrase,
   db,
+  total,
   onTimerClick,
 }: PomodoroCardProps) {
   const isComplete = phase === "complete";
@@ -75,11 +83,18 @@ export function PomodoroCard({
         </div>
         <div className="min-w-0 flex-1 pt-1">
           <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">
-            <span>안녕 모하야</span>
-            <span aria-hidden>🥔</span>
+            <span>안녕 난 모하야!</span>
           </h2>
 
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
+          {/* 실시간 점수 — 세션 진행 중 가독성 우선의 큰 숫자 표시 (사용자 피드백). */}
+          <div className="mt-1 flex items-baseline gap-1 tabular-nums">
+            <span className="text-[28px] font-extrabold leading-none text-ink">
+              {Math.max(0, Math.min(100, Math.round(total)))}
+            </span>
+            <span className="text-[11px] font-bold text-ink/55">/ 100</span>
+          </div>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
             <span
               className="inline-flex items-center gap-1 tabular-nums"
               style={{ color: dbColor }}

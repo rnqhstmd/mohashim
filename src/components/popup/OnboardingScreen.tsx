@@ -6,12 +6,17 @@ import {
   type PermissionState,
   type PermissionStatus,
 } from "../../lib/permissions";
+import type { TargetOs } from "../../lib/trayPopup";
 
 type OnboardingScreenProps = {
+  /** OS — 접근성 토글 동작 분기에 사용 (Windows는 OS 권한 부재로 즉시 grant). */
+  os: TargetOs | null;
   permissions: PermissionState;
   isConsenting: boolean;
   onConsent: () => void;
   onRequestMic: () => void;
+  /** Windows 전용 — 접근성 토글 클릭 시 즉시 INTERACTED 마킹 + Granted 반환. */
+  onRequestAccessibility: () => void;
   /** Phase 21: 알림 권한은 선택. 미허용/취소 시에도 시작하기 활성. */
   onRequestNotification: () => void;
   onOpenSettings: (kind: PermissionKind) => void;
@@ -176,10 +181,12 @@ function PermissionCard({
  *   - 카드 압축으로 시작하기 버튼이 460px 화면 안에 노출 (스크롤 회귀 해소).
  */
 export function OnboardingScreen({
+  os,
   permissions,
   isConsenting,
   onConsent,
   onRequestMic,
+  onRequestAccessibility,
   onRequestNotification,
   onOpenSettings,
 }: OnboardingScreenProps) {
@@ -198,8 +205,16 @@ export function OnboardingScreen({
   };
 
   const handleAccessibilityToggle = () => {
-    // not_determined / denied 모두 시스템 설정으로 deep-link.
-    // (rdev/AX는 다이얼로그 트리거 불가 — Tauri 플러그인에서도 마찬가지)
+    // macOS: 시스템 환경설정 → 보안/개인정보 → 접근성으로 deep-link.
+    //         (rdev/AX는 앱에서 다이얼로그 트리거 불가)
+    // Windows: OS에 "접근성 권한"이라는 개념 자체가 없으므로 시스템 설정을 열지 않고
+    //          토글 클릭을 사용자 의도로 받아들여 즉시 INTERACTED 마킹 + Granted 반환.
+    //          ms-settings:privacy를 열어도 거기엔 접근성 항목이 없어 사용자가 혼란
+    //          스러워하는 회귀 해소.
+    if (os === "windows") {
+      onRequestAccessibility();
+      return;
+    }
     onOpenSettings("accessibility");
   };
 

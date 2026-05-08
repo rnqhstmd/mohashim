@@ -12,18 +12,19 @@
     "test:watch": "vitest",
     "tray:gen": "node scripts/tray-gen.mjs",
     "icon:gen": "node scripts/app-icon-gen.mjs",
-    "prebuild": "npm run tray:gen"
+    "installer:gen": "node scripts/installer-art-gen.mjs",
+    "prebuild": "npm run tray:gen && npm run icon:gen && npm run installer:gen"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-store": "^2",
-    "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-autostart": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@tauri-apps/plugin-notification": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "^2",
-    "@tauri-apps/plugin-autostart": "^2"
+    "@tauri-apps/plugin-store": "^2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

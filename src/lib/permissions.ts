@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { platform } from "@tauri-apps/plugin-os";
 import {
   isPermissionGranted as notifIsGranted,
   requestPermission as notifRequest,
@@ -28,11 +29,48 @@ type RustPermissionState = {
   accessibility: PermissionStatus;
 };
 
+/**
+ * Windows TOFU 마킹 키. WebView2의 Notification API는 권한 다이얼로그를 띄울 수
+ * 없고 Notification.permission도 항상 "default"라 OS Toast 동작 여부를 정확히
+ * 알 수 없다. 따라서 사용자가 알림 토글을 누르면 OS 알림 설정 페이지로 안내한 뒤
+ * 이 플래그를 set하여 후속 조회에서 granted로 표시 — 마이크와 동일한 trust-on-
+ * first-use 정책. localStorage는 Tauri WebView에서 영속.
+ */
+const NOTIF_INTERACTED_KEY = "mohashim:notif_interacted_v1";
+
+/**
+ * Windows 전용 마이크 INTERACTED 영속 키.
+ *
+ * Rust측 `MIC_INTERACTED` atomic은 프로세스 메모리 변수라 앱 종료 시 reset된다.
+ * 사용자가 한 번 토글로 권한 부여한 뒤 재실행하면 mic=not_determined로 보이고
+ * `oc && granted` 가드가 disk의 `onboarding_completed=true`를 false로 덮어써
+ * 매 재실행마다 웰컴 페이지로 돌아가는 회귀가 발생한다.
+ *
+ * 해결: 토글 성공 시 localStorage에 영속. 부팅 시점의 `getPermissionStatus`가
+ * mic=not_determined이고 본 키가 "1"이면 Rust atomic을 복원하는 invoke를 호출
+ * 한다 (`restore_persisted_mic_interacted` 커맨드).
+ */
+const MIC_INTERACTED_KEY = "mohashim:mic_interacted_v1";
+
+function isWindows(): boolean {
+  try {
+    return platform() === "windows";
+  } catch {
+    return false;
+  }
+}
+
 /** Web Notification API → 모하심 PermissionStatus 매핑. */
 async function getNotificationStatus(): Promise<PermissionStatus> {
   try {
     const granted = await notifIsGranted();
     if (granted) return "granted";
+    // Windows TOFU: 사용자가 토글을 눌러 OS 알림 설정 페이지를 한 번 거친 적이
+    // 있으면 granted로 간주. 사용자가 OS에서 실제로 끈 경우는 검출 불가 — 단,
+    // 그 경우엔 OS Toast 자체가 표시되지 않아 fail-silent가 됨.
+    if (isWindows() && localStorage.getItem(NOTIF_INTERACTED_KEY) === "1") {
+      return "granted";
+    }
     // Web Notification API는 정확한 거절/미정 분리를 노출하지 않는다. 첫 부팅에서는
     // not_determined로 가정해도 사용자에게 권한 요청 버튼이 노출되며, 실제로 거절된
     // 상태였다면 다이얼로그가 즉시 닫혀 동일 결과로 수렴.
@@ -49,7 +87,24 @@ export async function getPermissionStatus(): Promise<PermissionState> {
       invoke<RustPermissionState>("permission_status"),
       getNotificationStatus(),
     ]);
-    return { ...rust, notification };
+    // Windows TOFU 영속 복원: mic atomic이 프로세스 종료 시 reset되므로 localStorage
+    // 영속 플래그가 "1"이면 Rust atomic을 복원하고 granted로 매핑한다.
+    let mic = rust.mic;
+    if (
+      mic !== "granted" &&
+      isWindows() &&
+      localStorage.getItem(MIC_INTERACTED_KEY) === "1"
+    ) {
+      try {
+        const restored = await invoke<PermissionStatus>(
+          "restore_persisted_mic_interacted"
+        );
+        mic = restored;
+      } catch (err) {
+        console.error("[mohashim] restore_persisted_mic_interacted failed", err);
+      }
+    }
+    return { mic, accessibility: rust.accessibility, notification };
   } catch (err) {
     console.error("[mohashim] permission_status failed", err);
     return { mic: "denied", accessibility: "denied", notification: "denied" };
@@ -57,10 +112,22 @@ export async function getPermissionStatus(): Promise<PermissionState> {
 }
 
 /**
- * Phase 21: 알림 권한 요청. Tauri plugin은 web Notification API를 래핑하여
- * granted | denied | default을 반환. default(=취소/닫음)는 not_determined로 매핑.
+ * 알림 권한 요청.
+ *
+ * - macOS: Tauri plugin → web Notification API 다이얼로그. granted/denied/default
+ *   결과를 그대로 매핑.
+ * - Windows: WebView2는 Notification.requestPermission() 다이얼로그를 띄우지 못한다.
+ *   대신 마이크 토글과 동일한 trust-on-first-use 패턴 — 사용자를 OS 알림 설정 페이지로
+ *   안내(`ms-settings:notifications`)하고 INTERACTED 플래그를 영속하여 후속 조회에서
+ *   granted로 표시한다. 실제 OS Toast는 인스톨러 등록된 AppUserModelID 기반으로
+ *   동작 — 사용자가 OS 알림 페이지에서 명시 거부한 경우 fail-silent.
  */
 export async function requestNotificationPermission(): Promise<PermissionStatus> {
+  if (isWindows()) {
+    await openPermissionSettings("notification");
+    localStorage.setItem(NOTIF_INTERACTED_KEY, "1");
+    return "granted";
+  }
   try {
     const result = await notifRequest();
     if (result === "granted") return "granted";
@@ -74,7 +141,14 @@ export async function requestNotificationPermission(): Promise<PermissionStatus>
 
 export async function requestMicrophonePermission(): Promise<PermissionStatus> {
   try {
-    return await invoke<PermissionStatus>("request_microphone_permission");
+    const result = await invoke<PermissionStatus>("request_microphone_permission");
+    // Windows TOFU 영속: granted로 전환되면 localStorage에 마킹 → 다음 부팅 시
+    // getPermissionStatus가 atomic을 복원해 매 재실행마다 웰컴 페이지로 회귀하는
+    // 회귀를 방지한다.
+    if (result === "granted" && isWindows()) {
+      localStorage.setItem(MIC_INTERACTED_KEY, "1");
+    }
+    return result;
   } catch (err) {
     console.error("[mohashim] request_microphone_permission failed", err);
     return "denied";
@@ -86,6 +160,20 @@ export async function requestAccessibilityPermission(): Promise<PermissionStatus
     return await invoke<PermissionStatus>("request_accessibility_permission");
   } catch (err) {
     console.error("[mohashim] request_accessibility_permission failed", err);
+    return "denied";
+  }
+}
+
+/**
+ * Windows 마이크 권한 atomic을 disk 영속에서 복원한다 (재실행 시 reset된 atomic을
+ * 복구). Rust 측에서 disk file write도 함께 처리하여 후속 부팅에서도 자동 복원되는
+ * 단일 진실 소스를 보장한다. macOS / Linux는 OS API로 검증 가능하므로 no-op.
+ */
+export async function restoreMicInteracted(): Promise<PermissionStatus> {
+  try {
+    return await invoke<PermissionStatus>("restore_persisted_mic_interacted");
+  } catch (err) {
+    console.error("[mohashim] restoreMicInteracted failed", err);
     return "denied";
   }
 }
