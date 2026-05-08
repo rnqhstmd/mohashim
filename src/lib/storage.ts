@@ -82,10 +82,21 @@ export type Inventory = {
 };
 
 /**
- * 편지 큐 (Phase 22 FR-4). Phase 23 Mailbox write 경로 (시드만).
- * 본 Phase는 schema unknown — 후속 Phase에서 구체 타입 정의.
+ * 단일 편지 항목 (Phase 23 FR-2, BR-3).
+ * Rust 단일 writer (P-D4) — TS는 get_mailbox IPC + getMailbox() read-only만 노출.
  */
-export type Mailbox = unknown[];
+export type MailboxKind = "SESSION" | "MONTHLY" | "SYSTEM";
+export type Letter = {
+  id: string;
+  kind: MailboxKind;
+  title: string;
+  body: string;
+  /** RFC3339 with offset (Rust chrono::Local::to_rfc3339). */
+  createdAt: string;
+  read: boolean;
+  sessionTag: string | null;
+};
+export type Mailbox = Letter[];
 
 export type StoreSchema = {
   onboarding_completed: boolean;
@@ -489,13 +500,38 @@ export async function getInventory(): Promise<Inventory> {
 }
 
 /**
- * Mailbox read-only 헬퍼 (Phase 22 FR-21, FR-22, AC-19).
+ * Mailbox read-only 헬퍼 (Phase 23 FR-10, AC-1).
  *
- * 비배열 잔존 데이터는 빈 배열로 폴백. 본 Phase는 schema unknown — Phase 23에서 정의.
+ * Rust IPC `get_mailbox`를 통해 편지 목록을 조회한다 (MAILBOX_MUTEX 보호).
+ * IPC 실패 시 store 직독 폴백 — 비배열 / 항목 부적합 시 [] 폴백.
  */
-export async function getMailbox(): Promise<Mailbox> {
-  const raw = await get("mailbox");
-  return Array.isArray(raw) ? raw : [];
+export async function getMailbox(): Promise<Letter[]> {
+  try {
+    return await invoke<Letter[]>("get_mailbox");
+  } catch {
+    const raw = await get("mailbox").catch(() => [] as Mailbox);
+    if (!Array.isArray(raw)) return [];
+    return (raw as unknown[]).flatMap((item): Letter[] => {
+      if (!item || typeof item !== "object") return [];
+      const l = item as Record<string, unknown>;
+      if (typeof l.id !== "string" || !l.id) return [];
+      if (!["SESSION", "MONTHLY", "SYSTEM"].includes(l.kind as string)) return [];
+      if (typeof l.title !== "string") return [];
+      if (typeof l.body !== "string") return [];
+      if (typeof l.createdAt !== "string" || !l.createdAt) return [];
+      return [
+        {
+          id: l.id,
+          kind: l.kind as MailboxKind,
+          title: l.title,
+          body: l.body,
+          createdAt: l.createdAt,
+          read: typeof l.read === "boolean" ? l.read : false,
+          sessionTag: typeof l.sessionTag === "string" ? l.sessionTag : null,
+        },
+      ];
+    });
+  }
 }
 
 /**

@@ -48,11 +48,14 @@ fn ac1_work_score_specific_boundaries() {
 
 #[test]
 fn ac2_noise_score_specific_boundaries() {
+    // Phase 18 단순화 (FR-A1, AC-A1~A4): 7단계 비례 → 80dB 이진 임계값.
+    // db_ema <= 80.0 → 20, db_ema > 80.0 → 0, NaN → 20.
     assert_eq!(noise_score(0.0), 20);
     assert_eq!(noise_score(65.0), 20);
-    assert_eq!(noise_score(66.0), 18);
-    assert_eq!(noise_score(72.5), 10);
-    assert_eq!(noise_score(79.0), 2);
-    assert_eq!(noise_score(80.0), 0);
+    assert_eq!(noise_score(66.0), 20);
+    assert_eq!(noise_score(72.5), 20);
+    assert_eq!(noise_score(79.0), 20);
+    assert_eq!(noise_score(80.0), 20);
+    assert_eq!(noise_score(80.001), 0);
     assert_eq!(noise_score(100.0), 0);
 }

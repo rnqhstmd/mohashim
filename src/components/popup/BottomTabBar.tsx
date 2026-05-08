@@ -1,13 +1,16 @@
-export type Tab = "todos" | "grass" | "settings";
+export type Tab = "todos" | "grass" | "mailbox" | "settings";
 
 type BottomTabBarProps = {
   tab: Tab;
   onChange: (next: Tab) => void;
+  /** 미읽음 편지 수 — mailbox 탭 빨간 dot 뱃지 제어 (Phase 23 FR-14). */
+  unreadCount?: number;
 };
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: "todos", label: "할 일" },
   { id: "grass", label: "잔디" },
+  { id: "mailbox", label: "편지함" },
   { id: "settings", label: "설정" },
 ];
 
@@ -85,6 +88,37 @@ function TabIcon({ kind, active }: { kind: Tab; active: boolean }) {
       </svg>
     );
   }
+  if (kind === "mailbox") {
+    return (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden
+        style={{ opacity }}
+      >
+        <rect
+          x="3"
+          y="6"
+          width="18"
+          height="13"
+          rx="2"
+          stroke={stroke}
+          strokeWidth="1.8"
+          fill={active ? "currentColor" : "none"}
+          fillOpacity={active ? 0.08 : 0}
+        />
+        <path
+          d="M3 9l9 6 9-6"
+          stroke={stroke}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
   // settings
   return (
     <svg
@@ -118,11 +152,12 @@ function TabIcon({ kind, active }: { kind: Tab; active: boolean }) {
  * Mohashim Design.html 정렬: 활성 탭은 deepNavy 8% tint pill + deepNavy bold 텍스트 + 아이콘,
  * 비활성 탭은 transparent + MUTED 톤. borderTop 없이 padding으로 분리한다.
  */
-export function BottomTabBar({ tab, onChange }: BottomTabBarProps) {
+export function BottomTabBar({ tab, onChange, unreadCount = 0 }: BottomTabBarProps) {
   return (
     <nav className="relative z-10 flex gap-1 px-3 pb-2.5 pt-1.5">
       {TABS.map((item) => {
         const isActive = item.id === tab;
+        const hasBadge = item.id === "mailbox" && unreadCount > 0;
         const className = isActive
           ? "flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-deepNavy/10 py-1.5 text-[10px] font-extrabold text-deepNavy"
           : "flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-transparent py-1.5 text-[10px] font-semibold text-ink/55 transition-colors hover:text-ink/75";
@@ -133,7 +168,12 @@ export function BottomTabBar({ tab, onChange }: BottomTabBarProps) {
             onClick={() => onChange(item.id)}
             className={className}
           >
-            <TabIcon kind={item.id} active={isActive} />
+            <span className="relative inline-flex">
+              <TabIcon kind={item.id} active={isActive} />
+              {hasBadge && (
+                <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+              )}
+            </span>
             <span>{item.label}</span>
           </button>
         );

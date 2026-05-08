@@ -523,7 +523,7 @@ pub(crate) fn append_session_log<R: Runtime>(
 /// (DEC-9-2 정책 일관 — reset 자체는 성공으로 본다).
 #[tauri::command]
 pub async fn reset_all<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    crate::timer::reset_runtime_state();
+    crate::timer::reset_runtime_state(&app);
     let store = app
         .store(STORE_FILE)
         .map_err(|e| format!("store open failed: {e}"))?;
