@@ -15,6 +15,7 @@ import {
   requestAccessibilityPermission,
   requestMicrophonePermission,
   requestNotificationPermission,
+  restoreMicInteracted,
   type PermissionKind,
   type PermissionState,
 } from "./lib/permissions";
@@ -49,11 +50,24 @@ function App() {
         // D-1, AC-seed-timing: initStorage 직후 / UI 렌더 이전에 기본 태그 시드.
         // 내부에서 try/catch swallow하므로 본 effect의 catch 분기로 빠지지 않는다.
         await seedDefaultTags();
-        const [perms, oc] = await Promise.all([
+        let [perms, oc] = await Promise.all([
           getPermissionStatus(),
           getOnboardingCompleted(),
         ]);
         if (cancelled) return;
+        // Windows TOFU 보강: oc=true이면 사용자가 이전에 권한 부여하여 메인에 진입한
+        // 적이 있다는 의미. Rust MIC_INTERACTED atomic이 프로세스 종료 시 reset된
+        // 케이스를 자동 복원하여 disk의 onboarding_completed를 false로 영구 덮어쓰는
+        // 회귀를 차단한다 (mic_grant.flag disk 영속이 없는 옛 빌드에서 진입한
+        // 사용자도 한 번 이상 메인 통과 이력만 있으면 이 경로로 자동 복원됨).
+        if (oc && perms.mic !== "granted" && platform() === "windows") {
+          try {
+            const restoredMic = await restoreMicInteracted();
+            perms = { ...perms, mic: restoredMic };
+          } catch (err) {
+            console.error("[mohashim] mic atomic restore failed", err);
+          }
+        }
         setPermissions(perms);
         // Phase 21 사용자 피드백: 마이크 + 접근성 허용 후 알림 단계 없이 메인으로
         // 자동 전환되는 회귀 — 이전 install에서 stale `onboarding_completed=true`가

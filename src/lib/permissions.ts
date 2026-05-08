@@ -164,6 +164,20 @@ export async function requestAccessibilityPermission(): Promise<PermissionStatus
   }
 }
 
+/**
+ * Windows 마이크 권한 atomic을 disk 영속에서 복원한다 (재실행 시 reset된 atomic을
+ * 복구). Rust 측에서 disk file write도 함께 처리하여 후속 부팅에서도 자동 복원되는
+ * 단일 진실 소스를 보장한다. macOS / Linux는 OS API로 검증 가능하므로 no-op.
+ */
+export async function restoreMicInteracted(): Promise<PermissionStatus> {
+  try {
+    return await invoke<PermissionStatus>("restore_persisted_mic_interacted");
+  } catch (err) {
+    console.error("[mohashim] restoreMicInteracted failed", err);
+    return "denied";
+  }
+}
+
 export async function openPermissionSettings(
   kind: PermissionKind
 ): Promise<void> {

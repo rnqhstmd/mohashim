@@ -20,6 +20,45 @@
 
 ---
 
+## 2026-05-09 01:10 KST — 부팅 시 onboarding_completed 보조 신호로 마이크 atomic 자동 복원
+
+### 요약
+사용자 보고: "새 빌드(disk 영속 코드 포함)를 깔고 마이크 토글 한 번 ON → 메인 진입했는데, 종료 후 재실행하면 또 웰컴 페이지가 뜬다. 시스템 설정엔 마이크 권한 ON 상태로 보임."
+
+원인: `mic_grant.flag` disk 영속 코드를 새로 도입했지만, **사용자가 이전 빌드들에서 부여한 권한은 disk flag로 영속되지 않았던 케이스** — installer overwrite 시 사용자 데이터 보존되어 onboarding_completed=true 디스크 상태도 유지됐을 수 있는데, 우리 부팅 가드가 mic ≠ granted이면 false로 영구 덮어씌우던 회귀가 진행 중.
+
+해결: App.tsx 부팅 시점에 `oc=true && Windows && mic ≠ granted`이면 자동으로 `restore_persisted_mic_interacted` invoke 호출 → atomic + disk flag 둘 다 복원. oc 플래그를 mic 권한 영속의 보조 진실 소스로 활용.
+
+### 변경 파일
+
+#### 1. `src/lib/permissions.ts`
+신규 export `restoreMicInteracted()` — `restore_persisted_mic_interacted` Tauri 커맨드 wrapper. Rust 측이 disk file write까지 처리하므로 단일 진실 소스가 일관 유지됨.
+
+#### 2. `src/App.tsx`
+- import `restoreMicInteracted` + `platform` (이미 있음).
+- 부트 effect의 `getPermissionStatus` + `getOnboardingCompleted` 호출 직후, Windows 분기 추가:
+```ts
+if (oc && perms.mic !== "granted" && platform() === "windows") {
+  const restoredMic = await restoreMicInteracted();
+  perms = { ...perms, mic: restoredMic };
+}
+```
+- perms를 `let`으로 변경하여 자동 복원 결과를 갱신 가능하게.
+
+### 검증
+- NSIS 빌드 36초 성공.
+- 사용자 직접 검증: 한 번이라도 메인에 진입했던 사용자라면 oc=true 영속 → 다음 부팅에 자동 복원 → 웰컴 페이지 회귀 없음.
+
+### 영향 범위
+- **Windows**: 영구 회귀 차단. 영속 신호 두 가지(disk flag, oc=true) 중 어느 하나만 있어도 자동 복원.
+- **macOS**: `platform() === "windows"` 가드로 분기 회피 — 영향 없음.
+- **사용자 흐름**: 첫 설치 후 한 번만 마이크 ON 하면 그 이후 oc=true 영속 → atomic이 휘발돼도 자동 복원. flag 파일이 어떤 이유로 손실돼도 oc로 복원.
+
+### 후속 과제 (선택)
+- 사용자가 OS 시스템 설정에서 마이크를 명시 거부한 경우 우리는 검출 불가 (Windows OS API 한계). audio thread가 dB=0 폴백으로 동작 — 점수 측정 실패하지만 앱은 살아있음. 명시 안내 노출 검토.
+
+---
+
 ## 2026-05-09 00:45 KST — 모하 말풍선 멘트 회전 주기 8초 → 15분
 
 ### 요약
