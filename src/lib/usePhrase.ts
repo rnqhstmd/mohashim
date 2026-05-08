@@ -23,8 +23,12 @@ export type UsePhraseOutput = {
   potatoState: PotatoState;
 };
 
-/** 멘트 회전 주기 (BR-1: 8초). score-tick(1Hz)마다 멘트가 바뀌지 않도록 분리. */
-export const PHRASE_ROTATE_MS = 8000;
+/**
+ * 멘트 회전 주기. score-tick(1Hz)마다 멘트가 바뀌지 않도록 분리하며, 같은 상태(bucket)
+ * 안에서도 너무 자주 변하지 않도록 15분 간격을 유지한다 (사용자 피드백: 8초 회전이
+ * 산만하다 — idle chip 라벨과 동일한 톤으로 통일).
+ */
+export const PHRASE_ROTATE_MS = 15 * 60 * 1000;
 
 const FALLBACK_INPUT: {
   phase: Phase;
