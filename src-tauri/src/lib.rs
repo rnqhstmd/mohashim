@@ -29,6 +29,7 @@ pub fn run() {
             permissions::permission_status,
             permissions::request_microphone_permission,
             permissions::request_accessibility_permission,
+            permissions::restore_persisted_mic_interacted,
             permissions::open_permission_settings,
             timer::focus_start,
             timer::discard_session,

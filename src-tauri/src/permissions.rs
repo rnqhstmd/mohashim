@@ -107,6 +107,38 @@ pub async fn request_accessibility_permission(
     Ok(status)
 }
 
+/// Windows 전용: 프론트엔드 localStorage에 영속된 마이크 INTERACTED 플래그를
+/// 부팅 시점에 Rust atomic으로 복원한다.
+///
+/// 배경: Windows는 OS API로 mic 권한을 검증할 수 없어 trust-on-first-use atomic
+/// (`MIC_INTERACTED`)으로 동작한다. 이 atomic은 프로세스 메모리 변수라 앱 종료 시
+/// reset되어, 사용자가 한 번 토글로 권한을 부여한 뒤 재실행하면 mic=not_determined
+/// 로 보이고 `oc && granted` 가드가 disk의 `onboarding_completed=true`를 false로
+/// 덮어써 매 재실행마다 웰컴 페이지로 돌아가는 회귀가 발생한다.
+///
+/// 해결: 프론트엔드가 mic 토글 성공 시 localStorage에 INTERACTED를 영속시키고,
+/// 부팅 시점에 본 커맨드를 호출해 Rust atomic을 복원한다. 이후 흐름은 정상 grant
+/// 경로와 동일 — sync_runtime_grants가 audio thread 멱등 기동까지 처리.
+///
+/// macOS는 OS API로 정확한 권한 검증이 가능하므로 본 커맨드를 호출할 필요 없다.
+#[tauri::command]
+pub async fn restore_persisted_mic_interacted(app: AppHandle) -> Result<PermissionStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::atomic::Ordering::Relaxed;
+        platform::MIC_INTERACTED.store(true, Relaxed);
+        let status = platform::mic_status();
+        sync_runtime_grants(&app, status, platform::accessibility_status());
+        Ok(status)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        // macOS/Linux: OS API로 검증되므로 영속 복원 불필요. 현재 status 그대로 반환.
+        Ok(platform::mic_status())
+    }
+}
+
 #[tauri::command]
 pub async fn open_permission_settings(
     app: AppHandle,

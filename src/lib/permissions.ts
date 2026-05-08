@@ -38,6 +38,20 @@ type RustPermissionState = {
  */
 const NOTIF_INTERACTED_KEY = "mohashim:notif_interacted_v1";
 
+/**
+ * Windows 전용 마이크 INTERACTED 영속 키.
+ *
+ * Rust측 `MIC_INTERACTED` atomic은 프로세스 메모리 변수라 앱 종료 시 reset된다.
+ * 사용자가 한 번 토글로 권한 부여한 뒤 재실행하면 mic=not_determined로 보이고
+ * `oc && granted` 가드가 disk의 `onboarding_completed=true`를 false로 덮어써
+ * 매 재실행마다 웰컴 페이지로 돌아가는 회귀가 발생한다.
+ *
+ * 해결: 토글 성공 시 localStorage에 영속. 부팅 시점의 `getPermissionStatus`가
+ * mic=not_determined이고 본 키가 "1"이면 Rust atomic을 복원하는 invoke를 호출
+ * 한다 (`restore_persisted_mic_interacted` 커맨드).
+ */
+const MIC_INTERACTED_KEY = "mohashim:mic_interacted_v1";
+
 function isWindows(): boolean {
   try {
     return platform() === "windows";
@@ -73,7 +87,24 @@ export async function getPermissionStatus(): Promise<PermissionState> {
       invoke<RustPermissionState>("permission_status"),
       getNotificationStatus(),
     ]);
-    return { ...rust, notification };
+    // Windows TOFU 영속 복원: mic atomic이 프로세스 종료 시 reset되므로 localStorage
+    // 영속 플래그가 "1"이면 Rust atomic을 복원하고 granted로 매핑한다.
+    let mic = rust.mic;
+    if (
+      mic !== "granted" &&
+      isWindows() &&
+      localStorage.getItem(MIC_INTERACTED_KEY) === "1"
+    ) {
+      try {
+        const restored = await invoke<PermissionStatus>(
+          "restore_persisted_mic_interacted"
+        );
+        mic = restored;
+      } catch (err) {
+        console.error("[mohashim] restore_persisted_mic_interacted failed", err);
+      }
+    }
+    return { mic, accessibility: rust.accessibility, notification };
   } catch (err) {
     console.error("[mohashim] permission_status failed", err);
     return { mic: "denied", accessibility: "denied", notification: "denied" };
@@ -110,7 +141,14 @@ export async function requestNotificationPermission(): Promise<PermissionStatus>
 
 export async function requestMicrophonePermission(): Promise<PermissionStatus> {
   try {
-    return await invoke<PermissionStatus>("request_microphone_permission");
+    const result = await invoke<PermissionStatus>("request_microphone_permission");
+    // Windows TOFU 영속: granted로 전환되면 localStorage에 마킹 → 다음 부팅 시
+    // getPermissionStatus가 atomic을 복원해 매 재실행마다 웰컴 페이지로 회귀하는
+    // 회귀를 방지한다.
+    if (result === "granted" && isWindows()) {
+      localStorage.setItem(MIC_INTERACTED_KEY, "1");
+    }
+    return result;
   } catch (err) {
     console.error("[mohashim] request_microphone_permission failed", err);
     return "denied";

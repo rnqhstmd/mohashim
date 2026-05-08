@@ -20,6 +20,96 @@
 
 ---
 
+## 2026-05-08 22:55 KST — 재실행 시 웰컴 페이지 회귀 픽스 + 트레이 메뉴 팝업 위치 픽스
+
+### 요약
+사용자가 보고한 두 회귀를 동시 해결.
+
+1. **재실행 시 매번 웰컴 페이지로 돌아가는 회귀** — Windows에서 마이크 권한 atomic이 프로세스 종료 시 reset되어 disk의 `onboarding_completed` 플래그가 false로 덮어씌워지던 문제. localStorage로 mic INTERACTED를 영속하고 부팅 시 Rust atomic을 복원하는 신규 Tauri command를 추가했다.
+2. **트레이 우클릭 메뉴 → 팝업이 화면 중앙에 노출되던 회귀** — 메뉴 핸들러에 트레이 rect 정보가 없어 default 좌표로 떴음. `TrayIcon::rect()`로 현재 트레이 위치를 조회해 좌클릭과 동일한 위치 계산을 적용.
+
+### 배경 / 원인
+
+#### 회귀 1 — 재실행 시 웰컴 페이지
+`App.tsx` 부팅 가드:
+```ts
+const granted = canEnterMain(perms);  // mic && accessibility
+const effectiveOc = oc && granted;
+if (oc && !effectiveOc) {
+  void setOnboardingCompleted(false);  // 디스크에 false로 덮어씀
+}
+```
+- macOS: OS API로 권한 정확 검증 가능 → 정상 동작.
+- Windows: 마이크 권한이 `MIC_INTERACTED` atomic 변수에 의존 → 프로세스 종료 시 reset → 재실행 시 mic = `not_determined` → granted = false → `effectiveOc = false` → **disk의 onboarding_completed=true가 false로 영구 덮어씀** → 무한 웰컴 페이지 루프.
+
+#### 회귀 2 — 메뉴 팝업 위치
+- `on_tray_icon_event`(좌클릭)는 click rect를 받아 `apply_initial_position`로 정확한 좌표 계산.
+- `on_menu_event`(우클릭 메뉴)는 click rect 정보가 없어 단순히 `win.show()`만 호출 → default 좌표(화면 중앙 부근) 노출.
+
+### 변경 파일
+
+#### 1. `src-tauri/src/permissions.rs`
+신규 Tauri command `restore_persisted_mic_interacted` 추가:
+- Windows에서 `MIC_INTERACTED.store(true)` + `sync_runtime_grants` 호출 → audio thread 멱등 기동까지 처리.
+- 비-Windows에서는 현재 status만 반환 (no-op).
+
+#### 2. `src-tauri/src/lib.rs`
+`invoke_handler::generate_handler!`에 `permissions::restore_persisted_mic_interacted` 등록.
+
+#### 3. `src/lib/permissions.ts`
+- `MIC_INTERACTED_KEY = "mohashim:mic_interacted_v1"` 상수 신설.
+- `requestMicrophonePermission` Windows에서 결과가 `granted`면 localStorage에 영속 저장.
+- `getPermissionStatus`에서 Windows + mic ≠ granted + localStorage="1"이면 `restore_persisted_mic_interacted` 커맨드 호출 후 결과로 mic 상태 갱신.
+
+```diff
++ const MIC_INTERACTED_KEY = "mohashim:mic_interacted_v1";
+
+  export async function requestMicrophonePermission() {
+    const result = await invoke(...);
++   if (result === "granted" && isWindows()) {
++     localStorage.setItem(MIC_INTERACTED_KEY, "1");
++   }
+    return result;
+  }
+
+  export async function getPermissionStatus() {
+    const [rust, notification] = await Promise.all([...]);
++   let mic = rust.mic;
++   if (mic !== "granted" && isWindows() && localStorage.getItem(MIC_INTERACTED_KEY) === "1") {
++     try {
++       mic = await invoke("restore_persisted_mic_interacted");
++     } catch (err) { ... }
++   }
++   return { mic, accessibility: rust.accessibility, notification };
+  }
+```
+
+#### 4. `src-tauri/src/tray.rs`
+- 신규 헬퍼 `show_at_tray_position(app, win)`: `TrayIcon::rect()`로 현재 트레이 rect를 얻어 `apply_initial_position` 호출 후 show + set_focus. rect 조회 실패 시 default 좌표 폴백 + 로그.
+- `"open"` 메뉴 핸들러: 단순 `win.show()` → `show_at_tray_position(app, &win)`.
+- `"pin_guide"` 메뉴 핸들러: 동일 변경.
+
+### 검증
+1. **단위 테스트** (`npm test`): 26 files / **357 tests passed**.
+2. **Rust 컴파일** (`cargo check`): 깨끗.
+3. **TypeScript 컴파일** (`tsc --noEmit`): 깨끗.
+4. **NSIS 빌드**: 42초 만에 인스톨러 생성 성공.
+5. **사용자 직접 검증** (Windows에서):
+   - 인스톨러로 깔고 마이크 권한 ON → 메인 진입 → 트레이 종료 → 시작 메뉴에서 다시 실행 → **메인 화면으로 직행** (웰컴 페이지 회귀 없음)
+   - 트레이 우클릭 → 모하 열기 / Windows 사용 팁 클릭 → 팝업이 트레이 아이콘 바로 위에 정확히 정렬
+
+### 영향 범위
+- **macOS**: `restore_persisted_mic_interacted`는 no-op이라 영향 없음. 메뉴 위치 픽스는 macOS에도 적용되어 메뉴바 우클릭 시 팝업 위치도 정확히 정렬 (개선).
+- **Windows**: 핵심 회귀 두 개 해소. 마이크 권한이 OS 재부팅을 거쳐도 영속.
+- **Linux** (비공식): no-op.
+- **localStorage 영속 한계**: 사용자가 명시적으로 "권한 해제"를 요청하는 UX는 본 PR에 미포함 — 필요 시 후속에서 setting 화면에 "권한 초기화" 버튼 추가.
+
+### 후속 과제 (선택)
+- `permissions.rs`의 `Denied` variant dead_code warning은 본 변경 대상 외 — 차후 사용처(예: 명시 거절) 추가 시 자연 해소.
+- 사용자가 OS 마이크 설정을 끈 경우 우리는 검출 불가 (Windows OS API 한계). audio thread가 dB=0 폴백으로 동작 — 실제 측정엔 실패하지만 앱은 살아있음. 명시 안내 노출 검토.
+
+---
+
 ## 2026-05-08 22:30 KST — 인스톨러/표시명 한국어화 (productName "모하심" + NSIS Korean)
 
 ### 요약

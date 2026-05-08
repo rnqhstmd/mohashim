@@ -139,10 +139,7 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "open" => {
                 if let Some(win) = app.get_webview_window("main") {
-                    // 메뉴 경로엔 트레이 rect 정보가 없어 위치 재계산 없이 그대로 show.
-                    // 마지막 hide된 좌표가 유지되므로 사용자가 직전에 본 위치에 다시 노출.
-                    let _ = win.show();
-                    let _ = win.set_focus();
+                    show_at_tray_position(app, &win);
                 }
             }
             "autostart" => {
@@ -168,9 +165,10 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             #[cfg(target_os = "windows")]
             "pin_guide" => {
                 // 모달은 메인 팝업 내부에 렌더되므로 팝업이 hide 상태였다면 함께 노출.
+                // 트레이 좌클릭과 동일한 위치 계산을 적용해 default 좌표(화면 중앙)
+                // 노출 회귀를 차단한다.
                 if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
+                    show_at_tray_position(app, &win);
                 }
                 if let Err(e) = app.emit("show-pin-guide", ()) {
                     eprintln!("[mohashim] show-pin-guide emit failed: {e}");
@@ -254,6 +252,24 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     }
 
     Ok(())
+}
+
+/// 메뉴 경로(우클릭 → 모하 열기 / Windows 사용 팁)에서 사용한다.
+///
+/// `on_tray_icon_event`와 달리 `on_menu_event`는 클릭 rect를 직접 받지 않는다.
+/// `TrayIcon::rect()`로 현재 트레이 아이콘 rect를 조회해 좌클릭과 동일한 위치
+/// 계산(`apply_initial_position`)을 적용한 뒤 show 한다. rect 조회 실패 시
+/// default 좌표 폴백 — 일부 환경(예: macOS minimize 직후) 대비.
+fn show_at_tray_position<R: Runtime>(app: &AppHandle<R>, win: &tauri::WebviewWindow<R>) {
+    if let Some(tray) = app.tray_by_id("main") {
+        match tray.rect() {
+            Ok(Some(rect)) => apply_initial_position(app, win, &rect),
+            Ok(None) => eprintln!("[mohashim] tray.rect() returned None — default position"),
+            Err(e) => eprintln!("[mohashim] tray.rect() err: {e} — default position"),
+        }
+    }
+    let _ = win.show();
+    let _ = win.set_focus();
 }
 
 /// Phase 21 (사용자 피드백 재개정): 팝업 좌측 선을 트레이 아이콘의 좌측 끝과
