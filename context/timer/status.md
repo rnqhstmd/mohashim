@@ -27,5 +27,5 @@
 | ID | 항목 | 상태 | PR | 비고 |
 |----|------|------|----|------|
 | DEC-2 | 일시정지 버튼 제거 — 일시정지 상태 자체를 두지 않음 | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | Phase enum에 Paused 없음 |
-| DEC-10 | 슬립/깨어남 처리 — wall-clock 차이가 grace(180초) 초과 시 자동 discard | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | macOS NSWorkspace WillSleep/DidWake (objc2-app-kit). Windows는 stub (후속 Phase) |
+| DEC-10 | 슬립/깨어남 처리 — wall-clock 차이가 grace(180초) 초과 시 자동 discard | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4), [#15](https://github.com/rnqhstmd/mohashim/pull/15) | macOS NSWorkspace WillSleep/DidWake (objc2-app-kit). Windows는 PR #15에서 wall-clock drift 폴백으로 처리 (Phase 14 C-2 fix — 20036db) |
 | DEC-17 | FR-3 우상단 텍스트 = 팝업 내부 우상단 chip 위치 | ✅ | [#4](https://github.com/rnqhstmd/mohashim/pull/4) | ModeChip absolute right-3 top-3 |

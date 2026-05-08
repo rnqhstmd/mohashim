@@ -14,6 +14,10 @@
 | FR-8 | 3분 초과 시 지속 감점, 입력 발생 시 즉시 리셋 및 점수 복구 | ✅ | [#2](https://github.com/rnqhstmd/mohashim/pull/2) | `decay = (past/10) * 5`, 10초당 -5점, touch_input 즉시 리셋 |
 | FR-9 | 마이크 dB EMA 필터링 | ✅ | [#2](https://github.com/rnqhstmd/mohashim/pull/2) | α=0.1, RMS_FLOOR=1e-6, NaN/-∞ 클램핑 |
 | FR-10 | 0~65dB=20점, 66~80dB=19~1점 비례, 80dB+=0점 | ✅ | [#2](https://github.com/rnqhstmd/mohashim/pull/2) | `(19.0 - ((db-65)/15)*18).round()` 단일 진실 소스 |
+| FR-33 | 점수 모델 단순화 + 분석 로깅 (Phase 18) | ✅ | [#19](https://github.com/rnqhstmd/mohashim/pull/19). 66debb5 — Phase 17 후속 + 자정 회전 + key 순서 + 직렬 큐(b4fe489) |
+| FR-34 | MainScreen 점수 노출 개편 — 직전 점수 제거 + 실시간 점수 강조 + 메인 인사 변경 | ✅ | [PR #23](https://github.com/rnqhstmd/mohashim/pull/23). 0002786 |
+| FR-35 | macOS rdev 크래시 핫픽스 — 입력 후킹 안정화 | ✅ | [PR #22](https://github.com/rnqhstmd/mohashim/pull/22). 23e575c |
+| FR-36 | 오디오 자동 복구 (H-3) — 디바이스 단절 시 cpal 재초기화 | ✅ | [PR #16](https://github.com/rnqhstmd/mohashim/pull/16). baefddb — Phase 15 + 백오프 reset 캡슐화(931475a) + next_tick reset 단위 테스트(74d40ca) |
 
 ## 디자인 결정
 

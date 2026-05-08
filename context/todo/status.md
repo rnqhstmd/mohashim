@@ -15,3 +15,4 @@
 | FR-14 | 자동 정렬: 미완료 상단, 완료 클릭 즉시 취소선+최하단 이동 | ✅ | PR #6 — sortTodos + toggleDone (BR-1) |
 | FR-15 | 롤백: 완료 항목 재클릭 시 미완료로 즉시 최상단 복귀 | ✅ | PR #6 — D-5 splice + 안정 정렬 |
 | FR-23 | 작업/위치 태그 추가·삭제 (편집 화면) | ✅ | PR #6 — 작업 max 5 / 위치 무제한 |
+| FR-32 | TodosTab 상단 카드 + 할 일 텍스트 다중 라인 줄바꿈 (truncate 제거) + design.html 톤 정렬 | ✅ | [PR #22](https://github.com/rnqhstmd/mohashim/pull/22) + [PR #23](https://github.com/rnqhstmd/mohashim/pull/23). 32dbe27(TodosTab 상단 카드 + Settings 정렬), 519d5f0(TodoItem/Input 톤), b979702(TagListEditor 잔여 톤), 8cdf9be(할일 truncate 제거) |
