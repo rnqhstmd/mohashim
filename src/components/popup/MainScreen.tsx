@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { getInventory, getMailbox, type Inventory } from "../../lib/storage";
+import { getInventory, getMailbox, STORE_DEFAULTS, type Inventory } from "../../lib/storage";
 import { onMailboxDeeplink, onMailboxUpdated } from "../../lib/mailbox";
 import { onInventoryUpdated } from "../../lib/shop";
 import { useScoreTick } from "../../lib/score";
@@ -55,11 +55,9 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
   const [tab, setTab] = useState<Tab>("todos");
   const [unreadCount, setUnreadCount] = useState(0);
   // Phase 25 FR-1: 캐릭터 레이어 장착 상태. Rust inventory-updated 이벤트로 갱신.
-  const [equipped, setEquipped] = useState<Inventory["equipped"]>({
-    face: null,
-    head: null,
-    back: null,
-  });
+  const [equipped, setEquipped] = useState<Inventory["equipped"]>(() => ({
+    ...STORE_DEFAULTS.inventory.equipped,
+  }));
 
   // Phase 23 FR-14: mailbox 뱃지 초기화 + mailbox-updated 이벤트로 갱신.
   useEffect(() => {

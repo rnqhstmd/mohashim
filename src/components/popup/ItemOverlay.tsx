@@ -1,4 +1,4 @@
-import { CATALOG, type ShopItem, type Slot } from "../../lib/shopCatalog";
+import { findItem, type ShopItem, type Slot } from "../../lib/shopCatalog";
 import type { Inventory } from "../../lib/storage";
 import type { PotatoState } from "../../lib/phrases";
 import { Potato } from "../Potato";
@@ -33,7 +33,7 @@ function resolveSlot(
 ): string | null {
   if (previewItem && previewItem.slot === slot) return previewItem.svgPath;
   if (equippedId) {
-    const item = CATALOG.find((i) => i.id === equippedId);
+    const item = findItem(equippedId);
     return item?.svgPath ?? null;
   }
   return null;
