@@ -47,31 +47,34 @@ fn mic_grant_file_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join("mic_grant.flag"))
 }
 
-/// 부팅 시점 호출 — 디스크 영속 파일이 있으면 atomic을 true로 복원.
+/// 부팅 시점 호출 — 디스크 영속 파일이 있거나 사용자가 이전에 메인 화면에 진입한 적이
+/// 있으면(oc_signal=true) atomic을 true로 복원한다. 두 신호를 병행하여 어느 한쪽이
+/// 손실되어도 영구 회귀가 발생하지 않도록 한다.
 /// macOS / Linux에서는 no-op (OS API로 권한 검증 가능).
-pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle) {
+pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle, oc_signal: bool) {
     #[cfg(target_os = "windows")]
     {
-        match mic_grant_file_path(app) {
-            Some(path) => {
-                let exists = path.exists();
-                eprintln!(
-                    "[mohashim] mic_grant load: path={path:?} exists={exists}"
-                );
-                if exists {
-                    platform::MIC_INTERACTED.store(true, Relaxed);
-                    let mic = platform::mic_status();
-                    let ax = platform::accessibility_status();
-                    sync_runtime_grants(app, mic, ax);
-                    eprintln!("[mohashim] mic_grant load: atomic restored → mic={mic:?}");
-                }
+        let path = mic_grant_file_path(app);
+        let flag_exists = path.as_ref().map(|p| p.exists()).unwrap_or(false);
+        eprintln!(
+            "[mohashim] mic_grant load: path={path:?} flag_exists={flag_exists} oc_signal={oc_signal}"
+        );
+        if flag_exists || oc_signal {
+            platform::MIC_INTERACTED.store(true, Relaxed);
+            // disk flag가 없으면 oc_signal로 복원된 케이스 — flag도 함께 영속하여
+            // 다음 부팅에서 즉시 인식되도록 한다.
+            if !flag_exists {
+                save_persisted_mic_grant(app);
             }
-            None => eprintln!("[mohashim] mic_grant load: app_data_dir unavailable"),
+            let mic = platform::mic_status();
+            let ax = platform::accessibility_status();
+            sync_runtime_grants(app, mic, ax);
+            eprintln!("[mohashim] mic_grant load: atomic restored → mic={mic:?}");
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = app;
+        let _ = (app, oc_signal);
     }
 }
 
@@ -111,6 +114,9 @@ pub fn current_accessibility_status() -> PermissionStatus {
 pub async fn permission_status(app: AppHandle) -> PermissionState {
     let mic = platform::mic_status();
     let accessibility = platform::accessibility_status();
+    eprintln!(
+        "[mohashim] permission_status invoked: mic={mic:?} ax={accessibility:?}"
+    );
     sync_runtime_grants(&app, mic, accessibility);
     PermissionState { mic, accessibility }
 }
