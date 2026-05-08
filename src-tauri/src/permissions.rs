@@ -56,9 +56,6 @@ pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle, oc_signal: bool) {
     {
         let path = mic_grant_file_path(app);
         let flag_exists = path.as_ref().map(|p| p.exists()).unwrap_or(false);
-        eprintln!(
-            "[mohashim] mic_grant load: path={path:?} flag_exists={flag_exists} oc_signal={oc_signal}"
-        );
         if flag_exists || oc_signal {
             platform::MIC_INTERACTED.store(true, Relaxed);
             // disk flag가 없으면 oc_signal로 복원된 케이스 — flag도 함께 영속하여
@@ -69,7 +66,6 @@ pub fn load_persisted_mic_grant_into_atomic(app: &AppHandle, oc_signal: bool) {
             let mic = platform::mic_status();
             let ax = platform::accessibility_status();
             sync_runtime_grants(app, mic, ax);
-            eprintln!("[mohashim] mic_grant load: atomic restored → mic={mic:?}");
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -90,9 +86,8 @@ fn save_persisted_mic_grant(app: &AppHandle) {
             return;
         }
     }
-    match std::fs::write(&path, "1") {
-        Ok(_) => eprintln!("[mohashim] mic_grant save OK: {path:?}"),
-        Err(e) => eprintln!("[mohashim] mic_grant save: write err: {e} → {path:?}"),
+    if let Err(e) = std::fs::write(&path, "1") {
+        eprintln!("[mohashim] mic_grant save: write err: {e} → {path:?}");
     }
 }
 
@@ -114,9 +109,6 @@ pub fn current_accessibility_status() -> PermissionStatus {
 pub async fn permission_status(app: AppHandle) -> PermissionState {
     let mic = platform::mic_status();
     let accessibility = platform::accessibility_status();
-    eprintln!(
-        "[mohashim] permission_status invoked: mic={mic:?} ax={accessibility:?}"
-    );
     sync_runtime_grants(&app, mic, accessibility);
     PermissionState { mic, accessibility }
 }
@@ -124,7 +116,6 @@ pub async fn permission_status(app: AppHandle) -> PermissionState {
 #[tauri::command]
 pub async fn request_microphone_permission(app: AppHandle) -> Result<PermissionStatus, String> {
     let status = platform::request_microphone().await?;
-    eprintln!("[mohashim] request_microphone_permission: status={status:?}");
     // Phase 21 (Windows): mic privacy 다이얼로그가 없으므로 Settings deep-link로
     // 사용자가 직접 활성화하도록 안내. macOS는 platform::request_microphone이
     // AVCaptureDevice.requestAccess로 다이얼로그를 트리거하므로 별도 deep-link 불필요.
@@ -195,7 +186,6 @@ pub async fn request_accessibility_permission(
 /// macOS는 OS API로 정확한 권한 검증이 가능하므로 본 커맨드를 호출할 필요 없다.
 #[tauri::command]
 pub async fn restore_persisted_mic_interacted(app: AppHandle) -> Result<PermissionStatus, String> {
-    eprintln!("[mohashim] restore_persisted_mic_interacted invoked");
     #[cfg(target_os = "windows")]
     {
         use std::sync::atomic::Ordering::Relaxed;
@@ -204,7 +194,6 @@ pub async fn restore_persisted_mic_interacted(app: AppHandle) -> Result<Permissi
         // 권한 부여한 적 있다는 뜻이므로 disk flag도 보장한다 (이중 안전망).
         save_persisted_mic_grant(&app);
         let status = platform::mic_status();
-        eprintln!("[mohashim] restore_persisted_mic_interacted: returning {status:?}");
         sync_runtime_grants(&app, status, platform::accessibility_status());
         Ok(status)
     }
