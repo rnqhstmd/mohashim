@@ -97,7 +97,7 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let pin_guide_item = MenuItem::with_id(
         app,
         "pin_guide",
-        "작업 표시줄에 고정 안내",
+        "Windows 사용 팁",
         true,
         None::<&str>,
     )?;

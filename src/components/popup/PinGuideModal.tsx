@@ -4,12 +4,15 @@ type PinGuideModalProps = {
 };
 
 /**
- * Windows 작업 표시줄 고정 안내 모달.
+ * Windows 트레이 사용 팁 모달.
  *
- * 트레이 우클릭 → "작업 표시줄에 고정 안내" 클릭 시 노출. OS는 보안상 앱이 자기 자신을
- * 작업 표시줄에 자동 pin할 수 없게 막아놓아, 사용자가 직접 pin할 수 있도록 단계별 안내만
- * 제공한다. 자동 시작 토글이 동등 효과(부팅 시 자동 실행)를 주지만, 사용자가 명시적으로
- * 작업 표시줄에서 빠르게 다시 켜고 싶은 경우의 보조 가이드.
+ * 트레이 우클릭 → "Windows 사용 팁" 클릭 시 노출. OS는 보안상 앱이 자기 자신을
+ * 작업 표시줄에 자동 pin할 수 없게 막아놓아, 시작 메뉴 → 우클릭 → "작업 표시줄에
+ * 고정" 경로도 일관되게 동작하지 않는다 (Windows 11 변경). 사용자가 실제로 취할
+ * 수 있는 액션 두 가지만 안내한다:
+ *   1. 트레이 오버플로우(`>` 버튼)에서 모하 아이콘을 노출 영역으로 드래그.
+ *   2. 자동 시작 토글로 PC 부팅 시 자동 실행 (트레이에 자동 노출).
+ * 앱 종료 시 트레이 아이콘도 함께 사라지는 점은 OS 정책이라 명시적으로 안내한다.
  */
 export function PinGuideModal({ open, onClose }: PinGuideModalProps) {
   if (!open) return null;
@@ -18,7 +21,7 @@ export function PinGuideModal({ open, onClose }: PinGuideModalProps) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="작업 표시줄에 고정 안내"
+      aria-label="Windows 사용 팁"
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45"
       onClick={onClose}
     >
@@ -27,35 +30,37 @@ export function PinGuideModal({ open, onClose }: PinGuideModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-center text-[14px] font-extrabold text-ink">
-          📌 작업 표시줄에 고정하기
+          💡 Windows 트레이 사용 팁
         </p>
         <p className="mt-1.5 text-center text-[10px] leading-snug text-ink/55">
-          종료한 뒤에도 한 번에 다시 켜고 싶다면 시작 메뉴에서 직접 고정해주세요.
+          모하는 작업 표시줄 우측의 트레이 아이콘으로 동작해요.
         </p>
 
-        <ol className="mt-3 space-y-2 text-[11px] leading-snug text-ink">
-          <li className="flex gap-2">
-            <span className="font-extrabold text-peach">1.</span>
-            <span>
-              Windows 시작 메뉴(<kbd className="rounded border border-ink/30 bg-mist px-1 text-[9px] font-bold">⊞</kbd>)
-              열기 → 검색창에 <strong>모하심</strong> 입력
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className="font-extrabold text-peach">2.</span>
-            <span>검색 결과의 <strong>Mohashim</strong> 위에서 우클릭</span>
-          </li>
-          <li className="flex gap-2">
-            <span className="font-extrabold text-peach">3.</span>
-            <span>
-              <strong>"작업 표시줄에 고정"</strong> 선택
-            </span>
-          </li>
-        </ol>
+        <div className="mt-3 space-y-2 text-[11px] leading-snug text-ink">
+          <div className="rounded-lg border border-ink/15 bg-mist px-3 py-2">
+            <p className="font-extrabold text-peach">📌 항상 보이게 하기</p>
+            <p className="mt-1 text-ink/75">
+              트레이 영역의{" "}
+              <kbd className="rounded border border-ink/30 bg-paperBg px-1 text-[9px] font-bold">
+                ⌃
+              </kbd>{" "}
+              버튼을 눌러 숨겨진 아이콘 창을 열고, 모하를 트레이 영역으로
+              끌어 놓으면 항상 노출돼요.
+            </p>
+          </div>
 
-        <p className="mt-3 rounded-lg border border-ink/15 bg-mist px-3 py-2 text-[10px] leading-snug text-ink/65">
-          💡 <strong>자동 시작</strong>도 켜두면 PC를 켤 때마다 모하가 알아서 트레이에 떠요.
-          (트레이 우클릭 → 자동 시작)
+          <div className="rounded-lg border border-ink/15 bg-mist px-3 py-2">
+            <p className="font-extrabold text-peach">⚡ 부팅 시 자동 실행</p>
+            <p className="mt-1 text-ink/75">
+              트레이 우클릭 → <strong>자동 시작</strong>을 켜두면 PC 켤
+              때마다 모하가 알아서 트레이에 떠요.
+            </p>
+          </div>
+        </div>
+
+        <p className="mt-3 rounded-lg border border-ink/15 bg-paperBg px-3 py-2 text-[10px] leading-snug text-ink/55">
+          ℹ️ 종료를 누르면 트레이 아이콘도 함께 사라져요. Windows에선 앱 종료 후
+          트레이 아이콘만 남길 수 없어요.
         </p>
 
         <button
