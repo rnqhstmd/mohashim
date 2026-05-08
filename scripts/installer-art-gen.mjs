@@ -89,25 +89,30 @@ const POTATO_GROUP = `
   </g>
 `;
 
-// Header — 150x57. 좌측 작은 모하(48px) + 우측 "Mohashim" 텍스트.
-// 한글 폰트 임베드는 빌드 머신마다 가용성이 달라 영문 표기 사용.
+// 한글 텍스트는 시스템 폴백 폰트(Windows: Malgun Gothic, macOS: Apple SD Gothic Neo)
+// 로 렌더된다. sharp/librsvg는 빌드 머신의 fontconfig를 사용하므로 두 OS 모두에
+// 기본 설치된 한글 폰트가 자동 매칭된다.
+const KO_FONT_FAMILY =
+  "'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', sans-serif";
+
+// Header — 150x57. 좌측 작은 모하(48px) + 우측 "모하심" 한글 워드마크.
 const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
   <rect width="150" height="57" fill="${BG}"/>
   <g transform="translate(6, 4) scale(0.245)">
     ${POTATO_GROUP}
   </g>
-  <text x="64" y="34" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="${OUTLINE}">Mohashim</text>
+  <text x="64" y="35" font-family="${KO_FONT_FAMILY}" font-size="18" font-weight="700" fill="${OUTLINE}">모하심</text>
 </svg>`;
 
-// Sidebar — 164x314. 가운데 큰 모하(140px) + 아래 "Mohashim" + 부제.
+// Sidebar — 164x314. 가운데 큰 모하(140px) + 아래 "모하심" + 한글 부제.
 const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="314" viewBox="0 0 164 314">
   <rect width="164" height="314" fill="${BG}"/>
   <g transform="translate(12, 60) scale(0.7)">
     ${POTATO_GROUP}
   </g>
-  <text x="82" y="240" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="22" font-weight="800" fill="${OUTLINE}">Mohashim</text>
-  <text x="82" y="262" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="11" font-weight="500" fill="${OUTLINE}" opacity="0.7">Focus tracker</text>
-  <text x="82" y="294" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="9" fill="${OUTLINE}" opacity="0.5">Local-first · Privacy first</text>
+  <text x="82" y="240" text-anchor="middle" font-family="${KO_FONT_FAMILY}" font-size="24" font-weight="800" fill="${OUTLINE}">모하심</text>
+  <text x="82" y="263" text-anchor="middle" font-family="${KO_FONT_FAMILY}" font-size="12" font-weight="500" fill="${OUTLINE}" opacity="0.7">집중 트래커</text>
+  <text x="82" y="294" text-anchor="middle" font-family="${KO_FONT_FAMILY}" font-size="10" fill="${OUTLINE}" opacity="0.5">내 PC에만 저장돼요</text>
 </svg>`;
 
 /**

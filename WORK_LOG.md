@@ -20,6 +20,73 @@
 
 ---
 
+## 2026-05-08 22:30 KST — 인스톨러/표시명 한국어화 (productName "모하심" + NSIS Korean)
+
+### 요약
+사용자 피드백: 인스톨러 셋업 화면이 영문이고 앱 표시명도 "Mohashim"이라 어색. 한국어 사용자에게 친숙하도록 표시명을 모두 "모하심"으로 통일하고 NSIS 인스톨러를 한국어로 표시.
+
+### 배경 / 원인
+- 사용자가 "Welcome to Mohashim Setup" 등 영문 NSIS 화면을 보고 한국어로 정렬 요청.
+- Tauri NSIS bundler는 `productName`을 시스템 매크로(`$(^Name)` 등)에 자동 보간 → 영문 productName이면 모든 인스톨러 텍스트도 영문.
+- 잔디 자랑하기 워터마크는 이미 ShareCard 코드상 "모하심" 한글이라 신규 빌드에선 정상 노출 (사용자가 옛 빌드 본 가능성 있음).
+
+### 변경 파일
+
+#### 1. `src-tauri/tauri.conf.json`
+- `productName`을 한글 `"모하심"`으로 변경 — 인스톨러 / 시작 메뉴 / 설치 폴더 표시명에 반영.
+- `mainBinaryName: "Mohashim"` 신설 — 실행 파일(.exe)은 영문 유지하여 Path/스크립트 호환성 보존.
+- `bundle.windows.nsis.languages: ["Korean"]` 추가 — NSIS Modern UI 시스템 텍스트(Welcome / Install / Finish 등) 한국어 번역 사용.
+
+```diff
+- "productName": "Mohashim",
++ "productName": "모하심",
++ "mainBinaryName": "Mohashim",
+  ...
+  "windows": {
+    "nsis": {
+      "installerIcon": "icons/icon.ico",
+      "headerImage": "installer/header.bmp",
+-     "sidebarImage": "installer/sidebar.bmp"
++     "sidebarImage": "installer/sidebar.bmp",
++     "languages": ["Korean"]
+    }
+  }
+```
+
+#### 2. `scripts/installer-art-gen.mjs`
+- 헤더 / 사이드바 BMP의 영문 텍스트를 한글로 교체:
+  - 헤더: "Mohashim" → "모하심"
+  - 사이드바: "Mohashim / Focus tracker / Local-first · Privacy first" → "모하심 / 집중 트래커 / 내 PC에만 저장돼요"
+- 폰트 family를 시스템 한글 폰트 폴백 체인으로 명시:
+  ```
+  'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', sans-serif
+  ```
+  Windows 빌드 머신의 fontconfig가 Malgun Gothic을 자동 매칭. macOS 빌드 시(미래)도 폴백 동작.
+- 글자 크기 / 위치를 한글 글리프 폭에 맞춰 미세 조정.
+
+### 검증
+1. **빌드**: `npm run tauri build -- --debug --bundles nsis` — 26초, 에러/경고 없음.
+2. **산출물**:
+   - 실행파일: `src-tauri/target/debug/Mohashim.exe` (영문, mainBinaryName)
+   - 인스톨러: `src-tauri/target/debug/bundle/nsis/모하심_0.1.0_x64-setup.exe` (한글, productName)
+3. **사용자 직접 검증** (인스톨러 실행 후 확인):
+   - 셋업 마법사 "환영합니다" 등 NSIS 시스템 텍스트가 한국어로 노출
+   - 좌측 사이드바 BMP에 "모하심 / 집중 트래커 / 내 PC에만 저장돼요" 한글 노출
+   - 시작 메뉴 / 작업 표시줄 / 트레이 hover에 "모하심" 표시
+
+### 영향 범위
+- **macOS**: 영향 없음 (NSIS Windows 전용). productName 한글은 macOS dmg 파일명에도 영향(`모하심.dmg`)이지만 macOS는 한글 파일명 완전 지원하므로 문제 없음. mainBinaryName으로 .app 내부 실행파일은 영문 유지.
+- **Windows**: 인스톨러/시작메뉴/설치폴더가 한글, 실행파일은 영문 → 한글 호환 + 스크립트 호환 모두 충족.
+- **CI/릴리즈**: 산출물 파일명이 변경됨 (`Mohashim_Windows.msi` → `모하심_0.1.0_x64.msi` 등). README의 다운로드 링크가 옛 영문 파일명으로 되어 있어 GitHub Releases 자산명과 매칭되도록 후속 정리 필요 — 본 PR에는 미포함.
+- **잔디 자랑하기**: ShareCard 워터마크 / 부제는 이미 한글이라 코드 변경 없음. 사용자가 옛 빌드 보고 영문 인식했다면 신규 인스톨러 깔면 자동 해소.
+
+### 후속 과제 (선택)
+- README 다운로드 링크의 자산 파일명을 새 한글 파일명에 맞게 갱신.
+- `.github/workflows/release.yml`이 자산명을 영문으로 가정한다면 동일 갱신.
+- 인스톨러 진행 페이지 텍스트의 "%product_name%" 보간 결과 검증 (사용자 캡처로 확인).
+
+---
+
 ## 2026-05-08 22:10 KST — Idle chip 멘트 회전 주기 8초 → 15분
 
 ### 요약
