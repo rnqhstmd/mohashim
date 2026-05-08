@@ -6,6 +6,7 @@ mod logger;
 mod permissions;
 mod power;
 pub mod score;
+mod shop;
 mod storage;
 mod timer;
 mod tray;
@@ -47,6 +48,11 @@ pub fn run() {
             mailbox::get_mailbox,
             mailbox::mark_all_mailbox_read,
             mailbox::mark_mailbox_letter_read,
+            // Phase 24 FR-1, FR-4, FR-5, FR-8: shop IPC 4종.
+            shop::purchase_item,
+            shop::equip_item,
+            shop::unequip_slot,
+            shop::get_inventory,
         ])
         .setup(|app| {
             // setup 순서: storage 시드 → boot discard → power observer → tray → score.
