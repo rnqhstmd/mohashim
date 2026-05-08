@@ -76,16 +76,25 @@ pub async fn purchase_item<R: Runtime>(
     // 1) 카탈로그 조회 (BR-9 Rust 내부 가격 테이블).
     let item = find(&item_id).ok_or_else(|| format!("unknown_item:{item_id}"))?;
 
-    // 2) 잔액 차감 (lock 캡슐화 — economy::try_charge). 에러 문자열 그대로 전파:
+    // 2) store 열기 (보유 검증 + inventory 갱신 공용).
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|e| format!("store_error:{e}"))?;
+
+    // 3) 이미 보유 중이면 차감 없이 차단 (PR review HIGH 반영, FR-3 정책 변경).
+    //    UI에서 보유 카드는 "장착"/"해제" 버튼만 노출되어 정상 흐름은 도달 불가하지만,
+    //    IPC 직접 호출 방어 + 사용자 의도 보호(이미 보유한 아이템에 새싹 재차감 차단).
+    let inv = read_inventory(&store);
+    if inv.owned.contains(&item_id) {
+        return Err(format!("already_owned:{item_id}"));
+    }
+
+    // 4) 잔액 차감 (lock 캡슐화 — economy::try_charge). 에러 문자열 그대로 전파:
     //    - "insufficient_sprouts:{부족분}" → TS UI에서 부족분 툴팁 표시.
     //    - "store_error:{원인}" → 잔액 부족과 분리된 store 오류 의미론.
     let new_balance = crate::economy::try_charge(&app, item.price)?;
 
-    // 3) inventory.owned 갱신 + save (economy + inventory 단일 save 묶음).
-    let store = app
-        .store(STORE_FILE)
-        .map_err(|e| format!("store_error:{e}"))?;
-    let inv = read_inventory(&store);
+    // 5) inventory.owned 갱신 + save (economy + inventory 단일 save 묶음).
     let next_inv = apply_purchase_owned(inv, &item_id);
     write_inventory(&store, &next_inv);
     store
