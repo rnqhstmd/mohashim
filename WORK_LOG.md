@@ -20,6 +20,44 @@
 
 ---
 
+## 2026-05-09 01:30 KST — 할일 텍스트 줄바꿈 (truncate 제거)
+
+### 요약
+사용자 보고: 할일 텍스트가 길어지면 한 줄로 잘려 `...`으로 표시됨 → 다중 라인으로 자연스럽게 줄바꿈되도록 수정. 글자수 제한은 이미 `maxLength={100}`으로 입력 단계에서 적용됨.
+
+### 변경 파일
+
+#### `src/components/popup/TodoItem.tsx`
+- `labelBaseClass`의 `truncate` → `whitespace-normal break-words`. 한국어/영문 모두 자연 줄바꿈.
+- 부모 row 정렬 `items-center` → `items-start`로 변경. 다중 라인 텍스트일 때 체크박스/액션 버튼이 첫 줄과 정렬되어 시각적으로 자연스러움.
+
+```diff
+- const labelBaseClass = todo.done
+-   ? "flex-1 truncate line-through opacity-40"
+-   : "flex-1 truncate text-ink cursor-text";
++ const labelBaseClass = todo.done
++   ? "flex-1 whitespace-normal break-words line-through opacity-40"
++   : "flex-1 whitespace-normal break-words text-ink cursor-text";
+
+- <div className="flex items-center gap-2 pr-1">
++ <div className="flex items-start gap-2 pr-1">
+```
+
+### 글자수 제한
+- `TodoInput.tsx` (신규 등록): `<input maxLength={100}>` 이미 적용됨.
+- `TodoItem.tsx` 인라인 편집: `<input maxLength={100}>` 이미 적용됨.
+- 즉 100자 이상은 입력 자체가 차단되며, 100자 이내 텍스트는 다중 라인으로 모두 표시.
+
+### 검증
+- NSIS 빌드 22초 성공.
+- 사용자 직접 검증: 긴 할일 텍스트 입력 시 `...` 잘림 없이 다중 라인으로 표시 + 리스트 스크롤 영역에서 자연 스크롤.
+
+### 영향 범위
+- macOS / Windows 모두 동일 적용.
+- 기존 단일 라인 할일 표시는 그대로 — `items-start` 정렬도 단일 라인에서는 시각적 차이 거의 없음.
+
+---
+
 ## 2026-05-09 01:10 KST — 부팅 시 onboarding_completed 보조 신호로 마이크 atomic 자동 복원
 
 ### 요약
