@@ -89,19 +89,14 @@ const POTATO_GROUP = `
   </g>
 `;
 
-// 한글 텍스트는 시스템 폴백 폰트(Windows: Malgun Gothic, macOS: Apple SD Gothic Neo)
-// 로 렌더된다. sharp/librsvg는 빌드 머신의 fontconfig를 사용하므로 두 OS 모두에
-// 기본 설치된 한글 폰트가 자동 매칭된다.
-const KO_FONT_FAMILY =
-  "'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', sans-serif";
-
-// Header — 150x57. 좌측 작은 모하(48px) + 우측 "모하심" 한글 워드마크.
+// Header — 150x57. 모하 캐릭터만 좌측에 노출 (텍스트 무).
+// 사용자 피드백에 맞춰 사이드바와 동일하게 로고/부제 텍스트를 제거.
+// scale 0.27 → 약 54x54 — 헤더 높이(57)에 거의 꽉 차게 노출.
 const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
   <rect width="150" height="57" fill="${BG}"/>
-  <g transform="translate(6, 4) scale(0.245)">
+  <g transform="translate(2, 1) scale(0.275)">
     ${POTATO_GROUP}
   </g>
-  <text x="64" y="35" font-family="${KO_FONT_FAMILY}" font-size="18" font-weight="700" fill="${OUTLINE}">모하심</text>
 </svg>`;
 
 // Sidebar — 164x314. 모하 캐릭터만 크게 가운데 노출 (텍스트 무).

@@ -8,7 +8,7 @@
     fill="#BDBDBD" stroke="#2b2520" stroke-width="0.2"
     transform="rotate(100 11 6.4) translate(0 0.6)"/>
   <ellipse cx="11" cy="12.5" rx="6.5" ry="5.8"
-    fill="#f4d160" stroke="#2b2520" stroke-width="0.25"/>
+    fill="#fdeed1" stroke="#2b2520" stroke-width="0.25"/>
   <line x1="8.6" y1="11.5" x2="9.7" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
   <line x1="9.7" y1="11.5" x2="8.6" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
   <line x1="12.3" y1="11.5" x2="13.4" y2="12.6" stroke="#2b2520" stroke-width="0.25" stroke-linecap="round"/>
