@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import {
   getOnboardingCompleted,
@@ -11,6 +12,7 @@ import {
   canEnterMain,
   getPermissionStatus,
   openPermissionSettings,
+  requestAccessibilityPermission,
   requestMicrophonePermission,
   requestNotificationPermission,
   type PermissionKind,
@@ -19,6 +21,7 @@ import {
 import { attachTrayClickListener, type TargetOs } from "./lib/trayPopup";
 import { OnboardingScreen } from "./components/popup/OnboardingScreen";
 import { MainScreen } from "./components/popup/MainScreen";
+import { PinGuideModal } from "./components/popup/PinGuideModal";
 // Phase 21 사용자 피드백: PopupTail(꼬리 < 도형) 미노출 — 사각형 팝업만 유지.
 
 type BootStatus = "loading" | "ready";
@@ -33,6 +36,8 @@ function App() {
   const [onboardingCompleted, setOnboardingCompletedState] = useState(false);
   const [isConsenting, setIsConsenting] = useState(false);
   const [os, setOs] = useState<TargetOs | null>(null);
+  // 트레이 우클릭 → "작업 표시줄에 고정 안내" 클릭 시 Rust에서 emit하는 이벤트로 토글.
+  const [showPinGuide, setShowPinGuide] = useState(false);
   const isRefreshingRef = useRef(false);
 
   // 부트: Storage init + 권한 status + onboarding 플래그 1회 조회.
@@ -93,6 +98,16 @@ function App() {
     };
   }, []);
 
+  // 트레이 우클릭 메뉴 "작업 표시줄에 고정 안내" → Rust가 emit한 "show-pin-guide" 수신.
+  useEffect(() => {
+    const unlistenP = listen("show-pin-guide", () => {
+      setShowPinGuide(true);
+    });
+    return () => {
+      void unlistenP.then((fn) => fn());
+    };
+  }, []);
+
   // OS 판별 + tray-click listener 등록 (PopupTail position + FR-E3, AC-T26).
   // platform() 1회 호출로 OS state 설정과 listener 등록을 모두 처리.
   useEffect(() => {
@@ -126,6 +141,21 @@ function App() {
     setIsConsenting(true);
     try {
       await requestMicrophonePermission();
+      const next = await getPermissionStatus();
+      setPermissions(next);
+    } finally {
+      setIsConsenting(false);
+    }
+  };
+
+  // 접근성 토글 — Windows에선 OS 권한 자체가 부재하므로 시스템 설정을 열지 않고
+  // 즉시 INTERACTED 마킹 + Granted 반환 (TOFU). macOS는 시스템 설정 deep-link 경로
+  // (handleOpenSettings)로 분기되며 본 핸들러는 호출되지 않는다.
+  const handleRequestAccessibility = async () => {
+    if (isConsenting) return;
+    setIsConsenting(true);
+    try {
+      await requestAccessibilityPermission();
       const next = await getPermissionStatus();
       setPermissions(next);
     } finally {
@@ -186,14 +216,20 @@ function App() {
         <MainScreen onResetDone={() => setOnboardingCompletedState(false)} />
       ) : (
         <OnboardingScreen
+          os={os}
           permissions={permissions}
           isConsenting={isConsenting}
           onConsent={handleConsent}
           onRequestMic={handleRequestMic}
+          onRequestAccessibility={handleRequestAccessibility}
           onRequestNotification={handleRequestNotification}
           onOpenSettings={handleOpenSettings}
         />
       )}
+      <PinGuideModal
+        open={showPinGuide}
+        onClose={() => setShowPinGuide(false)}
+      />
     </div>
   );
 }

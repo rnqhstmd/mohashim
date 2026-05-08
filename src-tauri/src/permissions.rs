@@ -88,10 +88,23 @@ fn sync_runtime_grants(app: &AppHandle, mic: PermissionStatus, accessibility: Pe
     }
 }
 
-/// 설계 §6.1/C2: AX 다이얼로그를 트리거하지 않는다. status 조회만 수행한다.
+/// 설계 §6.1/C2: macOS는 AX 다이얼로그를 트리거하지 않는다 (status 조회만 수행).
+/// Windows는 OS에 "접근성 권한"이라는 개념 자체가 없으므로, 사용자의 토글 클릭을
+/// 의도 표시로 받아들여 INTERACTED 마킹 → 즉시 Granted 반환 (BR-9 TOFU 일관성).
+/// 시스템 설정 페이지를 열지 않는다 — Windows의 "개인 정보 및 보안"에는 접근성
+/// 항목이 없어 사용자가 혼란스러워하던 문제 해결.
 #[tauri::command]
-pub async fn request_accessibility_permission() -> Result<PermissionStatus, String> {
-    Ok(platform::accessibility_status())
+pub async fn request_accessibility_permission(
+    app: AppHandle,
+) -> Result<PermissionStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::atomic::Ordering::Relaxed;
+        platform::AX_INTERACTED.store(true, Relaxed);
+    }
+    let status = platform::accessibility_status();
+    sync_runtime_grants(&app, platform::mic_status(), status);
+    Ok(status)
 }
 
 #[tauri::command]
@@ -234,12 +247,16 @@ mod platform {
     use super::PermissionKind;
     use super::PermissionStatus;
 
-    /// Phase 21 사용자 피드백 (Windows): mic/accessibility 권한을 OS API로 직접 검증할 수
-    /// 없으므로 trust-on-first-use로 동작. 사용자가 토글을 눌러 Settings를 열면 INTERACTED
-    /// 플래그를 set하고, 후속 status 조회는 granted를 반환한다. 이로써 macOS와 동일한
-    /// 토글 → Settings 안내 → 시작하기 활성화 UX가 Windows에서도 가능.
+    /// Phase 21 사용자 피드백 (Windows): mic 권한은 OS API로 직접 검증할 수 없으므로
+    /// trust-on-first-use로 동작 — 사용자가 토글을 눌러 Settings를 열면 INTERACTED
+    /// 플래그를 set하고, 후속 status 조회는 granted를 반환한다.
     pub static MIC_INTERACTED: AtomicBool = AtomicBool::new(false);
-    pub static AX_INTERACTED: AtomicBool = AtomicBool::new(false);
+
+    /// Windows에는 OS 레벨에 "접근성 권한"이라는 개념 자체가 없어 사용자가 시스템 설정
+    /// 어딘가에서 켤 수 있는 토글이 부재한다. 따라서 부팅 시점부터 granted로 간주하여
+    /// 온보딩 화면의 접근성 토글이 처음부터 ON+disabled로 노출되게 한다 — 사용자가
+    /// 빈 설정 페이지를 보고 혼란스러워하던 회귀 영구 해결.
+    pub static AX_INTERACTED: AtomicBool = AtomicBool::new(true);
 
     pub fn mic_status() -> PermissionStatus {
         if MIC_INTERACTED.load(Relaxed) {

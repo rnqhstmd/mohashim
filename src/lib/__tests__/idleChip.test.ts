@@ -27,34 +27,37 @@ describe("useIdleChipLabel", () => {
     expect(result.current).toBe(IDLE_LABELS[0]);
   });
 
-  it("rotates index by +1 every 8 seconds", async () => {
+  it("rotates index by +1 every ROTATE_INTERVAL_MS", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0);
-    const { useIdleChipLabel, IDLE_LABELS } = await import("../idleChip");
+    const { useIdleChipLabel, IDLE_LABELS, ROTATE_INTERVAL_MS } = await import(
+      "../idleChip"
+    );
     const { result } = renderHook(() => useIdleChipLabel(true));
     expect(result.current).toBe(IDLE_LABELS[0]);
 
     act(() => {
-      vi.advanceTimersByTime(8000);
+      vi.advanceTimersByTime(ROTATE_INTERVAL_MS);
     });
     expect(result.current).toBe(IDLE_LABELS[1]);
 
     act(() => {
-      vi.advanceTimersByTime(8000);
+      vi.advanceTimersByTime(ROTATE_INTERVAL_MS);
     });
     expect(result.current).toBe(IDLE_LABELS[2]);
   });
 
-  // Phase 21: IDLE_LABELS 개수 변경(7 → 5)에 따라 wrap-around 주기를 8*5=40s로 갱신.
   it("wraps around to index 0 after IDLE_LABELS.length rotations", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0);
-    const { useIdleChipLabel, IDLE_LABELS } = await import("../idleChip");
+    const { useIdleChipLabel, IDLE_LABELS, ROTATE_INTERVAL_MS } = await import(
+      "../idleChip"
+    );
     const { result } = renderHook(() => useIdleChipLabel(true));
     expect(result.current).toBe(IDLE_LABELS[0]);
 
     act(() => {
-      vi.advanceTimersByTime(8000 * IDLE_LABELS.length);
+      vi.advanceTimersByTime(ROTATE_INTERVAL_MS * IDLE_LABELS.length);
     });
     expect(result.current).toBe(IDLE_LABELS[0]);
   });

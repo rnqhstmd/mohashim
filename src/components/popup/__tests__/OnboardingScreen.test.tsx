@@ -4,9 +4,13 @@ import { OnboardingScreen } from "../OnboardingScreen";
 import type { PermissionState } from "../../../lib/permissions";
 
 const baseProps = {
+  // 기본 OS = macOS — 기존 테스트는 macOS 분기(시스템 설정 deep-link)를 검증한다.
+  // Windows 분기는 별도 테스트에서 os="windows"로 명시하여 검증.
+  os: "macos" as const,
   isConsenting: false,
   onConsent: () => {},
   onRequestMic: () => {},
+  onRequestAccessibility: () => {},
   onRequestNotification: () => {},
   onOpenSettings: () => {},
 };
@@ -115,7 +119,7 @@ describe("OnboardingScreen — Phase 21 토글 구조", () => {
     expect(onOpenSettings).toHaveBeenCalledWith("microphone");
   });
 
-  it("접근성 not_granted → 토글 클릭 시 onOpenSettings('accessibility') 호출", () => {
+  it("접근성 not_granted → 토글 클릭 시 onOpenSettings('accessibility') 호출 (macOS)", () => {
     const onOpenSettings = vi.fn();
     render(
       <OnboardingScreen
@@ -128,6 +132,25 @@ describe("OnboardingScreen — Phase 21 토글 구조", () => {
     const accessibilityToggle = screen.getAllByRole("switch")[1];
     fireEvent.click(accessibilityToggle);
     expect(onOpenSettings).toHaveBeenCalledWith("accessibility");
+  });
+
+  it("접근성 not_granted → Windows에선 onOpenSettings 대신 onRequestAccessibility 호출 (시스템 설정 비노출, TOFU)", () => {
+    const onOpenSettings = vi.fn();
+    const onRequestAccessibility = vi.fn();
+    render(
+      <OnboardingScreen
+        {...baseProps}
+        os="windows"
+        permissions={onlyAccessibilityDenied}
+        onOpenSettings={onOpenSettings}
+        onRequestAccessibility={onRequestAccessibility}
+      />,
+    );
+    const accessibilityToggle = screen.getAllByRole("switch")[1];
+    fireEvent.click(accessibilityToggle);
+    // Windows: ms-settings:privacy를 열지 않고 즉시 INTERACTED 마킹 경로로 진입.
+    expect(onRequestAccessibility).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).not.toHaveBeenCalled();
   });
 
   it("알림 not_determined → 토글 클릭 시 onRequestNotification 호출", () => {

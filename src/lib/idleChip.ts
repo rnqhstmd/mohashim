@@ -9,7 +9,9 @@ export const IDLE_LABELS = [
   "명상 중",
 ] as const;
 
-export const ROTATE_INTERVAL_MS = 8000;
+// Phase 21 사용자 피드백: 8초 회전이 너무 잦아 산만하게 느껴진다 — 15분으로 늘려
+// "거의 안 바뀐 듯하지만 가끔 환기"되는 톤으로 조정. 캐릭터의 살아있는 느낌은 유지.
+export const ROTATE_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
  * Idle chip 라벨을 반환한다 (DEC-Q7).
