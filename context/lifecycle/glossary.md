@@ -15,3 +15,13 @@
 | 라이트 모드 only (DEC-13) | v0.1은 라이트 모드만. 다크 모드는 추후 |
 | Privacy badge | OnboardingScreen 카드 하단 "🔒 모든 데이터는 내 컴퓨터에만" pill. BLUE_LIGHT 배경 + BLUE_DEEP 보더 |
 | 권한 점수 분배 표시 | OnboardingScreen 권한 카드 우측 — 마이크 카드="20점" / 접근성 카드="80점" 초록 pill |
+| monthly_check (Phase 26) | 부팅 setup의 spawn 안에서 yearly_cleanup 앞에 실행되는 월간 인사이트 분석 진입점. last_monthly_letter_year_month 기반 동월 멱등 + 다중 비활성 달 순회 |
+| analyze_monthly_pattern | 순수 함수. session_logs(raw JSON)와 year_month("YYYY-MM")를 받아 5종 템플릿 중 하나로 분류한 MonthlyAnalysis 또는 None 반환. 0세션 → None, 1~9세션 → Encouragement, ≥10세션 → 시간대/dB 분기 |
+| 5종 템플릿 우선순위 | ③NightOwl > ④NoiseChampion > ②Allrounder > ①Standard > ⑤Encouragement. PRD AC-7 충족을 위해 Allrounder가 Standard 앞에 배치됨 |
+| last_monthly_letter_year_month | 월간 편지 발송 추적 키 ("YYYY-MM" 또는 null). insight 모듈만 write (단일 writer). reset_all에서 null로 초기화 (정책 예외) |
+| ml-monthly-{YYYY-MM} | 월간 편지 ID 형식. 동월 중복 발송 방어용 (BR-2) |
+| 3단 윈도우 활성화 (P-M11) | 알림 클릭 시 win.show() → win.unminimize() → win.set_focus() 순서로 호출. hide/minimize 상태에서도 가시화 보장. 각 단계 실패는 eprintln 후 다음 진행 |
+| LAST_NOTIF_AT_MS swap | 알림 발화 시각을 atomic으로 기록. Focused 핸들러 진입 시 swap(0)으로 1회 사용 후 reset → 자체 호출 시 발생하는 추가 Focused 이벤트는 last==0이라 분기 미진입 (self-loop 자연 차단) |
+| economy-updated | 새싹 잔액 변경 시 발화되는 Tauri 이벤트. timer/shop/economy 3개 발생원에서 store.save() 성공 직후 emit. UI는 onEconomyUpdated 헬퍼로 구독하여 즉시 갱신 |
+| MainHeader (Phase 26) | 메인 화면 우상단 공통 헤더. ModeChip + 편지함(unread dot) + 톱니바퀴 가로 배치. 전체 탭 공통 노출. overlayScreen=null 상태에서만 렌더 |
+| overlayScreen | MainScreen의 오버레이 라우팅 state. "mailbox" \| "settings" \| null. 오버레이 활성 시 BottomTabBar/MainHeader 숨김 + 풀스크린 진입. 좌상단 ← 버튼으로 메인 복귀 |

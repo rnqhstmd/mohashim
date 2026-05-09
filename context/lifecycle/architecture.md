@@ -159,6 +159,76 @@ src/assets/fonts/
 - 동기화 실패는 `eprintln!` 후 부트 진행 (기존 setup 정책 일관)
 - `reset_all`도 store false 리셋과 함께 `app.autolaunch().disable()` 호출하여 OS↔store 정합 유지
 
+## 부팅 시 월간 인사이트 트리거 (Phase 26 / FR-42, FR-43)
+
+`lib.rs::setup` 안에서 `monthly_check + yearly_cleanup`을 단일 `tauri::async_runtime::spawn` 블록으로 직렬 실행한다. setup 메인 스레드는 spawn 후 즉시 다음 단계로 진행하므로 사용자 부팅 지연이 0이며, 단일 spawn 블록 내 직렬 호출로 1월 1일 부팅 시 `monthly_check`가 작년 12월 데이터로 분석을 마친 후 `yearly_cleanup`이 12월 session_logs를 정리한다 (P-I2).
+
+```rust
+// lib.rs::setup 안
+let app_handle = app.handle().clone();
+tauri::async_runtime::spawn(async move {
+    if let Err(err) = insight::monthly_check(&app_handle) {
+        eprintln!("[mohashim] monthly_check failed: {err}");
+    }
+    if let Err(err) = storage::yearly_cleanup(&app_handle) {
+        eprintln!("[mohashim] yearly_cleanup failed: {err}");
+    }
+});
+```
+
+### monthly_check 흐름
+
+1. store에서 `last_monthly_letter_year_month` read.
+2. 현재 연월 산출 (`Local::now()`).
+3. last == Some(current) → 즉시 return (BR-1 멱등).
+4. last == None → 발송 없이 last를 current로 갱신 (최초 부팅).
+5. last == Some(prev) → `months_strictly_between(prev, next_year_month(current))` 결과 순회. 각 누락 달에 대해 `analyze_monthly_pattern` 호출 → Some이면 Letter(kind="MONTHLY") 생성 후 `mailbox::append_letter_and_emit`. None은 skip.
+6. 마지막에 `last_monthly_letter_year_month = current` write + `store.save()`.
+
+### 다중 비활성 달 한계
+
+- `months_strictly_between` 시맨틱은 양 끝 exclusive. 호출부에서 `to`로 `next_year_month(current)`를 전달하여 직전 달이 inclusive하게 포함됨.
+- 1년 이상 비활성 후 부팅 시 yearly_cleanup이 직전 연도 session_logs를 삭제하므로, 누락 기간이 연을 넘는 경우 일부 달은 0세션으로 처리되어 발송 누락. 운영상 수용.
+
+## 알림 딥링크 3단 활성화 (Phase 26 / FR-44, P-M11)
+
+`mailbox/mod.rs::install_notification_action_handler`의 `Focused(true)` 분기에서 `mailbox-deeplink` emit 직전에 3단 활성화를 호출한다.
+
+```rust
+let last = LAST_NOTIF_AT_MS.swap(0, Ordering::AcqRel);
+if last > 0 && now_ms.saturating_sub(last) < NOTIF_DEEPLINK_WINDOW_MS {
+    if let Some(win) = app_clone.get_webview_window("main") {
+        if let Err(e) = win.show() { eprintln!(...); }
+        if let Err(e) = win.unminimize() { eprintln!(...); }
+        if let Err(e) = win.set_focus() { eprintln!(...); }
+    }
+    if let Err(e) = app_clone.emit("mailbox-deeplink", json!({})) { eprintln!(...); }
+}
+```
+
+호출 순서:
+- `show()` — hide 상태 NSWindow 가시화 (macOS).
+- `unminimize()` — minimize 상태 복원 (정상 상태 시 no-op).
+- `set_focus()` — 멀티 모니터 최상위 + 키보드 포커스.
+- 각 단계 실패는 eprintln 후 다음 진행. 어느 한 단계라도 성공하면 사용자가 창에 도달 가능.
+
+### Self-loop 자연 차단
+
+`LAST_NOTIF_AT_MS.swap(0)`이 분기 진입 시 0으로 reset되므로:
+- 자체 `win.show()` 호출이 OS의 추가 `Focused(true)` 이벤트를 발화시켜도 `last == 0`이라 `last > 0` 조건이 false → 분기 미진입.
+- 별도 atomic flag 가드 불필요.
+
+## economy-updated 이벤트 (Phase 26)
+
+새싹 잔액 변경의 단일 트리거. timer / shop / economy 3개 발생원의 store.save() 성공 직후에 `app.emit("economy-updated", ())`를 호출한다.
+
+발생원:
+- `timer.rs::on_complete_consumed` — 세션 완료 보상 지급 후
+- `shop/mod.rs::purchase_item` — 아이템 구매 차감 후 (inventory-updated와 함께)
+- `economy/mod.rs::award_todo_added` — 출석 보상 1🌱 지급 후
+
+UI 측 구독: `src/lib/economy.ts::onEconomyUpdated(cb)` 헬퍼로 listen. MainScreen이 마운트 시 + 이벤트 수신 시 `getEconomy()` 재조회 → sprouts state 갱신 → TodosTab → FocusStartButton/PomodoroCard로 forwarding.
+
 ## 라이트 모드 only (DEC-13)
 
 - 시스템 다크 모드 감지 무관, 항상 라이트 팔레트

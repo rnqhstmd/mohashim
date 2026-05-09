@@ -1,6 +1,7 @@
 mod audio;
 mod economy;
 mod input;
+mod insight;
 mod mailbox;
 mod logger;
 mod permissions;
@@ -82,11 +83,19 @@ pub fn run() {
             if let Err(err) = timer::auto_discard_on_boot(app.handle()) {
                 eprintln!("[mohashim] timer auto_discard_on_boot failed: {err}");
             }
-            // Phase 10 FR-7: 연도 자동 정리. 동일 연도 재기동 no-op (AC-16).
-            // power::start 이전에 실행 — sessions/session_logs/todos 정리 후 score::tick 시작.
-            if let Err(err) = storage::yearly_cleanup(app.handle()) {
-                eprintln!("[mohashim] yearly_cleanup failed: {err}");
-            }
+            // Phase 26 MA-3 / FR-14, FR-18: monthly_check + yearly_cleanup을 spawn으로 분리.
+            // 부팅 메인 스레드 블로킹 회피. P-I2 / FR-18: monthly_check를 yearly_cleanup
+            // 보다 먼저 실행하여 12월 데이터 삭제 전 분석을 보장한다 (1월 1일 첫 부팅 케이스).
+            // 동일 연도 재기동 시 yearly_cleanup은 멱등 no-op (AC-16).
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = insight::monthly_check(&app_handle) {
+                    eprintln!("[mohashim] monthly_check failed: {err}");
+                }
+                if let Err(err) = storage::yearly_cleanup(&app_handle) {
+                    eprintln!("[mohashim] yearly_cleanup failed: {err}");
+                }
+            });
             if let Err(err) = power::start(app.handle()) {
                 eprintln!("[mohashim] power start failed: {err}");
             }

@@ -101,13 +101,17 @@ pub async fn purchase_item<R: Runtime>(
         .save()
         .map_err(|e| format!("store_error:{e}"))?;
 
-    // 4) 영수증 편지 push (push_message 내장 phase 분기로 자연 라우팅).
+    // 6) 영수증 편지 push (push_message 내장 phase 분기로 자연 라우팅).
     let letter = build_receipt_letter(&item, new_balance);
     crate::mailbox::append_letter_and_emit(&app, letter);
 
-    // 5) inventory-updated emit (FR-6).
+    // 7) inventory-updated emit (FR-6).
     if let Err(e) = app.emit("inventory-updated", ()) {
         eprintln!("[mohashim] inventory-updated emit failed: {e}");
+    }
+    // 8) Phase 26 FR-22 / AC-14: 구매로 economy.sprouts 차감 후 메인 카드 잔액 갱신 알림.
+    if let Err(e) = app.emit("economy-updated", ()) {
+        eprintln!("[mohashim] economy-updated emit failed: {e}");
     }
 
     Ok(())

@@ -60,6 +60,7 @@ function renderTab({ phase }: RenderProps) {
       db={50}
       total={75}
       equipped={EMPTY_EQUIPPED}
+      sprouts={0}
       onFocusStart={() => Promise.resolve()}
     />
   );
@@ -93,6 +94,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         db={50}
         total={75}
         equipped={EMPTY_EQUIPPED}
+        sprouts={0}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -124,6 +126,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         db={50}
         total={75}
         equipped={EMPTY_EQUIPPED}
+        sprouts={0}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -157,6 +160,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         db={50}
         total={75}
         equipped={EMPTY_EQUIPPED}
+        sprouts={0}
         onFocusStart={() => Promise.resolve()}
       />
     );
@@ -185,6 +189,7 @@ describe("TodosTab phase effect (FR-D1~D3)", () => {
         db={50}
         total={75}
         equipped={EMPTY_EQUIPPED}
+        sprouts={0}
         onFocusStart={() => Promise.resolve()}
       />
     );

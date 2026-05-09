@@ -12,6 +12,8 @@ import { WorkTagEditorScreen } from "./WorkTagEditorScreen";
 
 type SettingsScreenProps = {
   onResetDone: () => void;
+  /** Phase 26 FR-20: 좌상단 ← 버튼이 호출. 오버레이를 닫고 메인 화면 복귀. */
+  onClose: () => void;
 };
 
 // Phase 21 사용자 피드백: 설정 화면을 카드 리스트로 단순화. 시간/태그 편집은 모두 별도
@@ -34,7 +36,7 @@ const APP_VERSION = "0.1.0";
  *   - "데이터 초기화" 버튼 (빨간 텍스트, 명시적 확인 모달)
  *   - 버전 / 개발자 copyright footer
  */
-export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
+export function SettingsScreen({ onResetDone, onClose }: SettingsScreenProps) {
   const [view, setView] = useState<View>("main");
   const [showReset, setShowReset] = useState(false);
   const [focusMin, setFocusMin] = useState<number | null>(null);
@@ -84,7 +86,29 @@ export function SettingsScreen({ onResetDone }: SettingsScreenProps) {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="flex flex-1 flex-col gap-2 px-4 pt-3">
+      {/* Phase 26 FR-20: 좌상단 ← 버튼으로 메인 화면 복귀. sub-view는 setView("main")로 복귀. */}
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-ink/60 transition-colors hover:bg-ink/8 hover:text-ink"
+          aria-label="닫기"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path
+              d="M15 18l-6-6 6-6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <span className="flex-1 truncate text-[13px] font-semibold text-ink">
+          설정
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col gap-2 px-4 pt-1">
         {/* 시간 편집 — 집중/휴식 모두 한 화면에서 */}
         <Row
           icon="⏱"

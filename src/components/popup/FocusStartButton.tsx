@@ -11,6 +11,8 @@ type FocusStartButtonProps = {
   db: number;
   /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. */
   equipped: Inventory["equipped"];
+  /** Phase 26 FR-22 / AC-14: 새싹 잔액. dB 상태 행 끝에 ` · 🌱 N` 형태로 통합. */
+  sprouts: number;
   onStart: () => Promise<void>;
 };
 
@@ -37,6 +39,7 @@ export function FocusStartButton({
   phrase,
   db,
   equipped,
+  sprouts,
   onStart,
 }: FocusStartButtonProps) {
   const [focusMins, setFocusMins] = useState<number>(25);
@@ -90,7 +93,8 @@ export function FocusStartButton({
             <span>안녕 난 모하야!</span>
           </h2>
 
-          {/* 상태 행: 환경 라벨 dB만 노출 (직전 세션 점수는 잔디 탭으로 일원화). */}
+          {/* 상태 행: 환경 라벨 dB + 새싹 잔액(Phase 26 FR-22 / AC-14).
+              형태: `{env 아이콘} {label} {N}dB · 🌱 {잔액}`. */}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
             <span
               className="inline-flex items-center gap-1 tabular-nums"
@@ -100,6 +104,11 @@ export function FocusStartButton({
               <span>{env.label}</span>
               <span className="ml-0.5 opacity-90">
                 {inactive ? "—" : `${Math.round(dbSpl)}dB`}
+              </span>
+              <span className="ml-1 opacity-70" aria-hidden>·</span>
+              <span className="inline-flex items-center gap-0.5 text-ink/80">
+                <span aria-hidden>🌱</span>
+                <span className="tabular-nums">{sprouts.toLocaleString()}</span>
               </span>
             </span>
           </div>
