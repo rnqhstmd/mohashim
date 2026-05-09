@@ -15,7 +15,7 @@ use tauri_plugin_store::Store;
 /// `kind` — `"SESSION" | "MONTHLY" | "SYSTEM"` 중 하나.
 /// `created_at` — RFC3339 with offset.
 /// `session_tag` — SESSION 종류 편지의 출처 세션 식별자 (옵션).
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Letter {
     pub id: String,

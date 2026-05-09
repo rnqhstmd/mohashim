@@ -73,19 +73,8 @@ pub(crate) fn append_letters_to_store_locked<R: Runtime>(
     }
     let mut existing = read_mailbox(store);
     for letter in letters {
-        // Letter는 Serialize derive로 clone이 없으므로 필요한 필드를 복제하여 새 Letter 생성.
-        append_with_cap(
-            &mut existing,
-            Letter {
-                id: letter.id.clone(),
-                kind: letter.kind.clone(),
-                title: letter.title.clone(),
-                body: letter.body.clone(),
-                created_at: letter.created_at.clone(),
-                read: letter.read,
-                session_tag: letter.session_tag.clone(),
-            },
-        );
+        // Letter Clone derive로 단순 복제 (입력 slice는 호출자 소유, append_with_cap은 owned 요구).
+        append_with_cap(&mut existing, letter.clone());
     }
     write_mailbox(store, &existing);
 }

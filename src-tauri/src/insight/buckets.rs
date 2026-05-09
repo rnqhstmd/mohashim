@@ -240,10 +240,12 @@ pub fn analyze_monthly_pattern(
         // Phase 27 PR review (BR-1 정합): earned_sprouts는 date 필터 통과 후 무조건 누적.
         // start_at 파싱 실패 시 시간대/dB 분류만 skip하고 earned_sprouts는 누락하지 않는다 —
         // {총새싹} = 해당 월 session_logs.earned_sprouts 합계 정의 준수.
+        // u64 → u32 saturating 변환: u32::MAX 초과 시 truncation 방지.
         let earned_sprouts = log
             .get("earned_sprouts")
             .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
+            .map(|v| u32::try_from(v).unwrap_or(u32::MAX))
+            .unwrap_or(0);
         total_sprouts = total_sprouts.saturating_add(earned_sprouts);
 
         let start_at = log.get("start_at").and_then(|v| v.as_str()).unwrap_or("");
@@ -746,6 +748,34 @@ mod tests {
         }
         let analysis = analyze_monthly_pattern(&logs, "2026-04").expect("Some");
         assert_eq!(analysis.template, TemplateId::Allrounder);
+    }
+
+    #[test]
+    fn analyze_total_sprouts_saturates_on_u32_overflow() {
+        // u32::MAX(=4294967295) 초과 값을 u64로 전달 → u32::MAX로 saturating 변환.
+        let logs = vec![
+            json!({
+                "id": "sl-overflow",
+                "date": "2026-04-15",
+                "start_at": "2026-04-15T10:00:00+09:00",
+                "end_at": "2026-04-15T10:25:00+09:00",
+                "duration_mins": 25,
+                "score": 80,
+                "todos_done": [],
+                "avg_db": 30,
+                "earned_sprouts": 5_000_000_000_u64,
+            }),
+        ];
+        let result = analyze_monthly_pattern(&logs, "2026-04");
+        assert!(result.is_some());
+        if let Some(a) = result {
+            // u32::MAX = 4294967295. saturating 변환되어 그대로 보존.
+            assert_eq!(
+                a.stats.total_sprouts,
+                u32::MAX,
+                "u32::MAX 초과 → saturating 변환되어야 함"
+            );
+        }
     }
 
     #[test]
