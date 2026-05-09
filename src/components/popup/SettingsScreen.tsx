@@ -14,6 +14,22 @@ type SettingsScreenProps = {
   onResetDone: () => void;
   /** Phase 26 FR-20: 좌상단 ← 버튼이 호출. 오버레이를 닫고 메인 화면 복귀. */
   onClose: () => void;
+  /**
+   * Phase 27 FR-11: mailbox-deeplink 발생 신호.
+   * MainScreen이 settings 오버레이 활성 시 본 prop을 true로 설정하여 confirm 다이얼로그를
+   * 노출하도록 위임한다.
+   */
+  pendingDeeplink: boolean;
+  /**
+   * Phase 27 FR-11: pendingDeeplink 소비 콜백.
+   * confirm 다이얼로그 확인/취소 시 false로 reset하여 부모 state를 동기화한다.
+   */
+  onPendingDeeplinkChange: (pending: boolean) => void;
+  /**
+   * Phase 27 FR-11: confirm 확인 시 부모가 setOverlayScreen("mailbox")로 전환하도록
+   * 호출되는 콜백. 본 콜백이 settings → mailbox 오버레이 전환의 단일 경로.
+   */
+  onAcceptDeeplink: () => void;
 };
 
 // Phase 21 사용자 피드백: 설정 화면을 카드 리스트로 단순화. 시간/태그 편집은 모두 별도
@@ -36,9 +52,16 @@ const APP_VERSION = "0.1.0";
  *   - "데이터 초기화" 버튼 (빨간 텍스트, 명시적 확인 모달)
  *   - 버전 / 개발자 copyright footer
  */
-export function SettingsScreen({ onResetDone, onClose }: SettingsScreenProps) {
+export function SettingsScreen({
+  onResetDone,
+  onClose,
+  pendingDeeplink,
+  onPendingDeeplinkChange,
+  onAcceptDeeplink,
+}: SettingsScreenProps) {
   const [view, setView] = useState<View>("main");
   const [showReset, setShowReset] = useState(false);
+  const [showDeeplinkConfirm, setShowDeeplinkConfirm] = useState(false);
   const [focusMin, setFocusMin] = useState<number | null>(null);
   const [breakMin, setBreakMin] = useState<number | null>(null);
 
@@ -63,6 +86,36 @@ export function SettingsScreen({ onResetDone, onClose }: SettingsScreenProps) {
       cancelled = true;
     };
   }, [view]);
+
+  // Phase 27 FR-11: pendingDeeplink 변화 감지 → 더티 판정 (Q8: view !== "main").
+  // - view === "main" (서브뷰 아님): 즉시 부모에게 deeplink 수락을 위임 + pending false reset.
+  // - view !== "main" (서브뷰 진입 중): confirm 다이얼로그 노출. 사용자 결정에 따라
+  //   확인 → onAcceptDeeplink 호출, 취소 → pending false reset만.
+  useEffect(() => {
+    if (!pendingDeeplink) {
+      setShowDeeplinkConfirm(false);
+      return;
+    }
+    if (view === "main") {
+      // 메인 카드 리스트면 더티 없음 — 즉시 메일함 진입.
+      onPendingDeeplinkChange(false);
+      onAcceptDeeplink();
+    } else {
+      // 서브뷰(durations/work/loc)는 더티 — confirm 노출.
+      setShowDeeplinkConfirm(true);
+    }
+  }, [pendingDeeplink, view, onAcceptDeeplink, onPendingDeeplinkChange]);
+
+  const handleDeeplinkConfirm = () => {
+    setShowDeeplinkConfirm(false);
+    onPendingDeeplinkChange(false);
+    onAcceptDeeplink();
+  };
+
+  const handleDeeplinkCancel = () => {
+    setShowDeeplinkConfirm(false);
+    onPendingDeeplinkChange(false);
+  };
 
   const handleConfirm = async () => {
     setShowReset(false);
@@ -186,6 +239,49 @@ export function SettingsScreen({ onResetDone, onClose }: SettingsScreenProps) {
         }}
         onCancel={() => setShowReset(false)}
       />
+      {/* Phase 27 FR-11 / AC-22: 서브뷰 진입 중 mailbox-deeplink 발생 시 confirm 다이얼로그.
+          Q3 결정: "저장하지 않고 편지함으로 이동할까요?" 제목.
+          Q8 결정: 더티 판정은 view !== "main" 자체 (실제 변경 사항 추적 미수행). */}
+      {showDeeplinkConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deeplink-confirm-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45"
+          onClick={handleDeeplinkCancel}
+        >
+          <div
+            className="w-72 rounded-2xl border-[1.5px] border-ink bg-paperWarm p-4 shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="deeplink-confirm-title"
+              className="text-sm font-extrabold text-ink"
+            >
+              저장하지 않고 편지함으로 이동할까요?
+            </h2>
+            <p className="mt-2 text-xs leading-snug text-ink/65">
+              현재 편집 화면을 닫고 편지함으로 이동합니다.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={handleDeeplinkCancel}
+                className="flex-1 rounded-lg border-[1.5px] border-ink bg-paperWarm px-3 py-2 text-xs font-extrabold text-ink shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleDeeplinkConfirm}
+                className="flex-1 rounded-lg border-[1.5px] border-ink bg-[#3e4d70] px-3 py-2 text-xs font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

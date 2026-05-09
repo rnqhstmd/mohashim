@@ -93,6 +93,9 @@ pub struct MonthlyStats {
     pub avg_score: f64,
     pub time_buckets: [BucketStats; 4],
     pub db_buckets: [BucketStats; 4],
+    /// Phase 27 FR-3 / BR-1: 해당 월 session_logs.earned_sprouts 합계.
+    /// 5종 본문의 {총새싹} 변수에 사용.
+    pub total_sprouts: u32,
 }
 
 /// 5종 템플릿 ID (FR-9 우선순위 분기).
@@ -127,6 +130,12 @@ pub fn classify_hour(hour: u32) -> usize {
 }
 
 /// dB 인덱스 매핑 (FR-6, BR-4).
+///
+/// **Phase 27 FR-14 경계값 PRD 근거**: 4구간 임계값(40/60/80)은 v2-확장기능.md의 "60dB 이상
+/// (다소 시끄러움)" 표현과 일반적 음향 분류 관행을 따른다 — 0~40 조용한 도서관/침실 수준,
+/// 40~60 일상 대화/사무실, 60~80 카페/번화가, 80+ 시끄러운 거리/지하철. NoiseChampion
+/// 템플릿이 "60dB 이상"을 정의에 사용하므로 SomewhatLoud(60~80)와 Loud(80+) 두 구간 모두
+/// "베스트 dB가 시끄러움 계열"로 묶여 분류된다. 임계값 변경 시 PRD §템플릿 표 갱신 필요.
 pub fn classify_db(avg_db: u32) -> usize {
     if avg_db < 40 {
         0 // 조용
@@ -213,6 +222,7 @@ pub fn analyze_monthly_pattern(
     //    note: date 필드 prefix(YYYY-MM)로 1차 필터, hour 분류는 start_at 기준 (FR-5).
     let mut total_sessions: u32 = 0;
     let mut total_minutes: u32 = 0;
+    let mut total_sprouts: u32 = 0;
     let mut score_sum: f64 = 0.0;
     let mut time_counts: [u32; 4] = [0; 4];
     let mut time_score_sums: [f64; 4] = [0.0; 4];
@@ -227,10 +237,19 @@ pub fn analyze_monthly_pattern(
         if !date.starts_with(&prefix) {
             continue;
         }
+        // Phase 27 PR review (BR-1 정합): earned_sprouts는 date 필터 통과 후 무조건 누적.
+        // start_at 파싱 실패 시 시간대/dB 분류만 skip하고 earned_sprouts는 누락하지 않는다 —
+        // {총새싹} = 해당 월 session_logs.earned_sprouts 합계 정의 준수.
+        let earned_sprouts = log
+            .get("earned_sprouts")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        total_sprouts = total_sprouts.saturating_add(earned_sprouts);
+
         let start_at = log.get("start_at").and_then(|v| v.as_str()).unwrap_or("");
         let hour = match parse_local_hour(start_at) {
             Some(h) => h,
-            None => continue, // BR-5: 파싱 실패 제외.
+            None => continue, // BR-5: 파싱 실패 시 시간대/dB 분류만 제외 (earned_sprouts는 위에서 누적).
         };
         let score = log
             .get("score")
@@ -283,6 +302,7 @@ pub fn analyze_monthly_pattern(
         avg_score,
         time_buckets,
         db_buckets,
+        total_sprouts,
     };
 
     // 3. 1~9세션 → Encouragement (FR-3).
@@ -535,6 +555,44 @@ mod tests {
         ];
         let analysis = analyze_monthly_pattern(&logs, "2026-04").expect("Some");
         assert_eq!(analysis.stats.total_sessions, 1);
+    }
+
+    /// Phase 27 PR review (BR-1 정합):
+    /// start_at 파싱 실패 세션도 earned_sprouts는 누적되어야 한다.
+    #[test]
+    fn analyze_total_sprouts_includes_unparseable_start_at() {
+        let logs = vec![
+            json!({
+                "id": "sl-bad",
+                "date": "2026-04-15",
+                "start_at": "invalid",
+                "end_at": "invalid",
+                "duration_mins": 25,
+                "score": 80,
+                "todos_done": [],
+                "avg_db": 30,
+                "earned_sprouts": 5,
+            }),
+            json!({
+                "id": "sl-ok",
+                "date": "2026-04-15",
+                "start_at": "2026-04-15T10:00:00+09:00",
+                "end_at": "2026-04-15T10:25:00+09:00",
+                "duration_mins": 25,
+                "score": 80,
+                "todos_done": [],
+                "avg_db": 30,
+                "earned_sprouts": 3,
+            }),
+        ];
+        let analysis = analyze_monthly_pattern(&logs, "2026-04").expect("Some");
+        // start_at 파싱 실패 세션은 시간대 분석 제외, 정상 세션만 1건 → Encouragement.
+        assert_eq!(analysis.stats.total_sessions, 1);
+        // 단 earned_sprouts는 5+3=8 누적 (BR-1: date 필터 통과 후 무조건 누적).
+        assert_eq!(
+            analysis.stats.total_sprouts, 8,
+            "start_at 파싱 실패도 earned_sprouts 누적되어야 함"
+        );
     }
 
     #[test]

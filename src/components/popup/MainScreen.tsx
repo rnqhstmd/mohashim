@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import {
   getEconomy,
   getInventory,
@@ -68,6 +68,10 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
     "mailbox" | "settings" | null
   >(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Phase 27 FR-11: settings 오버레이 활성 시 mailbox-deeplink 수신 신호.
+  // SettingsScreen이 본 신호를 감지하여 더티 판정(view !== "main")에 따라 confirm 다이얼로그
+  // 노출 여부를 결정. 사용자 결정 후 onPendingDeeplinkChange(false)로 reset된다.
+  const [pendingDeeplink, setPendingDeeplink] = useState<boolean>(false);
   // Phase 25 FR-1: 캐릭터 레이어 장착 상태. Rust inventory-updated 이벤트로 갱신.
   const [equipped, setEquipped] = useState<Inventory["equipped"]>(() => ({
     ...STORE_DEFAULTS.inventory.equipped,
@@ -94,7 +98,18 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
       unlistenUpdated = ul;
     });
     void onMailboxDeeplink((_letterId) => {
-      setOverlayScreen("mailbox");
+      // Phase 27 FR-11: settings 활성 시 SettingsScreen에 위임 (서브뷰 더티 confirm).
+      // settings가 아니면 (메인 또는 mailbox 자체) 즉시 mailbox 진입.
+      // setOverlayScreen 직접 사용 — closure stale state 회피 위해 functional update로 비교.
+      setOverlayScreen((curr) => {
+        if (curr === "settings") {
+          setPendingDeeplink(true);
+          return curr;
+        }
+        // curr === "mailbox" 또는 null. mailbox 진입 (재진입 시 state 동일하므로 no-op,
+        // 사용자는 이미 편지함을 보고 있음 — UX 무반응 허용).
+        return "mailbox";
+      });
     }).then((ul) => {
       if (cancelled) {
         ul();
@@ -197,6 +212,12 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
     }
   };
 
+  // Phase 27 PR review: SettingsScreen에 전달하는 onAcceptDeeplink 콜백 메모이제이션.
+  // 매 렌더마다 새 함수 인스턴스 생성을 방지하여 SettingsScreen의 useEffect 의존성 안정화.
+  const handleAcceptDeeplink = useCallback(() => {
+    setOverlayScreen("mailbox");
+  }, []);
+
   return (
     <div
       className="relative flex h-[460px] w-[320px] flex-col overflow-hidden rounded-[18px] bg-paperBg font-kyobo text-ink"
@@ -210,6 +231,9 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
         <SettingsScreen
           onResetDone={onResetDone}
           onClose={() => setOverlayScreen(null)}
+          pendingDeeplink={pendingDeeplink}
+          onPendingDeeplinkChange={setPendingDeeplink}
+          onAcceptDeeplink={handleAcceptDeeplink}
         />
       ) : (
         <>

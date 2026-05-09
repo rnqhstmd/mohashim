@@ -1,5 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <rect x="10" y="10" width="180" height="180" rx="16" fill="#f4ead5" stroke="#3a3327" stroke-width="2"/>
-  <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"
-        font-family="sans-serif" font-size="14" fill="#3a3327">face_square_horn</text>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <path d="M81 103.5 L91 103.5 L97 109 L97 115 L91 120.5 L81 120.5 L75 115 L75 109 Z" fill="#a8d8ee" fill-opacity="0.45" stroke="#3a6b8c" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M109 103.5 L119 103.5 L125 109 L125 115 L119 120.5 L109 120.5 L103 115 L103 109 Z" fill="#a8d8ee" fill-opacity="0.45" stroke="#3a6b8c" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M97 110 Q100 107 103 110" stroke="#3a6b8c" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    <path d="M75 113 Q72 112 68 113" stroke="#3a6b8c" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M125 113 Q128 112 132 113" stroke="#3a6b8c" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M82 107.5 L90 107.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.85"/>
+    <path d="M110 107.5 L118 107.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.85"/>
+    <path d="M78 110 L82 107" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+    <path d="M106 110 L110 107" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+  </g>
 </svg>

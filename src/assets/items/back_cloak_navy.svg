@@ -1,5 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <rect x="10" y="10" width="180" height="180" rx="16" fill="#e8dff5" stroke="#3a3327" stroke-width="2"/>
-  <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"
-        font-family="sans-serif" font-size="14" fill="#3a3327">back_cloak_navy</text>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="navy-scarf-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a3a78"/>
+      <stop offset="100%" stop-color="#0e1740"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path d="M68 138 Q100 148 132 138 L130 154 Q100 160 70 154 Z" fill="url(#navy-scarf-grad)" stroke="#0a1030" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M84 152 Q78 164 82 174 L96 174 Q94 164 96 152 Z" fill="url(#navy-scarf-grad)" stroke="#0a1030" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M116 152 Q122 166 118 176 L104 176 Q106 164 104 152 Z" fill="url(#navy-scarf-grad)" stroke="#0a1030" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M84 162 L85 164 L87 164.5 L85 165 L84 167 L83 165 L81 164.5 L83 164 Z" fill="#f4d160"/>
+    <circle cx="90" cy="170" r="0.9" fill="#fff5b8"/>
+    <path d="M114 162 L115 164 L117 164.5 L115 165 L114 167 L113 165 L111 164.5 L113 164 Z" fill="#f4d160"/>
+    <circle cx="110" cy="172" r="0.9" fill="#fff5b8"/>
+    <circle cx="82" cy="144" r="0.7" fill="#fff5b8"/>
+    <circle cx="118" cy="144" r="0.7" fill="#fff5b8"/>
+    <ellipse cx="100" cy="152" rx="7" ry="5" fill="#2a3a78" stroke="#0a1030" stroke-width="1.4"/>
+    <circle cx="100" cy="152" r="2.4" fill="#f4d160" stroke="#0a1030" stroke-width="0.9"/>
+    <path d="M84 174 L83 180 M88 174 L88 180 M92 174 L92 180" stroke="#0a1030" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M108 176 L107 182 M112 176 L112 182 M116 176 L117 182" stroke="#0a1030" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
 </svg>

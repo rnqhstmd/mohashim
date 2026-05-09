@@ -87,6 +87,13 @@ pub fn run() {
             // 부팅 메인 스레드 블로킹 회피. P-I2 / FR-18: monthly_check를 yearly_cleanup
             // 보다 먼저 실행하여 12월 데이터 삭제 전 분석을 보장한다 (1월 1일 첫 부팅 케이스).
             // 동일 연도 재기동 시 yearly_cleanup은 멱등 no-op (AC-16).
+            //
+            // **Phase 27 FR-13 panic 미캡처 메모**: 본 spawn 내부에서 monthly_check 또는
+            // yearly_cleanup이 panic하면 yearly_cleanup이 아예 실행되지 않을 수 있다
+            // (선행 task가 패닉하면 후속 라인 미도달, 또는 spawn 자체가 종료). 본 Phase는
+            // catch_unwind를 추가하지 않으며, 두 함수 모두 내부에서 Result 반환 + 입력 폴백을
+            // 폭넓게 처리하도록 작성되어 있어 정상 흐름에서는 panic이 발생하지 않을 것을 가정.
+            // 향후 운영 panic 보고가 누적되면 catch_unwind + sentinel 로깅 추가 검토.
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = insight::monthly_check(&app_handle) {
