@@ -521,6 +521,13 @@ pub(crate) fn append_session_log<R: Runtime>(
 /// store는 false로 리셋되지만 OS LaunchAgent plist는 그대로이므로 명시적으로 disable
 /// 호출을 추가해 store↔OS 정합을 맞춘다. autolaunch disable 실패 시 eprintln 후 진행
 /// (DEC-9-2 정책 일관 — reset 자체는 성공으로 본다).
+///
+/// **Phase 27 FR-9 단일 writer 예외 명시**: `last_monthly_letter_year_month`는
+/// 평상시 insight::monthly_check가 단일 writer (Phase 26 P-D4 정책)이지만, reset_all은
+/// store.clear() + seed_defaults() 경유로 본 키를 null 시드로 강제 리셋한다.
+/// 이는 reset의 의미상 정당한 예외 — 사용자가 모든 데이터를 비우는 의도이므로 멱등 가드
+/// 시드도 같이 비운다. 다음 부팅에서 monthly_check가 last==None 분기로 진입하여 발송 없이
+/// last만 갱신 → 재발송 차단 동작 정상.
 #[tauri::command]
 pub async fn reset_all<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     crate::timer::reset_runtime_state(&app);

@@ -15,10 +15,11 @@ pub mod templates;
 
 use chrono::{Datelike, Local};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_store::StoreExt;
 
-use crate::mailbox::append_letters_batch_and_emit;
+use crate::mailbox::append_letters_to_store_locked;
+use crate::mailbox::notifier::{lock_mailbox, push_message};
 use crate::mailbox::state::Letter;
 use crate::storage::STORE_FILE;
 
@@ -127,7 +128,7 @@ fn build_letter(analysis: &MonthlyAnalysis, year_month: &str) -> Letter {
     }
 }
 
-/// 월간 인사이트 체크 + 발송 진입점 (FR-14~18, BR-1, MA-4).
+/// 월간 인사이트 체크 + 발송 진입점 (FR-14~18, BR-1, MA-4, Phase 27 FR-10/MA-2).
 ///
 /// 호출자: lib.rs::setup의 `tauri::async_runtime::spawn` 안. 동기 시그니처 유지 —
 /// spawn된 async 블록 안에서 동기 호출되므로 awaitable 불필요.
@@ -141,50 +142,87 @@ fn build_letter(analysis: &MonthlyAnalysis, year_month: &str) -> Letter {
 ///   - 예: last="2026-04", current="2026-05" → cur=4월 → 4월 발송 → cur=5월 (loop exit).
 ///         **현재 진행 중인 5월은 분석 대상에서 제외** (PRD FR-15).
 ///   - 예: last="2026-02", current="2026-05" → 2월/3월/4월 발송, 5월 제외.
-/// - 분석 결과가 Some인 letter들을 batch로 모아 mailbox::append_letters_batch_and_emit
-///   1회 호출 (PR review #3 I/O 최적화: 다중 달 발송 시에도 mailbox store.save 1번).
-/// - 마지막에 last 갱신 (FR-16, FR-17).
+///
+/// **Phase 27 MA-2 단일 트랜잭션** (FR-10):
+/// 1. lock_mailbox() 1회 획득.
+/// 2. mailbox in-memory mutate (append_letters_to_store_locked).
+/// 3. last_monthly_letter_year_month in-memory mutate.
+/// 4. store.save() 1회 — mailbox와 last 키의 부분 실패 윈도우 0 (BR-1 100% 멱등).
+/// 5. 락 해제 후 push_message + emit 1회 발화 (락 외부에서 OS 알림 발사).
+///
+/// **Phase 27 FR-8 정책 주석**: 다중 달 순회 중 일부 분석이 None을 반환해도 last는 항상
+/// current로 갱신된다. 이는 의도적 — 다음 부팅에서 동일 달을 재시도하지 않아 멱등성을 보장.
+/// 실패 분석은 영구 None(통계 부재)이라는 가정에 기반한다.
 pub fn monthly_check<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let store = app
         .store(STORE_FILE)
         .map_err(|e| format!("store open failed: {e}"))?;
     let last_opt = read_last_monthly_year_month(&store);
+    // Phase 27 FR-15 timezone 코멘트:
+    // current_year_month()는 Local::now()를 사용한다. 호스트 OS의 timezone이 변경되면
+    // (예: 사용자가 비행기로 시간대 이동) 같은 부팅 내에서 month boundary 판정이 달라질
+    // 수 있다. 부팅 시점 1회 호출이므로 race는 발생하지 않으며, 다음 부팅에서 새 timezone
+    // 기준으로 정상 멱등 동작.
     let current = current_year_month();
 
-    match last_opt.as_deref() {
+    // 분석 대상 letters를 lock 외부에서 미리 빌드 — 락 보유 시간 최소화.
+    let letters: Vec<Letter> = match last_opt.as_deref() {
         Some(l) if l == current => {
-            // BR-1 / FR-15: 동월 재부팅 멱등.
+            // BR-1 / FR-15: 동월 재부팅 멱등 — 발송도 last 갱신도 모두 no-op.
             return Ok(());
         }
         Some(l) => {
-            // Phase 26 Critical 수정: cur=last부터 cur < current 동안 순회.
-            // current(현재 진행 중)는 분석 대상에서 제외 (FR-15).
             let logs = read_session_logs(&store);
-            let mut letters: Vec<Letter> = Vec::new();
+            let mut acc: Vec<Letter> = Vec::new();
             let mut cur = l.to_string();
             while cur < current {
                 if let Some(analysis) = analyze_monthly_pattern(&logs, &cur) {
-                    letters.push(build_letter(&analysis, &cur));
+                    acc.push(build_letter(&analysis, &cur));
                 }
                 // FR-2 / FR-17: None이면 발송 생략하고 다음 달로 진행.
+                // FR-8: 일부 None이어도 다음 달 진행 + 마지막에 last를 current로 갱신 (재시도 차단).
                 if let Some(next) = next_year_month(&cur) {
                     cur = next;
                 } else {
                     break;
                 }
             }
-            append_letters_batch_and_emit(app, letters);
+            acc
         }
         None => {
             // 최초 부팅 — 발송 없이 last만 갱신하여 재발송 차단.
+            Vec::new()
         }
+    };
+
+    // push_message용으로 (title, body) 미리 복제 (락 해제 후 발화).
+    let titles_bodies: Vec<(String, String)> = letters
+        .iter()
+        .map(|l| (l.title.clone(), l.body.clone()))
+        .collect();
+
+    // Phase 27 MA-2: 단일 lock + 단일 save 트랜잭션.
+    {
+        let _guard = lock_mailbox();
+        // 1. mailbox in-memory mutate — letters 비어있으면 helper 내부에서 즉시 return.
+        append_letters_to_store_locked(&store, &letters);
+        // 2. last_monthly_letter_year_month in-memory mutate (FR-10, MA-2 Phase 27).
+        write_last_monthly_year_month(&store, &current);
+        // 3. 단일 save — 부분 실패 차단 (BR-1 100% 멱등).
+        store
+            .save()
+            .map_err(|e| format!("store save failed: {e}"))?;
     }
 
-    // FR-16/17: 발송 여부와 무관하게 current로 갱신 (멱등 가드 시드).
-    write_last_monthly_year_month(&store, &current);
-    store
-        .save()
-        .map_err(|e| format!("store save failed: {e}"))?;
+    // 4. 락 해제 후 push_message + emit. 알림 발화 실패는 UX 비차단 (notifier 내부 eprintln).
+    for (title, body) in &titles_bodies {
+        push_message(app, title, body);
+    }
+    if !letters.is_empty() {
+        if let Err(e) = app.emit("mailbox-updated", ()) {
+            eprintln!("[mohashim] monthly_check mailbox-updated emit failed: {e}");
+        }
+    }
     Ok(())
 }
 

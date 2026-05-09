@@ -15,7 +15,7 @@ use tauri_plugin_store::Store;
 /// `kind` — `"SESSION" | "MONTHLY" | "SYSTEM"` 중 하나.
 /// `created_at` — RFC3339 with offset.
 /// `session_tag` — SESSION 종류 편지의 출처 세션 식별자 (옵션).
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Letter {
     pub id: String,
@@ -111,7 +111,15 @@ pub fn write_mailbox<R: Runtime>(store: &Store<R>, letters: &[Letter]) {
 ///
 /// 51번째 push 시 oldest(index 0)부터 삭제한다. 미읽음 여부와 무관하게
 /// 가장 오래된 항목부터 제거하여 단순 FIFO 정책을 유지한다.
+///
+/// **Phase 27 PR review (BR-1 멱등 가드)**: 동일 id letter가 이미 존재하면 push를 skip한다.
+/// 단일 트랜잭션 내 id 충돌은 호출자(timer/insight) 책임으로 본래 발생하지 않으나,
+/// store 채널 외부 경로(예: 동일 end_ms 재시도)에서 BR-1 100% 멱등을 코드 레벨에서도
+/// 보장하기 위한 방어 가드.
 pub fn append_with_cap(letters: &mut Vec<Letter>, new: Letter) {
+    if letters.iter().any(|l| l.id == new.id) {
+        return;
+    }
     letters.push(new);
     while letters.len() > 50 {
         letters.remove(0);
@@ -181,6 +189,16 @@ mod tests {
         // 가장 오래된 두 개(ml-0, ml-1)가 삭제됨.
         assert_eq!(letters.first().unwrap().id, "ml-2");
         assert_eq!(letters.last().unwrap().id, "ml-new");
+    }
+
+    /// Phase 27 PR review: 동일 id push는 skip되어야 함 (BR-1 멱등 가드).
+    #[test]
+    fn append_with_cap_skips_duplicate_id() {
+        let mut letters = vec![make_letter("ml-1")];
+        let dup = make_letter("ml-1");
+        append_with_cap(&mut letters, dup);
+        assert_eq!(letters.len(), 1, "동일 id push는 skip되어야 함");
+        assert_eq!(letters[0].id, "ml-1");
     }
 
     /// unread 있으면 true 반환 + 모두 read=true.

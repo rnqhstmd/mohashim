@@ -1,5 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <rect x="10" y="10" width="180" height="180" rx="16" fill="#e0f0d8" stroke="#3a3327" stroke-width="2"/>
-  <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"
-        font-family="sans-serif" font-size="14" fill="#3a3327">head_beret_red</text>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <g transform="rotate(-12 100 46)">
+    <path d="M76 52 Q100 56 124 52 Q124 56 100 58 Q76 56 76 52 Z" fill="#5a1818" stroke="#3a0808" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M76 52 Q60 46 64 32 Q80 22 100 22 Q120 24 124 38 Q124 48 124 52 Q100 56 76 52 Z" fill="#c43a3a" stroke="#5a1818" stroke-width="2.2" stroke-linejoin="round"/>
+    <circle cx="100" cy="22" r="3" fill="#5a1818" stroke="#3a0808" stroke-width="1.2"/>
+    <circle cx="100" cy="22" r="1.2" fill="#a02828"/>
+    <path d="M72 40 Q78 34 88 32" stroke="#e08080" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.7"/>
+    <path d="M114 30 Q118 32 120 36" stroke="#e08080" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.5"/>
+  </g>
 </svg>

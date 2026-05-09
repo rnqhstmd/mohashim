@@ -1,5 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <rect x="10" y="10" width="180" height="180" rx="16" fill="#f4ead5" stroke="#3a3327" stroke-width="2"/>
-  <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"
-        font-family="sans-serif" font-size="14" fill="#3a3327">face_round_glasses</text>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <ellipse cx="86" cy="112" rx="9" ry="8.5" fill="none" stroke="#1a1612" stroke-width="2"/>
+    <ellipse cx="114" cy="112" rx="9" ry="8.5" fill="none" stroke="#1a1612" stroke-width="2"/>
+    <path d="M95 112 Q100 110 105 112" stroke="#1a1612" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M77 111 Q72 109 68 110" stroke="#1a1612" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <path d="M123 111 Q128 109 132 110" stroke="#1a1612" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <path d="M80 108 Q83 106 86 106" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.65"/>
+    <path d="M108 108 Q111 106 114 106" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.65"/>
+  </g>
 </svg>

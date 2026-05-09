@@ -53,55 +53,41 @@ pub fn append_letter_and_emit<R: Runtime>(app: &AppHandle<R>, letter: Letter) {
     }
 }
 
-/// Letter 다중을 단일 락/단일 save/단일 emit으로 처리하는 batch 변종 (Phase 26 PR review #3).
+/// In-memory mailbox 적재 헬퍼 (Phase 27 MA-1).
 ///
-/// **사용처**: insight::monthly_check가 다중 달 누락분을 한꺼번에 발송할 때.
-/// 단건 append_letter_and_emit를 N번 호출하면 mailbox store.save도 N번 발생하므로,
-/// batch 시그니처로 묶어 디스크 I/O를 1회로 축소한다 (cap/순서 정책은 동일).
+/// **lock 계약**: 호출자가 이미 `lock_mailbox()` 가드를 획득한 상태에서 호출해야 한다.
+/// 내부에서 추가 락을 획득하지 않으므로 이중 락에 의한 데드락은 발생하지 않는다.
 ///
-/// 동작:
-///   1) MAILBOX_MUTEX 1회 획득 → read_mailbox → 모든 letter append_with_cap → write_mailbox → store.save 1회.
-///   2) push_message는 letter별로 N번 발화 (보류 큐 정책 그대로 — 단순 묶음 발화 시
-///      cap 위반 또는 알림 누락 가능성을 차단하기 위해 정책을 변경하지 않는다).
-///   3) app.emit("mailbox-updated", ())는 1회만 emit (수신측이 read 카운트 재계산하므로 묶음 emit으로 충분).
+/// **side-effect 미수행**: `store.save()`를 호출하지 않으며, `push_message`/`emit`도
+/// 발생시키지 않는다. 호출자가 단일 트랜잭션의 다른 키 mutate와 함께 묶어 1회 save하고,
+/// 락 외부에서 push_message/emit을 발화하도록 책임을 위임한다 (Phase 27 MA-2 단일 save 정책).
 ///
-/// 빈 Vec 입력 시 즉시 return — 락 획득/save/emit 모두 생략.
-pub fn append_letters_batch_and_emit<R: Runtime>(app: &AppHandle<R>, letters: Vec<Letter>) {
+/// 빈 slice 입력 시 즉시 return — read_mailbox/write_mailbox도 생략하여 불필요한
+/// 직렬화 비용을 회피한다.
+pub(crate) fn append_letters_to_store_locked<R: Runtime>(
+    store: &tauri_plugin_store::Store<R>,
+    letters: &[Letter],
+) {
     if letters.is_empty() {
         return;
     }
-    // push_message용으로 (title, body) 미리 복제 (락 해제 후 발화).
-    let titles_bodies: Vec<(String, String)> = letters
-        .iter()
-        .map(|l| (l.title.clone(), l.body.clone()))
-        .collect();
-    {
-        let _guard = lock_mailbox();
-        let store = match app.store(STORE_FILE) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("[mohashim] append_letters_batch_and_emit store open failed: {e}");
-                return;
-            }
-        };
-        let mut existing = read_mailbox(&store);
-        for letter in letters {
-            append_with_cap(&mut existing, letter);
-        }
-        write_mailbox(&store, &existing);
-        if let Err(e) = store.save() {
-            eprintln!("[mohashim] append_letters_batch_and_emit store save failed: {e}");
-        }
+    let mut existing = read_mailbox(store);
+    for letter in letters {
+        // Letter Clone derive로 단순 복제 (입력 slice는 호출자 소유, append_with_cap은 owned 요구).
+        append_with_cap(&mut existing, letter.clone());
     }
-    for (title, body) in titles_bodies {
-        push_message(app, &title, &body);
-    }
-    if let Err(e) = app.emit("mailbox-updated", ()) {
-        eprintln!("[mohashim] mailbox-updated emit failed: {e}");
-    }
+    write_mailbox(store, &existing);
 }
 
 /// 편지 제목용 focus 시간 범위 계산. start_ms=0 시 fallback (now - focus_mins).
+///
+/// **Phase 27 FR-12 fallback 부정확성 메모**: start_ms=0 분기는 정상 흐름에서는 발생하지
+/// 않는다 (record_session_letter 호출자가 FOCUS_START_AT_MS를 보장). 그러나 atomic이
+/// 비정상 reset되었거나 race로 0 관측 시 폴백으로 (now - focus_mins, now)를 사용한다.
+/// 이 폴백은 break_minutes만큼 시간이 어긋나 보일 수 있다 — Idle 전환 후 호출되므로 now
+/// 시점에는 이미 break가 잠시 흘렀을 수 있고, 본래 focus 종료 시각과는 break 경과만큼
+/// 차이가 발생. 정상 흐름에서는 항상 start_ms > 0 분기로 진입하므로 본 부정확성은
+/// 사용자에게 노출되지 않을 것을 가정한다.
 fn compute_session_title_range(
     now: chrono::DateTime<Local>,
     start_ms: u64,
@@ -273,8 +259,13 @@ pub fn register_notification_actions<R: Runtime>(_app: &AppHandle<R>) -> Result<
 /// `lib.rs::install_main_window_close_guard` 패턴(100ms 후 1회 재시도)을 따른다.
 ///
 /// **제약**: 사용자가 알림 발화 직후 트레이/dock 등으로 수동 focus 시에도 trigger 가능 (false positive).
-/// **제약**: letter_id 전달 미지원 (현재 가장 최신 편지로 라우팅하는 단순화).
-/// Phase 24에서 tauri-plugin-notification action API 또는 별도 채널로 정확한 trigger 구현 예정.
+///
+/// **Phase 27 FR-19 deprecated 메모**: letter_id 전달은 본 Phase에서 비목표로 결정됨.
+/// 사유는 design-critic 도전 + 사용자 결정으로, focused 윈도우 휴리스틱이 false positive를
+/// 발생시킬 수 있고 그 부정확성이 letter_id 라우팅으로 가시화되면 UX 실수가 되는 점을 회피.
+/// 향후 tauri-plugin-notification v2의 action API가 macOS/Windows 양쪽에서 안정 지원되면
+/// 별도 Phase에서 letter_id payload + MailboxScreen 자동 포커스를 구현 예정 (PRD AC-17/18/19 이월).
+/// 그 전까지 이 함수는 가장 최근 편지 휴리스틱(deeplink emit empty payload)을 유지한다.
 pub fn install_notification_action_handler<R: Runtime>(app: &AppHandle<R>) {
     attempt_install_notification_handler(app.clone(), 1);
 }

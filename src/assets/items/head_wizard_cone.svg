@@ -1,5 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <rect x="10" y="10" width="180" height="180" rx="16" fill="#e0f0d8" stroke="#3a3327" stroke-width="2"/>
-  <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"
-        font-family="sans-serif" font-size="14" fill="#3a3327">head_wizard_cone</text>
+<svg viewBox="0 0 200 200" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+  <g transform="rotate(8 100 50)">
+    <path d="M76 56 Q100 50 124 56 L106 -2 Z" fill="#2a3568" stroke="#0e1430" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M70 58 Q100 64 130 58 Q126 52 100 50 Q74 52 70 58 Z" fill="#1a2548" stroke="#0e1430" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M100 32 L102 36 L106 36.8 L102 37.6 L100 42 L98 37.6 L94 36.8 L98 36 Z" fill="#f4d160" stroke="#0e1430" stroke-width="0.6"/>
+    <circle cx="108" cy="22" r="0.9" fill="#f4d160"/>
+    <circle cx="94" cy="48" r="0.7" fill="#f4d160"/>
+    <circle cx="112" cy="40" r="0.6" fill="#fff5b8"/>
+    <path d="M106 -2 Q112 -4 110 4" stroke="#0e1430" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M88 50 Q100 28 106 0" stroke="#0e1430" stroke-width="0.8" fill="none" opacity="0.4"/>
+  </g>
 </svg>

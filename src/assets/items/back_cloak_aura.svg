@@ -1,5 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <rect x="10" y="10" width="180" height="180" rx="16" fill="#e8dff5" stroke="#3a3327" stroke-width="2"/>
-  <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"
-        font-family="sans-serif" font-size="14" fill="#3a3327">back_cloak_aura</text>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="aura-grad" cx="0.5" cy="0.55" r="0.55">
+      <stop offset="0%" stop-color="#fff5b8" stop-opacity="0.7"/>
+      <stop offset="55%" stop-color="#f4b8e0" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#a890e0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="scarf-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8a0e8"/>
+      <stop offset="100%" stop-color="#7858b8"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <ellipse cx="100" cy="160" rx="55" ry="32" fill="url(#aura-grad)"/>
+    <path d="M68 138 Q100 148 132 138 L130 154 Q100 160 70 154 Z" fill="url(#scarf-grad)" stroke="#5a3aa0" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M84 152 Q78 164 82 174 L96 174 Q94 164 96 152 Z" fill="url(#scarf-grad)" stroke="#5a3aa0" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M116 152 Q122 166 118 176 L104 176 Q106 164 104 152 Z" fill="url(#scarf-grad)" stroke="#5a3aa0" stroke-width="2" stroke-linejoin="round"/>
+    <ellipse cx="100" cy="152" rx="7" ry="5" fill="url(#scarf-grad)" stroke="#5a3aa0" stroke-width="1.4"/>
+    <path d="M100 149 L101.4 151.4 L104 152 L101.4 152.6 L100 155 L98.6 152.6 L96 152 L98.6 151.4 Z" fill="#fff5b8" stroke="#5a3aa0" stroke-width="0.6"/>
+    <g transform="translate(78 144)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <g transform="translate(122 144)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <g transform="translate(86 170)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <g transform="translate(114 170)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <g transform="translate(100 178)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <g transform="translate(68 150)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <g transform="translate(132 150)"><path d="M0 -3 L0.7 -0.7 L3 0 L0.7 0.7 L0 3 L-0.7 0.7 L-3 0 L-0.7 -0.7 Z" fill="#fff5b8" stroke="#f4d160" stroke-width="0.5"/></g>
+    <path d="M84 174 L84 180 M88 174 L88 180 M92 174 L92 180" stroke="#5a3aa0" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M108 176 L108 182 M112 176 L112 182 M116 176 L116 182" stroke="#5a3aa0" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
 </svg>
