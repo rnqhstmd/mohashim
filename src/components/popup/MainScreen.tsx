@@ -1,5 +1,12 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { getInventory, getMailbox, STORE_DEFAULTS, type Inventory } from "../../lib/storage";
+import {
+  getEconomy,
+  getInventory,
+  getMailbox,
+  STORE_DEFAULTS,
+  type Inventory,
+} from "../../lib/storage";
+import { onEconomyUpdated } from "../../lib/economy";
 import { onMailboxDeeplink, onMailboxUpdated } from "../../lib/mailbox";
 import { onInventoryUpdated } from "../../lib/shop";
 import { useScoreTick } from "../../lib/score";
@@ -8,7 +15,7 @@ import { useToastQueue } from "../../lib/toast";
 import { usePhrase } from "../../lib/usePhrase";
 import { BottomTabBar, type Tab } from "./BottomTabBar";
 import { MailboxScreen } from "./MailboxScreen";
-import { ModeChip } from "./ModeChip";
+import { MainHeader } from "./MainHeader";
 import { SettingsScreen } from "./SettingsScreen";
 import { ShopTab } from "./ShopTab";
 import { ToastContainer } from "./Toast";
@@ -33,33 +40,43 @@ const NOTE_PAPER_BG: CSSProperties = {
 };
 
 /**
- * 메인 팝업 화면 (설계 §11/§13/§6).
+ * 메인 팝업 화면 (Phase 26 재구조).
  *
  * 구조:
- *   ModeChip (absolute 우상단)
- *   <main> 탭에 따라 TodosTab | SettingsScreen | Placeholder
- *   BottomTabBar
- *   ToastContainer
+ *   overlayScreen에 따라 분기:
+ *   - "mailbox": <MailboxScreen onClose={...} /> 단독 (BottomTabBar 숨김)
+ *   - "settings": <SettingsScreen onClose={...} /> 단독 (BottomTabBar 숨김)
+ *   - null: <MainHeader> + <main>(tab) + <BottomTabBar> + <ToastContainer>
  *
- * phase는 score-tick 기반. timer.focusStart는 Rust 단일 writer로 active_phase 갱신.
+ * 3탭 구조: todos / grass / shop. mailbox/settings는 헤더 아이콘으로 진입.
  *
  * Phase 6 wiring (옵션 A 통합 — M1):
  * - todos 탭은 항상 <TodosTab key={tab} />을 렌더하며, 내부에서 phase에 따라 PomodoroCard /
  *   FocusStartButton 분기를 처리한다. MainScreen은 IdleScreen/PomodoroRunning을 직접 분기하지 않는다.
  * - score-tick의 state/db/total을 추출하여 usePhrase로 멘트/potatoState를 산출 후 TodosTab에 전달.
  * - useToastQueue는 본 컴포넌트에서만 단일 호출하여 ToastContainer에 toasts 전달.
- * - phase=complete 1-tick 발생 시 sessionComplete 멘트를 토스트로 push (FR-35).
+ *
+ * Phase 26 추가:
+ * - sprouts state: economy 잔액. economy-updated 이벤트로 갱신 (FR-22, AC-14).
+ * - overlayScreen state: mailbox/settings 풀스크린 진입 (FR-20).
+ * - mailbox-deeplink listener는 overlayScreen("mailbox")로 진입 (AC-15).
  */
 export function MainScreen({ onResetDone }: MainScreenProps) {
   const snap = useScoreTick();
   const [tab, setTab] = useState<Tab>("todos");
+  const [overlayScreen, setOverlayScreen] = useState<
+    "mailbox" | "settings" | null
+  >(null);
   const [unreadCount, setUnreadCount] = useState(0);
   // Phase 25 FR-1: 캐릭터 레이어 장착 상태. Rust inventory-updated 이벤트로 갱신.
   const [equipped, setEquipped] = useState<Inventory["equipped"]>(() => ({
     ...STORE_DEFAULTS.inventory.equipped,
   }));
+  // Phase 26 FR-22: economy 잔액 — todos 카드의 dB 행에 통합 표시 (AC-14).
+  const [sprouts, setSprouts] = useState<number>(0);
 
   // Phase 23 FR-14: mailbox 뱃지 초기화 + mailbox-updated 이벤트로 갱신.
+  // Phase 26 AC-15: mailbox-deeplink 수신 시 overlayScreen="mailbox"로 진입.
   useEffect(() => {
     let cancelled = false;
     const refreshUnread = async () => {
@@ -76,8 +93,8 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
       }
       unlistenUpdated = ul;
     });
-    void onMailboxDeeplink(() => {
-      setTab("mailbox");
+    void onMailboxDeeplink((_letterId) => {
+      setOverlayScreen("mailbox");
     }).then((ul) => {
       if (cancelled) {
         ul();
@@ -106,6 +123,34 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
     void refresh();
     let unlisten: (() => void) | undefined;
     void onInventoryUpdated(() => {
+      void refresh();
+    }).then((ul) => {
+      if (cancelled) {
+        ul();
+        return;
+      }
+      unlisten = ul;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // Phase 26 FR-22 / AC-14: economy 마운트 + economy-updated 구독.
+  // inventory 패턴과 동일.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const eco = await getEconomy().catch((err) => {
+        console.error("[mohashim] economy load failed", err);
+        return null;
+      });
+      if (!cancelled && eco) setSprouts(eco.sprouts);
+    };
+    void refresh();
+    let unlisten: (() => void) | undefined;
+    void onEconomyUpdated(() => {
       void refresh();
     }).then((ul) => {
       if (cancelled) {
@@ -157,40 +202,50 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
       className="relative flex h-[460px] w-[320px] flex-col overflow-hidden rounded-[18px] bg-paperBg font-kyobo text-ink"
       style={NOTE_PAPER_BG}
     >
-      {/* Phase 17 FR-D3 / Phase 20 design.html 정렬: NOTE_PAPER_BG가 fractalNoise + 가로 ruled
-          stripe + warm vignette를 모두 포함한다. 별도 grain 오버레이 SVG는 제거 (디자인 NOTE_BG 통합).
-          z-30 ModeChip / z-40 Toast / z-50 Modal 레이어 순서 그대로 유지. */}
-      {/* Phase 21: PomodoroCard / FocusStartButton 안에 mode chip이 통합되어 카드 안에서
-          위계가 표시된다. todos 탭에서는 카드 내부 chip이 단일 진실 소스 — 절대 위치
-          ModeChip 미노출 (overlap 회귀 차단). grass/settings 탭에서는 우상단에 ModeChip
-          노출하여 다른 탭에서도 phase 인지 가능. */}
-      {tab !== "todos" && <ModeChip phase={phase} />}
-      <main className="flex flex-1 flex-col overflow-hidden">
-        {tab === "settings" ? (
-          <SettingsScreen onResetDone={onResetDone} />
-        ) : tab === "grass" ? (
-          <GrassTab key={tab} />
-        ) : tab === "mailbox" ? (
-          <MailboxScreen key={tab} />
-        ) : tab === "shop" ? (
-          <ShopTab key={tab} />
-        ) : (
-          <TodosTab
-            key={tab}
+      {/* Phase 26 FR-20 / AC-15: overlayScreen 분기. mailbox/settings는 풀스크린 단독,
+          BottomTabBar 숨김 (Q&A 결정 2). null이면 메인 헤더 + 탭 + 바텀바 노출. */}
+      {overlayScreen === "mailbox" ? (
+        <MailboxScreen onClose={() => setOverlayScreen(null)} />
+      ) : overlayScreen === "settings" ? (
+        <SettingsScreen
+          onResetDone={onResetDone}
+          onClose={() => setOverlayScreen(null)}
+        />
+      ) : (
+        <>
+          {/* Phase 26 FR-20 / MA-2: 우상단 헤더 — ModeChip + 편지함 + 톱니바퀴.
+              모든 탭 공통 노출. todos 탭의 카드 내부 chip(PomodoroCard 등)은 그대로 유지 —
+              카드 진행 표시. 외곽 헤더와 시각 영역 분리. */}
+          <MainHeader
             phase={phase}
-            timeLeft={timeLeft}
-            potatoState={potatoState}
-            phrase={phrase}
-            db={db}
-            total={total}
-            equipped={equipped}
-            onFocusStart={handleFocusStart}
+            unreadCount={unreadCount}
+            onOpenMailbox={() => setOverlayScreen("mailbox")}
+            onOpenSettings={() => setOverlayScreen("settings")}
           />
-        )}
-      </main>
-      <BottomTabBar tab={tab} onChange={setTab} unreadCount={unreadCount} />
-      <ToastContainer toasts={toastQueue.toasts} />
+          <main className="flex flex-1 flex-col overflow-hidden">
+            {tab === "todos" ? (
+              <TodosTab
+                key={tab}
+                phase={phase}
+                timeLeft={timeLeft}
+                potatoState={potatoState}
+                phrase={phrase}
+                db={db}
+                total={total}
+                equipped={equipped}
+                sprouts={sprouts}
+                onFocusStart={handleFocusStart}
+              />
+            ) : tab === "grass" ? (
+              <GrassTab key={tab} />
+            ) : (
+              <ShopTab key={tab} />
+            )}
+          </main>
+          <BottomTabBar tab={tab} onChange={setTab} />
+          <ToastContainer toasts={toastQueue.toasts} />
+        </>
+      )}
     </div>
   );
 }
-

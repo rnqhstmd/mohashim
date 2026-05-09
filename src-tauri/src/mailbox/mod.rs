@@ -243,6 +243,30 @@ fn attempt_install_notification_handler<R: Runtime>(app: AppHandle<R>, retries_l
                 // swap(0) — 1회 사용 후 reset하여 동일 알림에 대한 중복 deeplink 차단.
                 let last = LAST_NOTIF_AT_MS.swap(0, Ordering::AcqRel);
                 if last > 0 && now_ms.saturating_sub(last) < NOTIF_DEEPLINK_WINDOW_MS {
+                    // Phase 26 MA-1 / BR-6: 3단 윈도우 활성화 (FR-23, AC-15).
+                    // hide 상태 윈도우 가시화 + minimize 복원 + 멀티모니터 최상위 + 키보드 포커스.
+                    // 각 단계 실패는 eprintln 후 다음 단계 진행 (UX 비차단).
+                    //
+                    // **Self-loop 자연 차단**: swap(0) 호출 시점에 LAST_NOTIF_AT_MS는 이미 0으로
+                    // reset된 상태. 자체 win.show() 호출이 추가 Focused(true) 이벤트를 발화시켜도
+                    // LAST_NOTIF_AT_MS == 0이므로 `last > 0` 조건이 false → 분기 미진입.
+                    // 별도 atomic flag 가드 불필요.
+                    //
+                    // 호출 순서: show → unminimize → set_focus.
+                    // - show: NSWindow 가시화 (hide 상태 → 노출).
+                    // - unminimize: minimize 복원 (정상 상태 → no-op).
+                    // - set_focus: 멀티 모니터 최상위 + 키보드 포커스.
+                    if let Some(win) = app_clone.get_webview_window("main") {
+                        if let Err(e) = win.show() {
+                            eprintln!("[mohashim] deeplink show failed: {e}");
+                        }
+                        if let Err(e) = win.unminimize() {
+                            eprintln!("[mohashim] deeplink unminimize failed: {e}");
+                        }
+                        if let Err(e) = win.set_focus() {
+                            eprintln!("[mohashim] deeplink set_focus failed: {e}");
+                        }
+                    }
                     if let Err(e) = app_clone.emit("mailbox-deeplink", json!({})) {
                         eprintln!("[mohashim] mailbox-deeplink emit failed: {e}");
                     }

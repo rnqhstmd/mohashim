@@ -1,18 +1,14 @@
-export type Tab = "todos" | "grass" | "mailbox" | "shop" | "settings";
+export type Tab = "todos" | "grass" | "shop";
 
 type BottomTabBarProps = {
   tab: Tab;
   onChange: (next: Tab) => void;
-  /** 미읽음 편지 수 — mailbox 탭 빨간 dot 뱃지 제어 (Phase 23 FR-14). */
-  unreadCount?: number;
 };
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: "todos", label: "할 일" },
   { id: "grass", label: "잔디" },
-  { id: "mailbox", label: "편지함" },
   { id: "shop", label: "상점" },
-  { id: "settings", label: "설정" },
 ];
 
 /**
@@ -20,9 +16,11 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
  *
  * - todos: rounded square + ✓ 체크
  * - grass: 4×4 잔디 셀 grid
- * - settings: 톱니바퀴(cog)
+ * - shop: 쇼핑백
  *
  * 활성 시 deepNavy stroke + 옅은 fill, 비활성 시 ink/45 stroke.
+ *
+ * Phase 26 FR-19: mailbox/settings 탭 분기 제거 — 우상단 헤더 아이콘으로 이동 (MainHeader).
  */
 function TabIcon({ kind, active }: { kind: Tab; active: boolean }) {
   const stroke = active ? "currentColor" : "currentColor";
@@ -89,66 +87,7 @@ function TabIcon({ kind, active }: { kind: Tab; active: boolean }) {
       </svg>
     );
   }
-  if (kind === "mailbox") {
-    return (
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden
-        style={{ opacity }}
-      >
-        <rect
-          x="3"
-          y="6"
-          width="18"
-          height="13"
-          rx="2"
-          stroke={stroke}
-          strokeWidth="1.8"
-          fill={active ? "currentColor" : "none"}
-          fillOpacity={active ? 0.08 : 0}
-        />
-        <path
-          d="M3 9l9 6 9-6"
-          stroke={stroke}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  if (kind === "shop") {
-    return (
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden
-        style={{ opacity }}
-      >
-        <path
-          d="M5 8h14l-1.4 10.5a2 2 0 01-2 1.5h-7.2a2 2 0 01-2-1.5L5 8z"
-          stroke={stroke}
-          strokeWidth="1.8"
-          strokeLinejoin="round"
-          fill={active ? "currentColor" : "none"}
-          fillOpacity={active ? 0.08 : 0}
-        />
-        <path
-          d="M9 8V6a3 3 0 016 0v2"
-          stroke={stroke}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  // settings
+  // shop
   return (
     <svg
       width="16"
@@ -158,35 +97,38 @@ function TabIcon({ kind, active }: { kind: Tab; active: boolean }) {
       aria-hidden
       style={{ opacity }}
     >
-      <circle
-        cx="12"
-        cy="12"
-        r="3"
+      <path
+        d="M5 8h14l-1.4 10.5a2 2 0 01-2 1.5h-7.2a2 2 0 01-2-1.5L5 8z"
         stroke={stroke}
         strokeWidth="1.8"
+        strokeLinejoin="round"
+        fill={active ? "currentColor" : "none"}
+        fillOpacity={active ? 0.08 : 0}
       />
       <path
-        d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"
+        d="M9 8V6a3 3 0 016 0v2"
         stroke={stroke}
         strokeWidth="1.8"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
 }
 
 /**
- * 하단 탭 바 — 3개 탭 (todos/grass/settings).
+ * 하단 탭 바 — 3개 탭 (todos/grass/shop) (Phase 26 FR-19, AC-11).
  *
  * Mohashim Design.html 정렬: 활성 탭은 deepNavy 8% tint pill + deepNavy bold 텍스트 + 아이콘,
  * 비활성 탭은 transparent + MUTED 톤. borderTop 없이 padding으로 분리한다.
+ *
+ * mailbox/settings 진입은 MainHeader 우상단 아이콘으로 이동 (FR-20).
  */
-export function BottomTabBar({ tab, onChange, unreadCount = 0 }: BottomTabBarProps) {
+export function BottomTabBar({ tab, onChange }: BottomTabBarProps) {
   return (
     <nav className="relative z-10 flex gap-1 px-3 pb-2.5 pt-1.5">
       {TABS.map((item) => {
         const isActive = item.id === tab;
-        const hasBadge = item.id === "mailbox" && unreadCount > 0;
         const className = isActive
           ? "flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-deepNavy/10 py-1.5 text-[10px] font-extrabold text-deepNavy"
           : "flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-transparent py-1.5 text-[10px] font-semibold text-ink/55 transition-colors hover:text-ink/75";
@@ -199,9 +141,6 @@ export function BottomTabBar({ tab, onChange, unreadCount = 0 }: BottomTabBarPro
           >
             <span className="relative inline-flex">
               <TabIcon kind={item.id} active={isActive} />
-              {hasBadge && (
-                <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />
-              )}
             </span>
             <span>{item.label}</span>
           </button>

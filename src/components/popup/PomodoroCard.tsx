@@ -18,6 +18,8 @@ type PomodoroCardProps = {
   total: number;
   /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. */
   equipped: Inventory["equipped"];
+  /** Phase 26 FR-22 / AC-14: 새싹 잔액. dB 상태 행 끝에 ` · 🌱 N` 형태로 통합. */
+  sprouts: number;
   onTimerClick: () => void;
 };
 
@@ -51,6 +53,7 @@ export function PomodoroCard({
   db,
   total,
   equipped,
+  sprouts,
   onTimerClick,
 }: PomodoroCardProps) {
   const isComplete = phase === "complete";
@@ -103,6 +106,8 @@ export function PomodoroCard({
             <span className="text-[11px] font-bold text-ink/55">/ 100</span>
           </div>
 
+          {/* 상태 행: 환경 라벨 dB + 새싹 잔액(Phase 26 FR-22 / AC-14).
+              형태: `{env 아이콘} {label} {N}dB · 🌱 {잔액}`. */}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
             <span
               className="inline-flex items-center gap-1 tabular-nums"
@@ -112,6 +117,11 @@ export function PomodoroCard({
               <span>{env.label}</span>
               <span className="ml-0.5 opacity-90">
                 {inactive ? "—" : `${Math.round(dbSpl)}dB`}
+              </span>
+              <span className="ml-1 opacity-70" aria-hidden>·</span>
+              <span className="inline-flex items-center gap-0.5 text-ink/80">
+                <span aria-hidden>🌱</span>
+                <span className="tabular-nums">{sprouts.toLocaleString()}</span>
               </span>
             </span>
           </div>

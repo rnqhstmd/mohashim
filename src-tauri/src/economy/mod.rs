@@ -16,7 +16,7 @@ pub mod state;
 
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_store::StoreExt;
 
 use crate::storage::STORE_FILE;
@@ -163,6 +163,11 @@ fn award_todo_added<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     store
         .save()
         .map_err(|e| format!("store save failed: {e}"))?;
+    // Phase 26 FR-22 / AC-14: 출석 보상 +1🌱 후 메인 카드 잔액 갱신 알림.
+    // 멱등 no-op 분기는 위 early return으로 우회 — 실제 잔액 변경 시에만 emit.
+    if let Err(e) = app.emit("economy-updated", ()) {
+        eprintln!("[mohashim] economy-updated emit failed: {e}");
+    }
     Ok(())
 }
 

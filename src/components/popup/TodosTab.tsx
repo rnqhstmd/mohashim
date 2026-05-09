@@ -36,6 +36,8 @@ type TodosTabProps = {
   total: number;
   /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. PomodoroCard/FocusStartButton에 전달. */
   equipped: Inventory["equipped"];
+  /** Phase 26 FR-22 / AC-14: 새싹 잔액. PomodoroCard/FocusStartButton에 forwarding. */
+  sprouts: number;
   onFocusStart: () => Promise<void>;
 };
 
@@ -60,6 +62,7 @@ export function TodosTab({
   db,
   total,
   equipped,
+  sprouts,
   onFocusStart,
 }: TodosTabProps) {
   const [todos, setTodosState] = useState<Todo[]>([]);
@@ -222,6 +225,7 @@ export function TodosTab({
           db={db}
           total={total}
           equipped={equipped}
+          sprouts={sprouts}
           onTimerClick={() => setView("timer-detail")}
         />
       ) : (
@@ -230,6 +234,7 @@ export function TodosTab({
           phrase={phrase}
           db={db}
           equipped={equipped}
+          sprouts={sprouts}
           onStart={onFocusStart}
         />
       )}

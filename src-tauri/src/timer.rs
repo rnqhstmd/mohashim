@@ -337,6 +337,11 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
                     eprintln!("[mohashim] on_complete_consumed save failed: {e}");
                 }
             }
+            // Phase 26 FR-22 / AC-14: economy.sprouts 변경 후 메인 카드 잔액 갱신 알림.
+            // award_session_complete 결과가 묶음 save된 직후 emit. 실패는 eprintln 후 진행.
+            if let Err(e) = app.emit("economy-updated", ()) {
+                eprintln!("[mohashim] economy-updated emit failed: {e}");
+            }
             // Phase 23: log 성공 시에만 편지 생성 인자 인계 (BR-3 end_ms + FR-5 start_ms).
             letter_args = Some((duration_mins, todos_count, end_ms, start_ms));
         }
