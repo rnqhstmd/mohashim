@@ -25,6 +25,19 @@
 | FR-40 | 인스톨러 + 표시명 한국어화 — productName "모하심" + NSIS Korean | ✅ | [#23](https://github.com/rnqhstmd/mohashim/pull/23) | 78fa984. tauri.conf.json productName + nsis.languages |
 | FR-41 | GitHub Releases CI/CD 구축 — 사용자용 README 개편 + 자동 배포 워크플로 | ✅ | [#12](https://github.com/rnqhstmd/mohashim/pull/12) | docs 개편 + workflow 등록 |
 
+## 부팅 트리거
+
+| ID | 항목 | 상태 | PR | 비고 |
+|----|------|------|----|------|
+| FR-42 | 부팅 setup 비동기 분리 — monthly_check + yearly_cleanup을 spawn 안에서 직렬 실행 | ✅ | [#31](https://github.com/rnqhstmd/mohashim/pull/31) | Phase 26. tauri::async_runtime::spawn으로 부팅 메인 스레드 블로킹 0. monthly_check가 yearly_cleanup 앞에 실행되어 1월 1일 12월 데이터 보존 |
+| FR-43 | 월간 인사이트 멱등 가드 — last_monthly_letter_year_month 기반 동월 1회 발송 | ✅ | [#31](https://github.com/rnqhstmd/mohashim/pull/31) | Phase 26. monthly_check이 동월 일치 시 즉시 반환. None(0세션)에도 last 갱신하여 재발송 차단. 다중 비활성 달 순회 (months_strictly_between + next_year_month) |
+
+## 알림 딥링크
+
+| ID | 항목 | 상태 | PR | 비고 |
+|----|------|------|----|------|
+| FR-44 | 알림 클릭 시 윈도우 3단 활성화 (show + unminimize + set_focus) — hide/minimize 상태에서도 가시화 보장 | ✅ | [#31](https://github.com/rnqhstmd/mohashim/pull/31) | Phase 26. install_notification_action_handler의 Focused(true) 분기에서 LAST_NOTIF_AT_MS 윈도우 안일 때 3단 호출 후 mailbox-deeplink emit. swap(0)으로 self-loop 자연 차단 |
+
 ## 디자인 결정
 
 | ID | 항목 | 상태 | PR | 비고 |
