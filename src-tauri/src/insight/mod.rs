@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_store::StoreExt;
 
-use crate::mailbox::append_letter_and_emit;
+use crate::mailbox::append_letters_batch_and_emit;
 use crate::mailbox::state::Letter;
 use crate::storage::STORE_FILE;
 
@@ -132,13 +132,18 @@ fn build_letter(analysis: &MonthlyAnalysis, year_month: &str) -> Letter {
 /// 호출자: lib.rs::setup의 `tauri::async_runtime::spawn` 안. 동기 시그니처 유지 —
 /// spawn된 async 블록 안에서 동기 호출되므로 awaitable 불필요.
 ///
-/// 알고리즘 (MA-4 다중 달 순회):
+/// 알고리즘 (Phase 26 PR review Critical 수정 + MA-4 다중 달 순회):
 /// - last == None: 최초 부팅 — 발송 없이 last만 갱신 (재발송 방지).
 /// - last == current: 멱등 no-op (BR-1, FR-15).
-/// - last < current: months_strictly_between(last, current) 순회하며 각 달 분석.
-///   - 분석 결과가 Some이면 Letter 생성 + append_letter_and_emit 발송.
-///   - None(0세션)이면 발송 생략 (FR-2).
-///   - 마지막에 last 갱신 (FR-16, FR-17).
+/// - last < current: cur=last부터 시작해 cur < current인 동안 각 달을 분석.
+///   - last 자체는 "마지막 부팅한 연월"이며 그 부팅에서 last의 직전 달 편지가 이미
+///     발송되었다. 이번 부팅은 last의 데이터부터 current 직전 달까지를 발송 대상으로 삼는다.
+///   - 예: last="2026-04", current="2026-05" → cur=4월 → 4월 발송 → cur=5월 (loop exit).
+///         **현재 진행 중인 5월은 분석 대상에서 제외** (PRD FR-15).
+///   - 예: last="2026-02", current="2026-05" → 2월/3월/4월 발송, 5월 제외.
+/// - 분석 결과가 Some인 letter들을 batch로 모아 mailbox::append_letters_batch_and_emit
+///   1회 호출 (PR review #3 I/O 최적화: 다중 달 발송 시에도 mailbox store.save 1번).
+/// - 마지막에 last 갱신 (FR-16, FR-17).
 pub fn monthly_check<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let store = app
         .store(STORE_FILE)
@@ -152,21 +157,23 @@ pub fn monthly_check<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             return Ok(());
         }
         Some(l) => {
-            // MA-4: last < current인 모든 중간 달 + 직전 달 순회.
-            // months_strictly_between은 양 끝 exclusive이므로, 직전 달(current 직전)을
-            // 포함하려면 to 인자로 next_year_month(current)를 전달해야 한다.
-            // 예: last="2026-04", current="2026-05" → scan_to="2026-06" → ["2026-05"]?
-            //     아니다. (l, scan_to) exclusive = l 직후 ~ scan_to 직전 = "2026-05"까지.
-            //     즉 current까지 inclusive 효과. (Phase 26 self-check Critical 수정)
-            let scan_to = next_year_month(&current).unwrap_or_else(|| current.clone());
+            // Phase 26 Critical 수정: cur=last부터 cur < current 동안 순회.
+            // current(현재 진행 중)는 분석 대상에서 제외 (FR-15).
             let logs = read_session_logs(&store);
-            for ym in months_strictly_between(l, &scan_to) {
-                if let Some(analysis) = analyze_monthly_pattern(&logs, &ym) {
-                    let letter = build_letter(&analysis, &ym);
-                    append_letter_and_emit(app, letter);
+            let mut letters: Vec<Letter> = Vec::new();
+            let mut cur = l.to_string();
+            while cur < current {
+                if let Some(analysis) = analyze_monthly_pattern(&logs, &cur) {
+                    letters.push(build_letter(&analysis, &cur));
                 }
-                // FR-2 / FR-17: None이면 발송 생략, 마지막 last 갱신은 동일 처리.
+                // FR-2 / FR-17: None이면 발송 생략하고 다음 달로 진행.
+                if let Some(next) = next_year_month(&cur) {
+                    cur = next;
+                } else {
+                    break;
+                }
             }
+            append_letters_batch_and_emit(app, letters);
         }
         None => {
             // 최초 부팅 — 발송 없이 last만 갱신하여 재발송 차단.
@@ -261,24 +268,54 @@ mod tests {
         assert_eq!(next_year_month("2026"), None);
     }
 
-    #[test]
-    fn monthly_check_scan_range_includes_previous_month() {
-        // Critical 회귀 검증: last="2026-04", current="2026-05"이면
-        // scan_to="2026-06" → months_strictly_between("2026-04", "2026-06") = ["2026-05"]
-        // 직전 달(=current)이 분석 대상에 포함되어야 함.
-        let current = "2026-05";
-        let scan_to = next_year_month(current).expect("valid current");
-        let scanned = months_strictly_between("2026-04", &scan_to);
-        assert_eq!(scanned, vec!["2026-05"]);
+    /// monthly_check 본문 while 루프와 동일한 순회 로직 — 분석 대상 연월 목록을 도출한다.
+    /// (Phase 26 PR review Critical 수정 검증용 헬퍼.)
+    fn collect_scanned_months(last: &str, current: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = last.to_string();
+        while cur.as_str() < current {
+            out.push(cur.clone());
+            if let Some(next) = next_year_month(&cur) {
+                cur = next;
+            } else {
+                break;
+            }
+        }
+        out
     }
 
     #[test]
-    fn monthly_check_scan_range_includes_multiple_missed_months() {
-        // last="2026-01", current="2026-04"이면 scan_to="2026-05"
-        // → ["2026-02", "2026-03", "2026-04"] (직전 달까지 inclusive)
-        let current = "2026-04";
-        let scan_to = next_year_month(current).expect("valid current");
-        let scanned = months_strictly_between("2026-01", &scan_to);
+    fn monthly_check_processes_previous_month_only() {
+        // Critical 회귀 검증: last="2026-04", current="2026-05"이면
+        // 분석 대상 = ["2026-04"] — last 자체가 발송 대상이며,
+        // **현재 진행 중인 5월은 제외** (PRD FR-15).
+        let scanned = collect_scanned_months("2026-04", "2026-05");
+        assert_eq!(scanned, vec!["2026-04"]);
+    }
+
+    #[test]
+    fn monthly_check_processes_multiple_missed_months_excluding_current() {
+        // last="2026-01", current="2026-04"이면
+        // 분석 대상 = ["2026-01", "2026-02", "2026-03"] — current 직전까지, current는 제외.
+        let scanned = collect_scanned_months("2026-01", "2026-04");
+        assert_eq!(scanned, vec!["2026-01", "2026-02", "2026-03"]);
+    }
+
+    #[test]
+    fn monthly_check_excludes_current_month_from_scan() {
+        // current 자체는 분석 대상에서 제외되어야 함 (FR-15 핵심).
+        // last="2026-02", current="2026-05" → ["2026-02", "2026-03", "2026-04"]
+        // — 5월은 진행 중이므로 분석 대상 아님.
+        let scanned = collect_scanned_months("2026-02", "2026-05");
+        assert!(!scanned.contains(&"2026-05".to_string()));
         assert_eq!(scanned, vec!["2026-02", "2026-03", "2026-04"]);
+    }
+
+    #[test]
+    fn monthly_check_year_boundary_scan() {
+        // 연 경계 검증: last="2025-11", current="2026-02"이면
+        // 분석 대상 = ["2025-11", "2025-12", "2026-01"] — 2026-02는 제외.
+        let scanned = collect_scanned_months("2025-11", "2026-02");
+        assert_eq!(scanned, vec!["2025-11", "2025-12", "2026-01"]);
     }
 }

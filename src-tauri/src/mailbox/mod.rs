@@ -53,6 +53,54 @@ pub fn append_letter_and_emit<R: Runtime>(app: &AppHandle<R>, letter: Letter) {
     }
 }
 
+/// Letter 다중을 단일 락/단일 save/단일 emit으로 처리하는 batch 변종 (Phase 26 PR review #3).
+///
+/// **사용처**: insight::monthly_check가 다중 달 누락분을 한꺼번에 발송할 때.
+/// 단건 append_letter_and_emit를 N번 호출하면 mailbox store.save도 N번 발생하므로,
+/// batch 시그니처로 묶어 디스크 I/O를 1회로 축소한다 (cap/순서 정책은 동일).
+///
+/// 동작:
+///   1) MAILBOX_MUTEX 1회 획득 → read_mailbox → 모든 letter append_with_cap → write_mailbox → store.save 1회.
+///   2) push_message는 letter별로 N번 발화 (보류 큐 정책 그대로 — 단순 묶음 발화 시
+///      cap 위반 또는 알림 누락 가능성을 차단하기 위해 정책을 변경하지 않는다).
+///   3) app.emit("mailbox-updated", ())는 1회만 emit (수신측이 read 카운트 재계산하므로 묶음 emit으로 충분).
+///
+/// 빈 Vec 입력 시 즉시 return — 락 획득/save/emit 모두 생략.
+pub fn append_letters_batch_and_emit<R: Runtime>(app: &AppHandle<R>, letters: Vec<Letter>) {
+    if letters.is_empty() {
+        return;
+    }
+    // push_message용으로 (title, body) 미리 복제 (락 해제 후 발화).
+    let titles_bodies: Vec<(String, String)> = letters
+        .iter()
+        .map(|l| (l.title.clone(), l.body.clone()))
+        .collect();
+    {
+        let _guard = lock_mailbox();
+        let store = match app.store(STORE_FILE) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[mohashim] append_letters_batch_and_emit store open failed: {e}");
+                return;
+            }
+        };
+        let mut existing = read_mailbox(&store);
+        for letter in letters {
+            append_with_cap(&mut existing, letter);
+        }
+        write_mailbox(&store, &existing);
+        if let Err(e) = store.save() {
+            eprintln!("[mohashim] append_letters_batch_and_emit store save failed: {e}");
+        }
+    }
+    for (title, body) in titles_bodies {
+        push_message(app, &title, &body);
+    }
+    if let Err(e) = app.emit("mailbox-updated", ()) {
+        eprintln!("[mohashim] mailbox-updated emit failed: {e}");
+    }
+}
+
 /// 편지 제목용 focus 시간 범위 계산. start_ms=0 시 fallback (now - focus_mins).
 fn compute_session_title_range(
     now: chrono::DateTime<Local>,
