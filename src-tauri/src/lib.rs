@@ -56,6 +56,13 @@ pub fn run() {
             shop::get_inventory,
         ])
         .setup(|app| {
+            // macOS 26 회귀: Tauri/tao의 default ActivationPolicy가 Regular라 Info.plist의
+            // LSUIElement=true와 충돌하면서 NSStatusItem 등록이 거부된다. setup() 안에서
+            // App::set_activation_policy(&mut self, ...) 동기 호출로 LSUIElement와 정합시킨다.
+            // AppHandle 경유 호출은 send_user_message 큐잉이라 setup() 내 init_tray 시점에는
+            // 미반영 — 반드시 &mut App API 사용.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             // setup 순서: storage 시드 → boot discard → power observer → tray → score.
             // boot discard는 score::start (tick 시작) 이전에 실행해야 한다 (DEC-11).
             if let Err(err) = storage::init(app.handle()) {
@@ -107,7 +114,15 @@ pub fn run() {
                 eprintln!("[mohashim] power start failed: {err}");
             }
             if let Err(err) = tray::init_tray(app.handle()) {
+                // BR-1: LSUIElement=true 환경에서 트레이는 유일한 진입/종료 경로다.
+                // 트레이 빌드 실패 시 Dock 미노출 + 트레이 미노출로 좀비 프로세스가 되므로
+                // 명시 종료한다. AppHandle::exit는 RunEvent::Exit 경로를 트리거해 logger
+                // flush 등 정상 cleanup이 동작한다.
                 eprintln!("[mohashim] tray init failed: {err}");
+                eprintln!(
+                    "[mohashim] fatal: tray is the sole entry point on LSUIElement apps — exiting"
+                );
+                app.handle().exit(1);
             }
             // FR-14 / DEC-9-5: 신규 인스톨(onboarding_completed=false) 첫 부팅에서만
             // 메인 윈도우를 명시적으로 노출. 이후 부팅은 트레이 클릭으로만 노출 (FR-15).

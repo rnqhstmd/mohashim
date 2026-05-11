@@ -132,7 +132,38 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // 핸들러에서 set_checked로 즉시 갱신하기 위해 Clone된 핸들 캡처.
     let autostart_item_for_handler = autostart_item.clone();
 
+    // FR-1/BR-2/AC-4: TrayIconBuilder 빌드 시점에 초기 아이콘 설정.
+    // `.icon()`을 체이닝하지 않으면 score 첫 tick에서 apply_icon이 호출될 때까지
+    // 트레이가 빈 상태로 메뉴바에 노출되지 않는다 (특히 LSUIElement=true 환경에서
+    // Dock 미노출이라 유일한 진입점이 사라진다). placeholder는 LiveState::Calm —
+    // score 첫 tick에서 실제 상태로 즉시 덮어쓰여진다.
+    //
+    // FR-3/AC-3: 로드 실패 시 경로 포함 에러를 stderr로 명시 로깅한 뒤 에러를 전파한다.
+    // silent fail이 아니라 console.app/콘솔 로그에서 즉시 진단 가능. `?`로 전파된 에러는
+    // lib.rs 호출부의 eprintln!("tray init failed: ...")에서 추가 컨텍스트와 함께 출력된다.
+    let initial_state = LiveState::Calm;
+    let initial_path = icon_path_for(app, initial_state).map_err(|e| {
+        eprintln!(
+            "[mohashim] tray initial icon path resolution failed for {initial_state:?}: {e}"
+        );
+        // tauri::Error는 String→Error 변환을 직접 지원하지 않으므로 io::Error를 경유한다.
+        tauri::Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, e))
+    })?;
+    let initial_image = Image::from_path(&initial_path).map_err(|e| {
+        // Privacy: 절대 경로 노출 회피 — file_name만 출력해 어느 PNG가 누락됐는지만 식별.
+        // macOS unified log/MDM 수집 시 사용자명(`/Users/<name>/...`) 노출을 차단한다.
+        let fname = initial_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("<unknown>");
+        eprintln!(
+            "[mohashim] tray initial icon load failed: Image::from_path(file={fname}): {e}"
+        );
+        e
+    })?;
+
     let tray = TrayIconBuilder::with_id("main")
+        .icon(initial_image)
         .tooltip("모하심")
         .menu(&menu)
         .show_menu_on_left_click(false)
