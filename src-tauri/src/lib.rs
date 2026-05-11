@@ -56,6 +56,13 @@ pub fn run() {
             shop::get_inventory,
         ])
         .setup(|app| {
+            // macOS 26 회귀: Tauri/tao의 default ActivationPolicy가 Regular라 Info.plist의
+            // LSUIElement=true와 충돌하면서 NSStatusItem 등록이 거부된다. setup() 안에서
+            // App::set_activation_policy(&mut self, ...) 동기 호출로 LSUIElement와 정합시킨다.
+            // AppHandle 경유 호출은 send_user_message 큐잉이라 setup() 내 init_tray 시점에는
+            // 미반영 — 반드시 &mut App API 사용.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             // setup 순서: storage 시드 → boot discard → power observer → tray → score.
             // boot discard는 score::start (tick 시작) 이전에 실행해야 한다 (DEC-11).
             if let Err(err) = storage::init(app.handle()) {
