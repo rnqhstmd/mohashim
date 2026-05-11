@@ -107,7 +107,15 @@ pub fn run() {
                 eprintln!("[mohashim] power start failed: {err}");
             }
             if let Err(err) = tray::init_tray(app.handle()) {
+                // BR-1: LSUIElement=true 환경에서 트레이는 유일한 진입/종료 경로다.
+                // 트레이 빌드 실패 시 Dock 미노출 + 트레이 미노출로 좀비 프로세스가 되므로
+                // 명시 종료한다. AppHandle::exit는 RunEvent::Exit 경로를 트리거해 logger
+                // flush 등 정상 cleanup이 동작한다.
                 eprintln!("[mohashim] tray init failed: {err}");
+                eprintln!(
+                    "[mohashim] fatal: tray is the sole entry point on LSUIElement apps — exiting"
+                );
+                app.handle().exit(1);
             }
             // FR-14 / DEC-9-5: 신규 인스톨(onboarding_completed=false) 첫 부팅에서만
             // 메인 윈도우를 명시적으로 노출. 이후 부팅은 트레이 클릭으로만 노출 (FR-15).
