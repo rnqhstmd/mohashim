@@ -47,9 +47,6 @@ pub fn read_economy_state<R: Runtime>(store: &Store<R>) -> EconomyState {
         .and_then(|v| v.as_u64())
         .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
         .unwrap_or(0);
-    // DEBUG (REMOVE-AFTER-TEST): 새싹 잔액을 항상 999 이상으로 강제 — 상점 장착 테스트용.
-    // 구매 후 잔액이 줄어도 다음 read에서 999로 복원되어 무한 구매 가능.
-    let sprouts = sprouts.max(999);
     // 빈 문자열은 손상 데이터로 간주 — None 폴백 (출석 보상 자연 지급 가능).
     let last_todo_sprout_date = obj
         .get("lastTodoSproutDate")

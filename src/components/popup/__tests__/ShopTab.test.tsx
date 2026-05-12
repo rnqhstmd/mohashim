@@ -62,7 +62,7 @@ describe("ShopTab", () => {
   });
 
   it("AC-13/14: 잔액 부족 카드는 회색 비활성 + 부족분 툴팁 표시", async () => {
-    inMemory.set("economy", { sprouts: 50, lastTodoSproutDate: null });
+    inMemory.set("economy", { sprouts: 25, lastTodoSproutDate: null });
     inMemory.set("inventory", {
       owned: [],
       equipped: { face: null, head: null, back: null },
@@ -71,7 +71,7 @@ describe("ShopTab", () => {
     const { ShopTab } = await import("../ShopTab");
     const { container } = render(<ShopTab />);
 
-    // 60🌱 멋쟁이 선글라스: 잔액 50 → 부족 10🌱.
+    // 35🌱 멋쟁이 선글라스: 잔액 25 → 부족 10🌱.
     await waitFor(() => {
       expect(screen.getByText("멋쟁이 선글라스")).toBeInTheDocument();
     });
@@ -104,9 +104,9 @@ describe("ShopTab", () => {
     const purchaseButtons = screen.getAllByRole("button", { name: "구매" });
     fireEvent.click(purchaseButtons[0]);
 
-    // 모달 표시: "동글 안경 (30🌱) 구매할까요?" + "환불 불가" + 확인/취소.
+    // 모달 표시: "동글 안경 (15🌱) 구매할까요?" + "환불 불가" + 확인/취소.
     await waitFor(() => {
-      expect(screen.getByText(/동글 안경 \(30🌱\) 구매할까요\?/)).toBeInTheDocument();
+      expect(screen.getByText(/동글 안경 \(15🌱\) 구매할까요\?/)).toBeInTheDocument();
       expect(screen.getByText("환불 불가")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "확인" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "취소" })).toBeInTheDocument();
