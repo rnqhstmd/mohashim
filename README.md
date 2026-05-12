@@ -23,14 +23,14 @@
 <table>
   <tr>
     <td align="center" width="240">
-      <a href="https://github.com/rnqhstmd/mohashim/releases/latest/download/Mohashim.dmg">
+      <a href="https://github.com/rnqhstmd/mohashim/releases/latest">
         <img src="https://img.shields.io/badge/macOS-다운로드_(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white"/>
       </a>
       <br/>
       <sub>macOS 12 Monterey 이상</sub>
     </td>
     <td align="center" width="240">
-      <a href="https://github.com/rnqhstmd/mohashim/releases/latest/download/Mohashim_Windows.msi">
+      <a href="https://github.com/rnqhstmd/mohashim/releases/latest">
         <img src="https://img.shields.io/badge/Windows-다운로드_(.msi)-0078D4?style=for-the-badge&logo=windows&logoColor=white"/>
       </a>
       <br/>

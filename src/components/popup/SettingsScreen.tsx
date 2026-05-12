@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { APP_VERSION, type UpdateInfo } from "../../lib/updater";
 import {
   getAutoLaunch,
@@ -549,13 +551,78 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           </div>
         )}
 
-        {/* 릴리즈 노트 */}
+        {/* 릴리즈 노트 — GitHub release body는 마크다운 형식이므로 ReactMarkdown으로 렌더 */}
         {updateInfo?.body && (
           <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3">
             <p className="text-[11px] font-semibold text-ink">업데이트 내용</p>
-            <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-ink/70">
-              {updateInfo.body}
-            </p>
+            <div className="mt-1 text-[11px] leading-relaxed text-ink/70">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => (
+                    <h3 className="mt-2 mb-1 text-[13px] font-extrabold text-ink first:mt-0">
+                      {children}
+                    </h3>
+                  ),
+                  h2: ({ children }) => (
+                    <h4 className="mt-2 mb-1 text-[12px] font-extrabold text-ink first:mt-0">
+                      {children}
+                    </h4>
+                  ),
+                  h3: ({ children }) => (
+                    <h5 className="mt-2 mb-0.5 text-[11px] font-bold text-ink first:mt-0">
+                      {children}
+                    </h5>
+                  ),
+                  p: ({ children }) => <p className="mt-1 first:mt-0">{children}</p>,
+                  ul: ({ children }) => (
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">{children}</ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="mt-1 list-decimal space-y-0.5 pl-4">{children}</ol>
+                  ),
+                  li: ({ children }) => <li>{children}</li>,
+                  strong: ({ children }) => (
+                    <strong className="font-bold text-ink">{children}</strong>
+                  ),
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  a: ({ href, children }) => (
+                    <a
+                      href={href}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (href) {
+                          void openUrl(href).catch((err: unknown) =>
+                            console.error("[mohashim] open url failed", err)
+                          );
+                        }
+                      }}
+                      className="text-[#3e4d70] underline underline-offset-2"
+                    >
+                      {children}
+                    </a>
+                  ),
+                  code: ({ children }) => (
+                    <code className="rounded bg-ink/10 px-1 font-mono text-[10px]">
+                      {children}
+                    </code>
+                  ),
+                  pre: ({ children }) => (
+                    <pre className="mt-1 overflow-x-auto rounded bg-ink/10 p-2 font-mono text-[10px]">
+                      {children}
+                    </pre>
+                  ),
+                  blockquote: ({ children }) => (
+                    <blockquote className="mt-1 border-l-2 border-ink/20 pl-2 italic">
+                      {children}
+                    </blockquote>
+                  ),
+                  hr: () => <hr className="my-2 border-ink/10" />,
+                }}
+              >
+                {updateInfo.body}
+              </ReactMarkdown>
+            </div>
           </div>
         )}
 
