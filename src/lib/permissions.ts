@@ -65,15 +65,15 @@ async function getNotificationStatus(): Promise<PermissionStatus> {
   try {
     const granted = await notifIsGranted();
     if (granted) return "granted";
-    // Windows TOFU: 사용자가 토글을 눌러 OS 알림 설정 페이지를 한 번 거친 적이
-    // 있으면 granted로 간주. 사용자가 OS에서 실제로 끈 경우는 검출 불가 — 단,
-    // 그 경우엔 OS Toast 자체가 표시되지 않아 fail-silent가 됨.
     if (isWindows() && localStorage.getItem(NOTIF_INTERACTED_KEY) === "1") {
       return "granted";
     }
-    // Web Notification API는 정확한 거절/미정 분리를 노출하지 않는다. 첫 부팅에서는
-    // not_determined로 가정해도 사용자에게 권한 요청 버튼이 노출되며, 실제로 거절된
-    // 상태였다면 다이얼로그가 즉시 닫혀 동일 결과로 수렴.
+    // macOS: 앱 첫 설치 시 알림이 기본 허용으로 동작하므로 웰컴 페이지 토글을 ON으로
+    // 디폴트 표시한다. 사용자가 시스템 설정에서 명시적으로 거부한 경우는 OS 알림이
+    // fail-silent로 처리되며 UI 영향은 미미.
+    if (!isWindows()) {
+      return "granted";
+    }
     return "not_determined";
   } catch (err) {
     console.error("[mohashim] notification status check failed", err);

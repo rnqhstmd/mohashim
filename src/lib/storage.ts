@@ -89,7 +89,7 @@ export type Inventory = {
  * 단일 편지 항목 (Phase 23 FR-2, BR-3).
  * Rust 단일 writer (P-D4) — TS는 get_mailbox IPC + getMailbox() read-only만 노출.
  */
-export type MailboxKind = "SESSION" | "MONTHLY" | "SYSTEM";
+export type MailboxKind = "SESSION" | "MONTHLY" | "SYSTEM" | "ATTENDANCE";
 export type Letter = {
   id: string;
   kind: MailboxKind;
@@ -537,7 +537,7 @@ export async function getMailbox(): Promise<Letter[]> {
       if (!item || typeof item !== "object") return [];
       const l = item as Record<string, unknown>;
       if (typeof l.id !== "string" || !l.id) return [];
-      if (!["SESSION", "MONTHLY", "SYSTEM"].includes(l.kind as string)) return [];
+      if (!["SESSION", "MONTHLY", "SYSTEM", "ATTENDANCE"].includes(l.kind as string)) return [];
       if (typeof l.title !== "string") return [];
       if (typeof l.body !== "string") return [];
       if (typeof l.createdAt !== "string" || !l.createdAt) return [];

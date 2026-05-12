@@ -12,7 +12,7 @@ use tauri_plugin_store::Store;
 /// 단일 편지 항목 (FR-2, BR-3).
 ///
 /// `id` — `"ml-{unix_ms}"` 형식 (BR-3).
-/// `kind` — `"SESSION" | "MONTHLY" | "SYSTEM"` 중 하나.
+/// `kind` — `"SESSION" | "MONTHLY" | "SYSTEM" | "ATTENDANCE"` 중 하나.
 /// `created_at` — RFC3339 with offset.
 /// `session_tag` — SESSION 종류 편지의 출처 세션 식별자 (옵션).
 #[derive(Clone, Serialize)]
@@ -52,7 +52,7 @@ pub fn read_mailbox<R: Runtime>(store: &Store<R>) -> Vec<Letter> {
             _ => continue,
         };
         let kind = match obj.get("kind").and_then(|v| v.as_str()) {
-            Some(s) if matches!(s, "SESSION" | "MONTHLY" | "SYSTEM") => s.to_string(),
+            Some(s) if matches!(s, "SESSION" | "MONTHLY" | "SYSTEM" | "ATTENDANCE") => s.to_string(),
             _ => continue,
         };
         let title = match obj.get("title").and_then(|v| v.as_str()) {

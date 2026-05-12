@@ -44,7 +44,6 @@ pub fn run() {
             storage::undo_todo_completion,
             // Phase 22 FR-17 / BR-6: 출석 보상 IPC 단일 진입점.
             economy::record_todo_added,
-            logger::open_log_dir,
             // Phase 23 FR-10~13: 편지함 IPC.
             mailbox::get_mailbox,
             mailbox::mark_all_mailbox_read,
@@ -126,6 +125,15 @@ pub fn run() {
                     "[mohashim] fatal: tray is the sole entry point on LSUIElement apps — exiting"
                 );
                 app.handle().exit(1);
+            }
+            // macOS: set_icon_as_template이 Builder 단계에서 적용되지 않는 경우를 대비해
+            // 런루프 시작 직전 apply_icon으로 set_icon + set_icon_as_template을 재적용.
+            #[cfg(target_os = "macos")]
+            {
+                use crate::score::phase::LiveState;
+                if let Err(e) = tray::apply_icon(app.handle(), LiveState::Calm) {
+                    eprintln!("[mohashim] initial apply_icon failed: {e}");
+                }
             }
             // FR-14 / DEC-9-5: 신규 인스톨(onboarding_completed=false) 첫 부팅에서만
             // 메인 윈도우를 명시적으로 노출. 이후 부팅은 트레이 클릭으로만 노출 (FR-15).

@@ -20,7 +20,7 @@ use state::{append_with_cap, mark_all_read_in_place, read_mailbox, write_mailbox
 
 /// Letter를 mailbox에 append + persist + 알림 push + emit하는 도메인 무지 인프라 (Phase 24 v2).
 ///
-/// **도메인 무지 원칙**: 본 함수는 letter가 SESSION/SYSTEM/MONTHLY 어느 종류인지 알지 않는다.
+/// **도메인 무지 원칙**: 본 함수는 letter가 SESSION/SYSTEM/MONTHLY/ATTENDANCE 어느 종류인지 알지 않는다.
 /// 도메인(timer / shop)이 Letter struct를 만들어 호출하고, 인프라는 4단계를 수행한다:
 ///   1) MAILBOX_MUTEX 획득 → read_mailbox → append_with_cap → write_mailbox → store.save
 ///   2) push_message(title, body) — phase 분기 내장 (Focus/Break: 보류, Idle: 즉시 발화)
