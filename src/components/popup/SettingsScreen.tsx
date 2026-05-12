@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { APP_VERSION, type UpdateInfo } from "../../lib/updater";
 import {
   getAutoLaunch,
   getBreakMinutes,
@@ -32,13 +34,12 @@ type SettingsScreenProps = {
    * 호출되는 콜백. 본 콜백이 settings → mailbox 오버레이 전환의 단일 경로.
    */
   onAcceptDeeplink: () => void;
+  updateInfo: UpdateInfo | null;
 };
 
 // Phase 21 사용자 피드백: 설정 화면을 카드 리스트로 단순화. 시간/태그 편집은 모두 별도
 // 페이지로 이동, 인라인 편집 제거. 알림 / 로그 폴더 / 데이터 초기화 / 버전 footer 추가.
-type View = "main" | "loc" | "work" | "durations" | "autostart";
-
-const APP_VERSION = "0.1.0";
+type View = "main" | "loc" | "work" | "durations" | "autostart" | "update";
 
 /**
  * Settings 화면 (Phase 21 재구조).
@@ -60,6 +61,7 @@ export function SettingsScreen({
   pendingDeeplink,
   onPendingDeeplinkChange,
   onAcceptDeeplink,
+  updateInfo,
 }: SettingsScreenProps) {
   const [view, setView] = useState<View>("main");
   const [showReset, setShowReset] = useState(false);
@@ -149,6 +151,9 @@ export function SettingsScreen({
     }
   };
 
+  if (view === "update" && updateInfo) {
+    return <UpdateScreen updateInfo={updateInfo} onClose={() => setView("main")} />;
+  }
   if (view === "loc") {
     return <LocationEditorScreen onClose={() => setView("main")} />;
   }
@@ -196,6 +201,19 @@ export function SettingsScreen({
         </span>
       </div>
       <div className="flex flex-1 flex-col gap-2 px-4 pt-1">
+        {/* 업데이트 — 항상 최상단 노출 */}
+        <Row
+          icon="✨"
+          label="앱 업데이트"
+          sub={
+            updateInfo
+              ? `새로운 버전이 있어요. 업데이트해주세요 (v${updateInfo.version})`
+              : "최신 버전이에요"
+          }
+          alert={updateInfo !== null}
+          onClick={() => setView("update")}
+        />
+
         {/* 시간 편집 — 집중/휴식 모두 한 화면에서 */}
         <Row
           icon="⏱"
@@ -340,9 +358,10 @@ type RowProps = {
   label: string;
   sub?: string;
   onClick: () => void;
+  alert?: boolean;
 };
 
-function Row({ icon, label, sub, onClick }: RowProps) {
+function Row({ icon, label, sub, onClick, alert }: RowProps) {
   return (
     <button
       type="button"
@@ -355,14 +374,22 @@ function Row({ icon, label, sub, onClick }: RowProps) {
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-sm font-extrabold text-ink">{label}</span>
         {sub && (
-          <span className="mt-0.5 truncate text-[10px] font-semibold text-ink/55">
+          <span
+            className={`mt-0.5 truncate text-[10px] font-semibold ${alert ? "text-amber-600" : "text-ink/55"}`}
+          >
             {sub}
           </span>
         )}
       </div>
-      <span aria-hidden className="text-sm font-bold text-ink/40">
-        ›
-      </span>
+      {alert ? (
+        <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+          !
+        </span>
+      ) : (
+        <span aria-hidden className="text-sm font-bold text-ink/40">
+          ›
+        </span>
+      )}
     </button>
   );
 }
@@ -457,6 +484,111 @@ function AutoStartScreen({ on, disabled, onToggle, onClose }: AutoStartScreenPro
           <p className="mt-1">
             이 화면에서 다시 토글을 OFF로 바꾸면 돼요. PC 부팅 시 자동 실행이
             중단돼요.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type UpdateScreenProps = {
+  updateInfo: UpdateInfo;
+  onClose: () => void;
+};
+
+function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
+  const [relaunching, setRelaunching] = useState(false);
+
+  const handleRelaunch = async () => {
+    if (relaunching) return;
+    setRelaunching(true);
+    try {
+      await invoke("relaunch");
+    } catch (err) {
+      console.error("[mohashim] relaunch failed", err);
+      setRelaunching(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-ink/60 transition-colors hover:bg-ink/8 hover:text-ink"
+          aria-label="뒤로"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path
+              d="M15 18l-6-6 6-6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <span className="flex-1 truncate text-[13px] font-semibold text-ink">
+          앱 업데이트
+        </span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-3 px-4 pt-2">
+        {/* 버전 비교 카드 */}
+        <div className="rounded-xl border border-ink/15 bg-paperWarm/80 px-4 py-3 shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-ink/55">현재 버전</span>
+            <span className="text-[12px] font-extrabold text-ink">v{APP_VERSION}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-ink/55">최신 버전</span>
+            <span className="text-[12px] font-extrabold text-amber-600">
+              v{updateInfo.version}
+            </span>
+          </div>
+        </div>
+
+        {/* 릴리즈 노트 */}
+        {updateInfo.body && (
+          <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3">
+            <p className="text-[11px] font-semibold text-ink">업데이트 내용</p>
+            <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-ink/70">
+              {updateInfo.body}
+            </p>
+          </div>
+        )}
+
+        {/* 다운로드 버튼 */}
+        <button
+          type="button"
+          onClick={() => {
+            void openUrl(updateInfo.releaseUrl).catch((err: unknown) =>
+              console.error("[mohashim] open release url failed", err)
+            );
+          }}
+          className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-[#3e4d70] px-3 py-2.5 text-[13px] font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
+        >
+          다운로드
+        </button>
+
+        {/* 재시작 버튼 */}
+        <button
+          type="button"
+          onClick={() => {
+            void handleRelaunch();
+          }}
+          disabled={relaunching}
+          className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-paperWarm px-3 py-2.5 text-[13px] font-extrabold text-ink shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none disabled:opacity-50"
+        >
+          {relaunching ? "재시작 중..." : "앱 재시작"}
+        </button>
+
+        {/* 안내 */}
+        <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3 text-[11px] leading-relaxed text-ink/70">
+          <p>
+            다운로드 후 설치 프로그램을 실행해주세요. 설치 완료 후 재시작
+            버튼을 눌러 새 버전을 시작할 수 있어요.
           </p>
         </div>
       </div>

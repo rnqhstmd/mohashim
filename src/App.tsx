@@ -20,6 +20,7 @@ import {
   type PermissionState,
 } from "./lib/permissions";
 import { attachTrayClickListener, type TargetOs } from "./lib/trayPopup";
+import { checkForUpdate, type UpdateInfo } from "./lib/updater";
 import { OnboardingScreen } from "./components/popup/OnboardingScreen";
 import { MainScreen } from "./components/popup/MainScreen";
 import { PinGuideModal } from "./components/popup/PinGuideModal";
@@ -39,6 +40,7 @@ function App() {
   const [os, setOs] = useState<TargetOs | null>(null);
   // 트레이 우클릭 → "작업 표시줄에 고정 안내" 클릭 시 Rust에서 emit하는 이벤트로 토글.
   const [showPinGuide, setShowPinGuide] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const isRefreshingRef = useRef(false);
 
   // 부트: Storage init + 권한 status + onboarding 플래그 1회 조회.
@@ -112,6 +114,13 @@ function App() {
     return () => {
       void unlistenP.then((fn) => fn());
     };
+  }, []);
+
+  // 앱 실행 시 GitHub 최신 릴리즈와 버전 비교. 네트워크 없으면 null 유지.
+  useEffect(() => {
+    void checkForUpdate().then((info) => {
+      if (info) setUpdateInfo(info);
+    });
   }, []);
 
   // 트레이 우클릭 메뉴 "작업 표시줄에 고정 안내" → Rust가 emit한 "show-pin-guide" 수신.
@@ -229,7 +238,7 @@ function App() {
       style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.18))" }}
     >
       {canEnter ? (
-        <MainScreen onResetDone={() => setOnboardingCompletedState(false)} />
+        <MainScreen onResetDone={() => setOnboardingCompletedState(false)} updateInfo={updateInfo} />
       ) : (
         <OnboardingScreen
           os={os}

@@ -56,6 +56,7 @@ pub fn run() {
             shop::get_inventory,
             // DEBUG (REMOVE-AFTER-TEST): 월간 리포트 수동 트리거.
             insight::trigger_monthly_letter_test,
+            relaunch,
         ])
         .setup(|app| {
             // macOS 26 회귀: Tauri/tao의 default ActivationPolicy가 Regular라 Info.plist의
@@ -169,6 +170,15 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             let _ = app_handle;
         });
+}
+
+/// 앱을 재시작한다. 현재 실행 파일을 새 프로세스로 spawn 후 현재 프로세스를 종료.
+#[tauri::command]
+fn relaunch(app: tauri::AppHandle) {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).spawn();
+    }
+    app.exit(0);
 }
 
 /// store `auto_launch_enabled` ↔ OS launcher 정합 (FR-9, DEC-9-1).
