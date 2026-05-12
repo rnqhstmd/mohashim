@@ -95,41 +95,61 @@ type DetailViewProps = {
 
 /**
  * 본문 렌더링:
- *   - 문장 단위로 split → 각 문장을 중앙 정렬 단락으로 렌더 (가독성).
+ *   - SESSION 편지의 첫 단락(첫 \n\n 전)은 모하 대사로 간주 → 따옴표 + italic + 중앙 정렬
+ *     (할일탭 모하 대사와 동일한 스타일).
+ *   - 그 외 본문은 좌측 정렬 단락으로 렌더.
  *   - `[...]` 마커 → 대괄호 제거 + 굵게(font-extrabold) 강조.
- *   - 줄바꿈 \n도 단락 경계로 처리.
  */
-function renderLetterBody(body: string) {
-  // 1) \n으로 1차 단락 분리. 2) 각 단락을 . ! ? 뒤 공백 기준 문장 split.
-  const sentences = body
+function renderLetterBody(body: string, kind?: string) {
+  let phrase: string | null = null;
+  let rest = body;
+  if (kind === "SESSION") {
+    const idx = body.indexOf("\n\n");
+    if (idx > 0) {
+      phrase = body.slice(0, idx).trim();
+      rest = body.slice(idx + 2);
+    }
+  }
+
+  // 본문 후속 단락: \n 분리 → 문장 split.
+  const sentences = rest
     .split("\n")
     .flatMap((line) => line.split(/(?<=[.!?])\s+/))
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
-  return sentences.map((sentence, sIdx) => {
-    const parts = sentence.split(/(\[[^\]]+\])/g).filter((p) => p.length > 0);
-    return (
-      <p
-        key={sIdx}
-        className="mt-3 text-[14px] leading-[1.75] text-ink/85 first:mt-0"
-      >
-        {parts.map((part, pIdx) => {
-          if (part.startsWith("[") && part.endsWith("]")) {
-            return (
-              <strong
-                key={pIdx}
-                className="font-extrabold text-ink"
-              >
-                {part.slice(1, -1)}
-              </strong>
-            );
-          }
-          return <span key={pIdx}>{part}</span>;
-        })}
-      </p>
-    );
-  });
+  return (
+    <>
+      {phrase && (
+        <p className="mb-4 whitespace-pre-line text-center text-[14px] italic leading-[1.55] text-ink/75">
+          "{phrase}"
+        </p>
+      )}
+      {sentences.map((sentence, sIdx) => {
+        const parts = sentence.split(/(\[[^\]]+\])/g).filter((p) => p.length > 0);
+        return (
+          <p
+            key={sIdx}
+            className="mt-3 text-[14px] leading-[1.75] text-ink/85 first:mt-0"
+          >
+            {parts.map((part, pIdx) => {
+              if (part.startsWith("[") && part.endsWith("]")) {
+                return (
+                  <strong
+                    key={pIdx}
+                    className="font-extrabold text-ink"
+                  >
+                    {part.slice(1, -1)}
+                  </strong>
+                );
+              }
+              return <span key={pIdx}>{part}</span>;
+            })}
+          </p>
+        );
+      })}
+    </>
+  );
 }
 
 function DetailView({ letter, equipped, onBack }: DetailViewProps) {
@@ -168,7 +188,7 @@ function DetailView({ letter, equipped, onBack }: DetailViewProps) {
           />
         </div>
         {/* 본문 — 문장 단위 단락, 좌측 정렬, 대괄호 마커 굵게 */}
-        <div className="mt-4">{renderLetterBody(letter.body)}</div>
+        <div className="mt-4">{renderLetterBody(letter.body, letter.kind)}</div>
       </div>
     </div>
   );

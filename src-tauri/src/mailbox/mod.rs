@@ -108,20 +108,113 @@ fn compute_session_title_range(
     }
 }
 
+/// 점수 구간별 모하 멘트 후보. 사용자 피드백:
+/// - 세션 완료 시 PomodoroCard 모하 대사가 즉시 사라져 읽을 시간이 없음 → 편지 상단에 prepend.
+/// - Focus 중 노출되던 멘트(phrases.ts focusHigh/focusLow/focusBroken)를 그대로 mirror.
+const COMPLETE_PHRASES_HIGH: &[&str] = &[
+    ",, 반했심",
+    "너가 체고야",
+    "기여워죽겟슨",
+    "가끔 너가 너무 좋아서\n어쩔 줄 모르겠는 순간이 있어",
+    "사랑해",
+    "정말 고생많았어 크크",
+    "난 있잖아..\n너가 참 죠타,,",
+    "아 왜 이렇게\n플러팅하심~~,,",
+];
+const COMPLETE_PHRASES_MID: &[&str] = &[
+    "아 모하심~~",
+    "딴 짓한 거 다 봣슨!!",
+    "좀만 더 힘내서 해보아오",
+];
+const COMPLETE_PHRASES_LOW: &[&str] = &[
+    "아 진짜 모하심!!!!!!",
+    "도둑맞은 집중력 에바슨",
+    "칵시 그냥",
+];
+
+/// score 기반 멘트 1개 선택 (BR: 결정성 미요구, 시드는 호출 시점 nanos).
+///
+/// - 80점 이상: HIGH 버킷
+/// - 40~79점: MID 버킷
+/// - 0~39점: LOW 버킷
+fn pick_complete_phrase(score: u32, seed: u32) -> &'static str {
+    let bucket: &[&str] = if score >= 80 {
+        COMPLETE_PHRASES_HIGH
+    } else if score >= 40 {
+        COMPLETE_PHRASES_MID
+    } else {
+        COMPLETE_PHRASES_LOW
+    };
+    bucket[(seed as usize) % bucket.len()]
+}
+
 /// 세션 편지 본문 포맷 — 친근 구어체 + 핵심 수치 볼드 마커.
+///
+/// Phase 22+ 변경:
+/// - `score`: 평균값 → 종료시점 work+noise 값 (timer.rs Break→Complete 전환에서 인계).
+/// - `db`: 종료시점 db_ema 추가 (이전 하드코딩 0dB 버그 수정).
+/// - `todos_done == 0`: 격려 멘트 분기 (다음 세션에선 할 일 완료도 같이 눌러주도록 유도).
+/// - 새싹 표기 "+N개" → "N개 추가" 자연스러운 구어체.
+/// - 점수 구간별 모하 멘트를 본문 첫 줄에 prepend (피드백: 평시 복귀 직전 멘트 가독성 보강).
+/// - 태그 라인 멀티: "이번 세션에선 [장소]에서 [태그1], [태그2]을 했어!" 형식.
+///   - work_tag_labels 빈 경우: "할 일" 폴백
+///   - first_location_label None: "[장소]에서" 부분 제거
+///   - 둘 다 비면 태그 라인 자체 생략
 fn format_session_body(
     focus_mins: u32,
     score: u32,
+    db: f32,
     todos_done: usize,
     earned: u32,
-    session_tag: Option<&str>,
+    work_tag_labels: &[String],
+    first_location_label: Option<&str>,
+    phrase_seed: u32,
 ) -> String {
-    let intro = format!(
-        "오늘 [{}분] 동안 같이 집중 잘 했어!\n집중도는 평균 [{}점], 주변 소음은 [0dB]였고 할 일 [{}개]도 같이 끝냈네. 새싹 [+{}개] 챙겨가, 진짜 멋졌어!",
-        focus_mins, score, todos_done, earned
-    );
-    match session_tag {
-        Some(tag) => format!("{}\n오늘 한 작업은 [{}]였어.", intro, tag),
+    // dB 표시: raw dBFS(rms_to_db 반환값, 보통 음수)를 SPL로 변환.
+    // FocusStartButton/NoiseMeter와 동일 convention: db + 94 offset 후 [0, 120] 클램프.
+    // db == 0.0 (mic 미작동 / 측정 대기)이면 0 표시 유지.
+    let db_int = if db.is_finite() && db != 0.0 {
+        (db + 94.0).clamp(0.0, 120.0).round() as i32
+    } else {
+        0
+    };
+    let phrase = pick_complete_phrase(score, phrase_seed);
+    // phrase는 점수별 격려(헤더 역할), intro는 객관 정보 위주로 분담 — 중복 칭찬 회피.
+    let intro = if todos_done == 0 {
+        format!(
+            "{}\n\n[{}분] 집중에 [{}점] 받았어. 소음은 [{}dB]였고, 새싹 [{}개] 챙겨가~\n다음엔 할 일 완료도 같이 눌러주면 더 뿌듯할 거야!",
+            phrase, focus_mins, score, db_int, earned
+        )
+    } else {
+        format!(
+            "{}\n\n[{}분] 집중에 [{}점] 받았고, 소음 [{}dB] 환경에서 할 일 [{}개]도 끝냈어. 새싹 [{}개] 챙겨가~",
+            phrase, focus_mins, score, db_int, todos_done, earned
+        )
+    };
+    // 태그 라인: "이번 세션에선 [{loc}]에서 [{t1}], [{t2}]을 했어!"
+    // - work_tag_labels 비면 "할 일"로 폴백, 그래도 라인은 표시 (loc 있는 경우 한정).
+    // - first_location_label None이면 "[장소]에서" 제거.
+    // - 둘 다 비면 라인 자체 생략.
+    let tag_part = if work_tag_labels.is_empty() {
+        "할 일".to_string()
+    } else {
+        work_tag_labels
+            .iter()
+            .map(|t| format!("[{}]", t))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    // 한국어 조사 받침 문제(을/를) 회피: "을 했어!" → "했네. 고생해쓰!"로 통일 (캐주얼 톤).
+    let tag_line = match (work_tag_labels.is_empty(), first_location_label) {
+        (true, None) => None,
+        (false, None) => Some(format!("이번 세션에선 {} 했네. 고생해쓰!", tag_part)),
+        (_, Some(loc)) => Some(format!(
+            "이번 세션에선 [{}]에서 {} 했네. 고생해쓰!",
+            loc, tag_part
+        )),
+    };
+    match tag_line {
+        Some(line) => format!("{}\n\n{}", intro, line),
         None => intro,
     }
 }
@@ -143,25 +236,51 @@ pub fn record_session_letter<R: Runtime>(
     end_ms: u64,
     start_ms: u64,
     score: u32,
+    db: f32,
     focus_mins: u32,
     todos_done: usize,
     session_tag: Option<&str>,
+    work_tag_ids: &[String],
+    first_location_id: Option<&str>,
 ) {
     let now = Local::now();
     // BR-3: id는 on_complete_consumed의 end_ms 기반 — session_log id와 시각 기준 동일.
     let id = format!("ml-{}", end_ms);
 
-    // 편지 제목: "{HH:MM}~{HH:MM} 집중 완료" (FR-5).
+    // 편지 제목: "{M월 D일} {HH:MM}~{HH:MM} 집중 완료" — 사용자 피드백: 날짜 포함으로 정확성 강화.
     let (title_start, title_end) = compute_session_title_range(now, start_ms, focus_mins);
     let title = format!(
-        "{}~{} 집중 완료",
+        "{} {}~{} 집중 완료",
+        title_start.format("%-m월 %-d일"),
         title_start.format("%H:%M"),
         title_end.format("%H:%M")
     );
 
     // 🌱 보상 계산 (economy FR-14 임계값 동일).
     let earned = crate::economy::reward::compute_session_reward(score);
-    let body = format_session_body(focus_mins, score, todos_done, earned, session_tag);
+    // Phase 22+: 편지용 multi-tag/first-loc 라벨 해석 (사용자 피드백).
+    // - work_tag_ids: 등장 순서 보존 + 중복 제거 + None 제외된 ID 목록 (timer.rs에서 산출).
+    // - first_location_id: 첫 번째 할 일의 위치 ID.
+    let work_tag_labels: Vec<String> = work_tag_ids
+        .iter()
+        .filter_map(|id| crate::storage::read_work_tag_label(app, id))
+        .collect();
+    let first_location_label = first_location_id
+        .and_then(|id| crate::storage::read_location_label(app, id));
+    // phrase 시드: 현재 시각 nanos. 결정성이 필요한 테스트는 format_session_body 직접 호출.
+    let phrase_seed = now.timestamp_subsec_nanos();
+    let body = format_session_body(
+        focus_mins,
+        score,
+        db,
+        todos_done,
+        earned,
+        &work_tag_labels,
+        first_location_label.as_deref(),
+        phrase_seed,
+    );
+    // Letter.session_tag 필드는 기존 dominant 단일 tag ID 유지 (storage/insight 호환).
+    let _ = session_tag; // 보존을 위해 변수만 유지.
 
     let letter = Letter {
         id,
@@ -367,35 +486,68 @@ mod tests {
     use chrono::{Local, TimeZone};
 
     #[test]
-    fn format_session_body_with_tag() {
-        let body = format_session_body(25, 80, 3, 5, Some("study"));
+    fn format_session_body_with_tags_and_location() {
+        // raw dB -49 + 94 offset = 45dB SPL. 작업 태그 2개 + 위치 1개.
+        let tags = vec!["공부".to_string(), "개발".to_string()];
+        let body = format_session_body(25, 80, -49.0, 3, 5, &tags, Some("집"), 0);
         assert!(body.contains("[25분]"));
         assert!(body.contains("[80점]"));
         assert!(body.contains("[3개]"));
-        assert!(body.contains("[+5개]"));
+        assert!(body.contains("[5개]"));
+        assert!(body.contains("[45dB]"));
         assert!(
-            body.ends_with("오늘 한 작업은 [study]였어."),
-            "tag line should be appended at end, got: {body}"
+            body.ends_with("이번 세션에선 [집]에서 [공부], [개발] 했네. 고생해쓰!"),
+            "tag line should list all tags with location, got: {body}"
         );
     }
 
     #[test]
-    fn format_session_body_no_tag() {
-        let body = format_session_body(25, 80, 3, 5, None);
-        assert!(body.contains("[+5개]"));
+    fn format_session_body_no_tag_no_location() {
+        let body = format_session_body(25, 80, 50.0, 3, 5, &[], None, 0);
+        assert!(body.contains("[5개]"));
         assert!(
-            !body.contains("오늘 한 작업은"),
-            "no tag line when session_tag is None, got: {body}"
+            !body.contains("이번 세션에선"),
+            "no tag line when both tags and location are empty, got: {body}"
         );
     }
 
     #[test]
-    fn format_session_body_zero_todos() {
-        let body = format_session_body(50, 70, 0, 5, None);
+    fn format_session_body_tag_no_location() {
+        let tags = vec!["공부".to_string()];
+        let body = format_session_body(25, 80, -49.0, 3, 5, &tags, None, 0);
         assert!(
-            body.contains("[0개]"),
-            "body should contain '[0개]' for zero todos, got: {body}"
+            body.ends_with("이번 세션에선 [공부] 했네. 고생해쓰!"),
+            "tag-only line without location, got: {body}"
         );
+    }
+
+    #[test]
+    fn format_session_body_location_no_tag_uses_fallback() {
+        // 위치만 있고 작업 태그 없으면 "할 일" 폴백.
+        let body = format_session_body(25, 80, -49.0, 3, 5, &[], Some("카페"), 0);
+        assert!(
+            body.ends_with("이번 세션에선 [카페]에서 할 일 했네. 고생해쓰!"),
+            "location with fallback tag part, got: {body}"
+        );
+    }
+
+    #[test]
+    fn format_session_body_zero_todos_uses_encouragement_branch() {
+        // todos_done == 0이면 격려 분기: "다음엔 할 일 완료도..." 멘트.
+        let body = format_session_body(50, 70, 60.0, 0, 5, &[], None, 0);
+        assert!(
+            body.contains("다음엔 할 일 완료도"),
+            "zero-todos branch should include encouragement, got: {body}"
+        );
+    }
+
+    #[test]
+    fn format_session_body_db_zero_when_invalid() {
+        // NaN / 음수 / 0 입력 시 0dB 표시.
+        let body_nan = format_session_body(25, 80, f32::NAN, 1, 5, &[], None, 0);
+        assert!(body_nan.contains("[0dB]"));
+        let body_neg = format_session_body(25, 80, -200.0, 1, 5, &[], None, 0);
+        assert!(body_neg.contains("[0dB]"));
     }
 
     #[test]

@@ -163,27 +163,55 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         }
 
         // 2) 기존 work/noise/state/grace 산출.
+        //
+        // Break phase 점수 freeze (Phase 22+): cur_phase가 Break면 EMA 갱신 및 raw 산출을 모두
+        // 스킵하고 BREAK_SNAPSHOT에 저장된 Focus 종료 시점 값을 그대로 사용한다.
+        // 예외: Focus→Break 전이 tick에서는 cur_phase가 아직 Focus이므로 live 산출 → 후속에서 snapshot 저장.
+        let cur_phase_pre = current_phase();
         let idle = if AX_GRANTED.load(Relaxed) {
             seconds_idle()
         } else {
             0
         };
-        let db = if MIC_GRANTED.load(Relaxed) {
-            load_db_ema()
-        } else {
-            0.0
-        };
 
-        // Issue #25: raw work_score는 step function이라 입력 정지/재개 시 점수가 급변한다.
-        // EMA(tau≈30s)로 평활하여 부드럽게 수렴하도록 한다. grace_from은 work=0 정확 판정이
-        // 필요하므로 raw 값을 그대로 전달 (Gone 상태 판정 정확성 유지).
-        let work_raw = work_score(idle);
-        let work_smoothed = update_work_ema(work_raw);
-        let work = work_smoothed.round().clamp(0.0, 80.0) as u8;
-        let noise = noise_score(db);
-        let total = work.saturating_add(noise); // BR-9: 0..=100. saturating_add로 u8 overflow 방어.
-        let live = state_from_total(total);
-        let grace = grace_from(idle, work_raw);
+        let (work_raw, work, noise, db, total, live, grace) =
+            if cur_phase_pre == Phase::Break {
+                if let Some((w, n, t, snap_db, g, l)) =
+                    crate::score::shared::load_break_snapshot()
+                {
+                    // grace_from은 work_raw 기준 계산이지만, Break 중엔 snapshot grace를 그대로 노출.
+                    // work_raw는 emit 페이로드에 포함되지 않으므로 0으로 placeholder.
+                    (0u8, w, n, snap_db, t, l, g)
+                } else {
+                    // Snapshot 무효 (이론상 도달 불가) → live 산출 폴백.
+                    let db_live = if MIC_GRANTED.load(Relaxed) {
+                        load_db_ema()
+                    } else {
+                        0.0
+                    };
+                    let raw = work_score(idle);
+                    let smoothed = update_work_ema(raw);
+                    let w = smoothed.round().clamp(0.0, 80.0) as u8;
+                    let n = noise_score(db_live);
+                    let t = w.saturating_add(n);
+                    (raw, w, n, db_live, t, state_from_total(t), grace_from(idle, raw))
+                }
+            } else {
+                let db_live = if MIC_GRANTED.load(Relaxed) {
+                    load_db_ema()
+                } else {
+                    0.0
+                };
+                // Issue #25: raw work_score는 step function이라 입력 정지/재개 시 점수가 급변한다.
+                // EMA로 평활하여 부드럽게 수렴 (Phase 22+ 비대칭: 회복 tau=90s, 차감 tau=30s).
+                // grace_from은 work=0 정확 판정이 필요하므로 raw 값을 그대로 전달.
+                let raw = work_score(idle);
+                let smoothed = update_work_ema(raw);
+                let w = smoothed.round().clamp(0.0, 80.0) as u8;
+                let n = noise_score(db_live);
+                let t = w.saturating_add(n);
+                (raw, w, n, db_live, t, state_from_total(t), grace_from(idle, raw))
+            };
 
         // Phase 8 R-G2: Focus tick 세션 평균 누적은 phase transition 이후에 수행하여
         // wake tick에서 전이가 발생한 경우를 제외한다 (아래 phase 분기 후 phase_at_emit 조건 확인).
@@ -191,7 +219,7 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         // 3) phase 분기 (FR-4a/4b, AC-3 Complete 1-tick).
         let phase_at_emit;
         let time_left_for_emit;
-        let cur_phase = current_phase();
+        let cur_phase = cur_phase_pre;
         match cur_phase {
             Phase::Focus | Phase::Break => {
                 let cur = time_left_secs();
@@ -203,7 +231,17 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
                     } else {
                         Phase::Complete
                     };
+                    // Focus→Break 전이: 현재 live 값을 freeze 스냅샷에 저장 (Break 동안 그대로 emit).
+                    if cur_phase == Phase::Focus && to == Phase::Break {
+                        crate::score::shared::store_break_snapshot(
+                            work, noise, total, db, grace, live,
+                        );
+                    }
                     timer::on_phase_transition(&app, cur_phase, to);
+                    // Break→Complete 전이: snapshot 무효화 (Complete tick부터 live 산출).
+                    if cur_phase == Phase::Break && to == Phase::Complete {
+                        crate::score::shared::clear_break_snapshot();
+                    }
                     phase_at_emit = to;
                     time_left_for_emit = time_left_secs();
                 } else {

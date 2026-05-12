@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { ItemOverlay } from "./ItemOverlay";
+import { ScoreHelpModal } from "./ScoreHelpModal";
 import type { PotatoState } from "../../lib/phrases";
 import type { Inventory } from "../../lib/storage";
 
@@ -54,6 +56,7 @@ export function PomodoroCard({
   onTimerClick,
 }: PomodoroCardProps) {
   const isComplete = phase === "complete";
+  const [showScoreHelp, setShowScoreHelp] = useState(false);
 
   const inactive = db === 0;
   const dbSpl = inactive ? 0 : Math.max(0, Math.min(120, db + 94));
@@ -92,6 +95,14 @@ export function PomodoroCard({
                 {Math.max(0, Math.min(100, Math.round(total)))}
               </span>
               <span className="text-[10px] font-bold text-ink/55">/ 100</span>
+              <button
+                type="button"
+                onClick={() => setShowScoreHelp(true)}
+                aria-label="점수 산출 방식 보기"
+                className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-ink/30 bg-paperWarm text-[9px] font-extrabold text-ink/55 hover:bg-ink/10 hover:text-ink"
+              >
+                ?
+              </button>
             </div>
             <span
               className="inline-flex items-center gap-1 text-[11px] font-bold"
@@ -132,6 +143,7 @@ export function PomodoroCard({
           </button>
         </div>
       </div>
+      <ScoreHelpModal open={showScoreHelp} onClose={() => setShowScoreHelp(false)} />
     </div>
   );
 }

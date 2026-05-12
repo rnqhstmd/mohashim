@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ContributionGraph } from "./ContributionGraph";
 import { SharePreviewModal } from "./SharePreviewModal";
 import { DayDetailPanel } from "./DayDetailPanel";
+import { GrassHelpModal } from "./GrassHelpModal";
 import { getMonthSessions, GRASS_COLORS, type MonthData } from "../../lib/grass";
 
 /**
@@ -21,6 +22,7 @@ export function GrassTab() {
   const [data, setData] = useState<MonthData | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const interactionAreaRef = useRef<HTMLDivElement>(null);
   const minOffset = useMemo(() => -new Date().getMonth(), []);
@@ -87,13 +89,21 @@ export function GrassTab() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* 안내 텍스트 — 가독성 위해 줄바꿈 명시, 더 굵고 큰 폰트 */}
+      {/* 안내 텍스트 + ? 버튼 — 상세 정책은 GrassHelpModal로 분리 (점수 ? 버튼과 동일 UX). */}
       <div className="border-b border-ink/10 px-3 py-2.5">
-        <p className="text-[12px] font-semibold leading-[1.55] text-ink/80">
-          세션 완료·할 일 체크 시 잔디가 자라고, 활동이 많을수록 색이 진해져요.
-          <br />
-          셀을 누르면 그 날의 상세를 볼 수 있어요.
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="flex-1 text-[12px] font-semibold leading-[1.55] text-ink/80">
+            세션 완료·할 일 체크 시 잔디가 자라고, 활동이 많을수록 색이 진해져요. 셀을 누르면 그 날의 상세를 볼 수 있어요.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            aria-label="잔디 색 산출 정책 보기"
+            className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ink/30 bg-paperWarm text-[9px] font-extrabold text-ink/55 hover:bg-ink/10 hover:text-ink"
+          >
+            ?
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-2">
@@ -151,6 +161,7 @@ export function GrassTab() {
           onClose={() => setShowPreview(false)}
         />
       )}
+      <GrassHelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   );
 }

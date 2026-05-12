@@ -4,7 +4,7 @@
  * 잔디 시각화에 필요한 상수/타입/순수 함수 및 공유 카드 합성 파이프라인을 제공한다.
  */
 import type { SessionRecord } from "./storage";
-import { getSessions } from "./storage";
+import { getSessions, getSessionLogs } from "./storage";
 
 // ---------- 상수 ----------
 
@@ -47,36 +47,41 @@ export type MonthData = {
 // ---------- 순수 함수 ----------
 
 /**
- * BR-G1 (Phase 12 개정): 세션 수, 평균 점수, todo 완료 수로부터 잔디 레벨 산출.
+ * Phase 22+ 갱신: 총 집중 시간 + 할 일 완료 수 + 평균 점수 보너스로 레벨 산출.
  *
- * ANALYSIS.md §10-1 표 적용. 주요 변경:
- * - sessions=0이어도 todo 완료가 있으면 레벨 1~2 부여 (BR-1: 최대 레벨 2까지).
- * - sessions 1~2도 todos≥3이면 레벨 2 보장 (PR #13 리뷰: sessions=0/todos=3 → 2 vs
- *   sessions=1/todos=3 → 1 역전 방지. todos에 대한 단조 비감소 보장).
- * - sessions≥6은 점수 미달이어도 최소 레벨 3 보장 (H-5 역전 방지).
+ * 사용자 피드백: 25분×6 vs 50분×3가 시간 동일한데 레벨이 다른 형평성 문제 → 시간 베이스로 통일.
+ * "타이머만 / 할 일만 / 둘 다" 세 사용 패턴 모두 공정 평가하도록 통합 가중치 모델 적용.
  *
- * `todos` 인자는 default 0 — 기존 호출자(레거시) 호환.
+ * 공식:
+ * ```
+ * points = focusMins/30 + todos/2 + (avg >= 80 ? 0.25 : 0)
+ * ```
+ *
+ * 레벨 임계값:
+ * - 활동 없음 (sessions=0, todos=0) → 0
+ * - points 3.5+ → 4 (예: 2시간 집중만, todo 8개만, 1시간+todo 3+평균 85점)
+ * - points 2.5~3.5 → 3
+ * - points 1.5~2.5 → 2
+ * - points 0~1.5 (활동 있음) → 1
+ *
+ * `focusMins`는 그 날의 모든 세션 duration_mins 합계.
+ * `todos`/`focusMins` default 0 — 기존 레거시 호환.
  */
 export function gridLevel(
   sessions: number,
   avg: number,
-  todos: number = 0
+  todos: number = 0,
+  focusMins: number = 0,
 ): GrassLevel {
-  // sessions=0 분기: todo 기반. BR-1 — todo만으로 도달 가능한 최대 레벨은 2.
-  if (sessions === 0) {
-    if (todos >= 3) return 2;
-    if (todos >= 1) return 1;
-    return 0;
-  }
-  // sessions 1~2: 기본 레벨 1, todos≥3이면 2 보장 (todos 단조 비감소, PR #13 리뷰).
-  if (sessions <= 2) {
-    if (todos >= 3) return 2;
-    return 1;
-  }
-  // sessions ≥ 6: H-5 역전 방지 — 점수 낮아도 최소 3 보장.
-  if (sessions >= 6) return avg >= 70 ? 4 : 3;
-  // sessions 3~5.
-  return avg >= 60 ? 3 : 2;
+  if (sessions === 0 && todos === 0) return 0;
+  const timePoints = focusMins / 30;
+  const todoPoints = todos / 2;
+  const scoreBonus = avg >= 80 ? 0.25 : 0;
+  const total = timePoints + todoPoints + scoreBonus;
+  if (total >= 3.5) return 4;
+  if (total >= 2.5) return 3;
+  if (total >= 1.5) return 2;
+  return 1;
 }
 
 /** BR-G4: 로컬 시간대 기준 'YYYY-MM-DD' 포맷. UTC 사용 금지. */
@@ -154,7 +159,13 @@ export async function getMonthSessions(monthOffset: number): Promise<MonthData> 
   const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
   const todayStr = formatDate(now);
 
-  const sessions = await getSessions();
+  // Phase 22+ 잔디 레벨 산출에 그 날 총 집중 시간(duration_mins 합)이 필요.
+  // SessionLog를 함께 로드해 날짜별 합산 맵 생성.
+  const [sessions, sessionLogs] = await Promise.all([getSessions(), getSessionLogs()]);
+  const focusMinsByDate: Record<string, number> = {};
+  for (const log of sessionLogs) {
+    focusMinsByDate[log.date] = (focusMinsByDate[log.date] ?? 0) + (log.duration_mins ?? 0);
+  }
 
   const cells: DayCell[] = [];
   // leading blank
@@ -173,12 +184,13 @@ export async function getMonthSessions(monthOffset: number): Promise<MonthData> 
     const a = rec?.avg ?? 0;
     // FR-6: todos_completed 미존재 레거시 레코드는 0 폴백.
     const t = rec?.todos_completed ?? 0;
+    const fm = focusMinsByDate[dateStr] ?? 0;
     cells.push({
       date: dateStr,
       sessions: s,
       avg: a,
       todos: t,
-      level: isFuture ? 0 : gridLevel(s, a, t),
+      level: isFuture ? 0 : gridLevel(s, a, t, fm),
       isFuture,
     });
     if (!isFuture) {

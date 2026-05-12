@@ -3,12 +3,10 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{
     image::Image,
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
 };
-use tauri_plugin_autostart::ManagerExt;
-
 use crate::score::phase::{LiveState, Phase};
 
 static ICON_CACHE: OnceLock<HashMap<LiveState, Image<'static>>> = OnceLock::new();
@@ -83,16 +81,6 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "모하 열기", true, None::<&str>)?;
     let separator_top = PredefinedMenuItem::separator(app)?;
 
-    let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
-    let autostart_item = CheckMenuItem::with_id(
-        app,
-        "autostart",
-        "자동 시작",
-        true,
-        autostart_enabled,
-        None::<&str>,
-    )?;
-
     #[cfg(target_os = "windows")]
     let pin_guide_item = MenuItem::with_id(
         app,
@@ -105,13 +93,13 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let separator_bottom = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
+    // 자동 시작 메뉴 항목 제거 — 설정 화면의 자동 시작 토글로 일원화 (사용자 피드백).
     #[cfg(target_os = "windows")]
     let menu = Menu::with_items(
         app,
         &[
             &open_item,
             &separator_top,
-            &autostart_item,
             &pin_guide_item,
             &separator_bottom,
             &quit_item,
@@ -120,17 +108,8 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     #[cfg(not(target_os = "windows"))]
     let menu = Menu::with_items(
         app,
-        &[
-            &open_item,
-            &separator_top,
-            &autostart_item,
-            &separator_bottom,
-            &quit_item,
-        ],
+        &[&open_item, &separator_top, &separator_bottom, &quit_item],
     )?;
-
-    // 핸들러에서 set_checked로 즉시 갱신하기 위해 Clone된 핸들 캡처.
-    let autostart_item_for_handler = autostart_item.clone();
 
     // FR-1/BR-2/AC-4: TrayIconBuilder 빌드 시점에 초기 아이콘 설정.
     // `.icon()`을 체이닝하지 않으면 score 첫 tick에서 apply_icon이 호출될 때까지
@@ -173,26 +152,7 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                     show_at_tray_position(app, &win);
                 }
             }
-            "autostart" => {
-                let manager = app.autolaunch();
-                let new_state = !manager.is_enabled().unwrap_or(false);
-                let result = if new_state {
-                    manager.enable()
-                } else {
-                    manager.disable()
-                };
-                match result {
-                    Ok(()) => {
-                        if let Err(e) = autostart_item_for_handler.set_checked(new_state) {
-                            eprintln!("[mohashim] tray autostart set_checked failed: {e}");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[mohashim] tray autostart toggle failed: {e}");
-                        // 실패 시 체크 상태는 변경하지 않는다 — 다음 클릭 때 재시도.
-                    }
-                }
-            }
+            // "autostart" 메뉴 항목 제거됨 — 설정 화면 자동 시작 토글로 일원화.
             #[cfg(target_os = "windows")]
             "pin_guide" => {
                 // 모달은 메인 팝업 내부에 렌더되므로 팝업이 hide 상태였다면 함께 노출.

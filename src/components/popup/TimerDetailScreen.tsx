@@ -87,7 +87,8 @@ export function TimerDetailScreen({
       : 0;
   // dashOffset: progress=1(시작) → 0, progress=0(완료) → RING_C (꽉 빈 원호).
   const dashOffset = RING_C * (1 - progress);
-  const ringColor = phase === "focus" ? "#dc4646" : "#d68a6a";
+  // 휴식 중 링 색상은 chipBreak(#7cc47a, 연두)과 통일.
+  const ringColor = phase === "focus" ? "#dc4646" : "#7cc47a";
 
   return (
     <div className="relative z-10 flex h-full flex-col">
