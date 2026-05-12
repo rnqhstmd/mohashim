@@ -151,18 +151,19 @@ fn pick_complete_phrase(score: u32, seed: u32) -> &'static str {
 /// 점수 구간별 칭찬 라인 1개 선택 — 객관 수치 직전에 삽입되어 사용자 피드백 강화.
 ///
 /// 캐릭터 헤더(`pick_complete_phrase`)와 역할 분담: 헤더는 친근체 인사,
-/// 본 함수는 점수 성취도에 비례한 직접적인 칭찬/격려.
+/// 본 함수는 점수 성취도에 비례한 장난기+따듯함 톤의 칭찬/위로.
+/// 기존 모하심 톤(친근 구어·오타 허용·캐릭터스러움)에 맞춰 작성.
 fn pick_praise_line(score: u32) -> &'static str {
     if score >= 90 {
-        "와, 완벽한 집중이었어! ✨ 진짜 너무 잘했어 👏"
+        "와... 너무 잘해버린 거 아냐?? 모하심 감동했슴 😭✨"
     } else if score >= 75 {
-        "이 정도면 박수받을 만해! 👏 진짜 멋져"
+        "오 잘했어잘했어!! 박수받아 마땅함 👏 짝짝짝"
     } else if score >= 50 {
-        "꾸준히 잘하고 있어, 멋져 👍"
+        "오~ 나쁘지 않은데? 이 페이스 좋아좋아 ㅎㅎ"
     } else if score >= 25 {
-        "끝까지 함께해줘서 고마워 💚"
+        "그래도 끝까지 함께해줘서 고마웡 🥲💛 기특해"
     } else {
-        "그래도 시작이 반이야~ 다음엔 더 가볍게 가보자 🌱"
+        "에이 이런 날도 있는 거얌~ 가볍게 가보자구 ㅎㅎ"
     }
 }
 
@@ -562,10 +563,10 @@ mod tests {
 
     #[test]
     fn format_session_body_high_score_includes_perfect_praise() {
-        // 90점 이상은 완벽 칭찬 라인 포함.
+        // 90점 이상은 강한 칭찬 라인 포함.
         let body = format_session_body(25, 100, -56.0, 0, 5, &[], None, 0);
         assert!(
-            body.contains("완벽한 집중이었어"),
+            body.contains("감동했슴"),
             "high score (>=90) should include perfect praise, got: {body}"
         );
     }
@@ -575,7 +576,7 @@ mod tests {
         // 25점 미만은 위로 라인 포함.
         let body = format_session_body(25, 10, -56.0, 1, 1, &[], None, 0);
         assert!(
-            body.contains("시작이 반이야"),
+            body.contains("이런 날도"),
             "low score (<25) should include consolation, got: {body}"
         );
     }
