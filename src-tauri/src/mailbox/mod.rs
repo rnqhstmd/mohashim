@@ -155,15 +155,15 @@ fn pick_complete_phrase(score: u32, seed: u32) -> &'static str {
 /// 기존 모하심 톤(친근 구어·오타 허용·캐릭터스러움)에 맞춰 작성.
 fn pick_praise_line(score: u32) -> &'static str {
     if score >= 90 {
-        "와... 너무 잘해버린 거 아냐?? 모하심 감동했슴 😭✨"
+        "왁 완전 열심히 했네!! 크크"
     } else if score >= 75 {
-        "오 잘했어잘했어!! 박수받아 마땅함 👏 짝짝짝"
+        "키키 완전 고생했네"
     } else if score >= 50 {
-        "오~ 나쁘지 않은데? 이 페이스 좋아좋아 ㅎㅎ"
+        "이정도면 나쁘지 않움 크크"
     } else if score >= 25 {
-        "그래도 끝까지 함께해줘서 고마웡 🥲💛 기특해"
+        "ㅋㅋㅋㅋㅋㅋ아놔 점수 모심 근데 한 번 봐줄게~"
     } else {
-        "에이 이런 날도 있는 거얌~ 가볍게 가보자구 ㅎㅎ"
+        "아 징자 이건 못 참겠다 전화 한 번 해야겠다.."
     }
 }
 
@@ -566,7 +566,7 @@ mod tests {
         // 90점 이상은 강한 칭찬 라인 포함.
         let body = format_session_body(25, 100, -56.0, 0, 5, &[], None, 0);
         assert!(
-            body.contains("감동했슴"),
+            body.contains("열심히 했네"),
             "high score (>=90) should include perfect praise, got: {body}"
         );
     }
@@ -576,7 +576,7 @@ mod tests {
         // 25점 미만은 위로 라인 포함.
         let body = format_session_body(25, 10, -56.0, 1, 1, &[], None, 0);
         assert!(
-            body.contains("이런 날도"),
+            body.contains("전화 한 번"),
             "low score (<25) should include consolation, got: {body}"
         );
     }
