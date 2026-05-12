@@ -118,8 +118,32 @@ function SlotTabs({
 }
 
 // =====================================================================
-// 카드
+// 카드 — 아이템 아이콘 (슬롯별 viewBox 크롭으로 카드 정 중앙 정렬)
 // =====================================================================
+
+/**
+ * 원본 SVG는 캐릭터(200×200) 위에 오버레이되도록 좌표가 슬롯별 영역(face/head/back)에
+ * 배치돼 있다. 단독 표시 시 그대로 렌더하면 위치가 어긋나므로, 슬롯별 viewBox 크롭으로
+ * 가시 영역만 추출해 카드 정 중앙에 배치한다.
+ */
+function CenteredItemIcon({ slot, src, alt }: { slot: Slot; src: string; alt: string }) {
+  const viewBox = {
+    face: "50 88 100 52", // 안경: 얼굴 중앙(y≈110)
+    head: "50 18 100 60", // 모자: 머리 위(y≈45)
+    back: "50 125 100 65", // 목도리: 등/목(y≈160)
+  }[slot];
+  return (
+    <svg
+      viewBox={viewBox}
+      className="h-14 w-14"
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label={alt}
+    >
+      <image href={src} x="0" y="0" width="200" height="200" />
+    </svg>
+  );
+}
 
 type ItemCardProps = {
   item: ShopItem;
@@ -169,17 +193,13 @@ function ItemCard({
           ✓
         </span>
       )}
-      <img
-        src={item.svgPath}
-        alt={item.nameKo}
-        className="h-12 w-12"
-      />
+      <CenteredItemIcon slot={item.slot} src={item.svgPath} alt={item.nameKo} />
       <span className="text-center text-[10px] font-semibold text-ink">
         {item.nameKo}
       </span>
       <span className="text-[10px] text-deep/70">🌱 {item.price}</span>
 
-      {/* 액션 버튼 */}
+      {/* 액션 버튼 — 색상 구분: 구매=amber(주의), 장착=emerald(확정), 해제=회색(취소) */}
       {!isOwned && !isEquipped && (
         <button
           type="button"
@@ -192,7 +212,7 @@ function ItemCard({
           className={
             isInsufficient
               ? "mt-1 rounded-md bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink/40"
-              : "mt-1 rounded-md bg-deep px-2 py-0.5 text-[10px] font-bold text-white"
+              : "mt-1 rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-amber-600"
           }
         >
           구매
@@ -205,7 +225,7 @@ function ItemCard({
             e.stopPropagation();
             onEquip();
           }}
-          className="mt-1 rounded-md bg-deepNavy px-2 py-0.5 text-[10px] font-bold text-white"
+          className="mt-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700"
         >
           장착
         </button>
@@ -217,7 +237,7 @@ function ItemCard({
             e.stopPropagation();
             onUnequip();
           }}
-          className="mt-1 rounded-md bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink/65"
+          className="mt-1 rounded-md bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink/65 hover:bg-ink/15"
         >
           해제
         </button>

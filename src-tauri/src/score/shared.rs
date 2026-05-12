@@ -1,8 +1,11 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering::Relaxed};
+use std::sync::atomic::{
+    AtomicBool, AtomicU32, AtomicU64, AtomicU8,
+    Ordering::{Acquire, Relaxed, Release},
+};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::score::phase::Phase;
+use crate::score::phase::{GraceState, LiveState, Phase};
 
 /// 앱 부트 기준 시각 (Q10). now_ms 계산 기준점.
 pub static START_AT: OnceLock<Instant> = OnceLock::new();
@@ -13,6 +16,27 @@ pub static LAST_INPUT_AT_MS: AtomicU64 = AtomicU64::new(0);
 /// 최신 EMA 근사값 (f32 bits). audio cb가 store, score tick이 load.
 /// Relaxed ordering으로 일시적 staleness 허용 — 1Hz tick 해상도에서 무관.
 pub static DB_EMA_BITS: AtomicU32 = AtomicU32::new(0);
+
+/// Issue #25: 작업 점수 EMA 평활값 (f32 bits).
+///
+/// `work_score(idle)`는 step function이라 idle 경계에서 점수가 급변한다 — 사용자가
+/// 입력을 멈추면 빠르게 0으로 떨어지고, 재개하면 80으로 즉시 복귀해 체감이 거칠다.
+/// tick_loop가 매 1Hz에 raw 값을 EMA로 평활하여 천천히 수렴하도록 한다.
+///
+/// **비대칭 정책 (Phase 22+ 사용자 피드백)**: 차감은 빠르게(tau=30s), 회복은 느리게(tau=90s).
+/// "잃기 쉽고 회복은 어려운" 페널티 체감을 강화한다.
+/// - alpha_decay = 1 - exp(-1/30) ≈ 0.0328 (raw < prev: 30초당 ~63% 차감)
+/// - alpha_recover = 1 - exp(-1/90) ≈ 0.0111 (raw > prev: 90초당 ~63% 회복)
+///
+/// 초기값: 0x42a00000 = f32 80.0 bits (grace period 기본 점수와 일치 — 부팅 직후 0으로
+/// 시작해 30초간 점차 올라가며 misleading한 "산만" 표시되는 회귀를 방지).
+pub static WORK_SCORE_EMA_BITS: AtomicU32 = AtomicU32::new(0x42a00000);
+
+/// EMA 차감 계수 (raw < prev). tau=30s — 입력 멈추면 빠르게 떨어진다.
+pub const WORK_EMA_ALPHA_DECAY: f32 = 0.0328;
+
+/// EMA 회복 계수 (raw > prev). tau=90s — 입력 재개해도 천천히 회복.
+pub const WORK_EMA_ALPHA_RECOVER: f32 = 0.0111;
 
 /// 권한 게이팅 캐시 (start 시 1회 기록).
 pub static MIC_GRANTED: AtomicBool = AtomicBool::new(false);
@@ -118,6 +142,122 @@ pub fn load_db_ema() -> f32 {
     f32::from_bits(DB_EMA_BITS.load(Relaxed))
 }
 
+/// Issue #25: work_score EMA 평활값 atomic 로드.
+pub fn load_work_ema() -> f32 {
+    f32::from_bits(WORK_SCORE_EMA_BITS.load(Relaxed))
+}
+
+/// Issue #25: work_score EMA 평활값 atomic 저장.
+pub fn store_work_ema(v: f32) {
+    WORK_SCORE_EMA_BITS.store(v.to_bits(), Relaxed);
+}
+
+/// Issue #25: raw work_score를 EMA로 평활하여 갱신·반환 (순수 함수 아님 — atomic mutation).
+///
+/// next = alpha * raw + (1 - alpha) * prev
+/// **비대칭**: raw > prev(회복)는 ALPHA_RECOVER(tau=90s), raw <= prev(차감/유지)는 ALPHA_DECAY(tau=30s).
+/// raw == prev에서는 alpha 선택이 결과에 영향을 주지 않으므로 DECAY 분기로 묶는다.
+pub fn update_work_ema(raw: u8) -> f32 {
+    let prev = load_work_ema();
+    let raw_f = raw as f32;
+    let alpha = if raw_f > prev {
+        WORK_EMA_ALPHA_RECOVER
+    } else {
+        WORK_EMA_ALPHA_DECAY
+    };
+    let next = alpha * raw_f + (1.0 - alpha) * prev;
+    store_work_ema(next);
+    next
+}
+
+// ---------- Break phase 점수 freeze (Phase 22+) ----------
+//
+// 사용자 피드백: "휴식 중엔 점수가 변경되면 안 되지" — Break 진입 시 work/noise/total/db/grace/live를
+// 스냅샷으로 보관하고, Break 진행 중 매 tick은 이 스냅샷을 그대로 emit한다.
+// EMA 갱신도 Break 동안엔 스킵 → Focus 재개 시 직전 EMA 값에서 이어진다.
+
+pub static BREAK_SNAPSHOT_VALID: AtomicBool = AtomicBool::new(false);
+pub static BREAK_SNAPSHOT_WORK: AtomicU8 = AtomicU8::new(0);
+pub static BREAK_SNAPSHOT_NOISE: AtomicU8 = AtomicU8::new(0);
+pub static BREAK_SNAPSHOT_TOTAL: AtomicU8 = AtomicU8::new(0);
+pub static BREAK_SNAPSHOT_DB_BITS: AtomicU32 = AtomicU32::new(0);
+pub static BREAK_SNAPSHOT_GRACE: AtomicU8 = AtomicU8::new(0);
+pub static BREAK_SNAPSHOT_LIVE: AtomicU8 = AtomicU8::new(0);
+
+fn grace_to_u8(g: GraceState) -> u8 {
+    match g {
+        GraceState::Active => 0,
+        GraceState::Looking => 1,
+        GraceState::Gone => 2,
+    }
+}
+
+fn grace_from_u8(v: u8) -> GraceState {
+    match v {
+        1 => GraceState::Looking,
+        2 => GraceState::Gone,
+        _ => GraceState::Active,
+    }
+}
+
+fn live_to_u8(s: LiveState) -> u8 {
+    match s {
+        LiveState::Focused => 0,
+        LiveState::Calm => 1,
+        LiveState::Distracted => 2,
+        LiveState::Covering => 3,
+        LiveState::Stressed => 4,
+    }
+}
+
+fn live_from_u8(v: u8) -> LiveState {
+    match v {
+        1 => LiveState::Calm,
+        2 => LiveState::Distracted,
+        3 => LiveState::Covering,
+        4 => LiveState::Stressed,
+        _ => LiveState::Focused,
+    }
+}
+
+/// Focus → Break 전이 1회 호출. 현재 live 값을 freeze.
+pub fn store_break_snapshot(
+    work: u8,
+    noise: u8,
+    total: u8,
+    db: f32,
+    grace: GraceState,
+    live: LiveState,
+) {
+    BREAK_SNAPSHOT_WORK.store(work, Relaxed);
+    BREAK_SNAPSHOT_NOISE.store(noise, Relaxed);
+    BREAK_SNAPSHOT_TOTAL.store(total, Relaxed);
+    BREAK_SNAPSHOT_DB_BITS.store(db.to_bits(), Relaxed);
+    BREAK_SNAPSHOT_GRACE.store(grace_to_u8(grace), Relaxed);
+    BREAK_SNAPSHOT_LIVE.store(live_to_u8(live), Relaxed);
+    BREAK_SNAPSHOT_VALID.store(true, Release);
+}
+
+/// Break 진행 중 tick에서 호출. 스냅샷이 유효하면 Some(...) 반환.
+pub fn load_break_snapshot() -> Option<(u8, u8, u8, f32, GraceState, LiveState)> {
+    if !BREAK_SNAPSHOT_VALID.load(Acquire) {
+        return None;
+    }
+    Some((
+        BREAK_SNAPSHOT_WORK.load(Relaxed),
+        BREAK_SNAPSHOT_NOISE.load(Relaxed),
+        BREAK_SNAPSHOT_TOTAL.load(Relaxed),
+        f32::from_bits(BREAK_SNAPSHOT_DB_BITS.load(Relaxed)),
+        grace_from_u8(BREAK_SNAPSHOT_GRACE.load(Relaxed)),
+        live_from_u8(BREAK_SNAPSHOT_LIVE.load(Relaxed)),
+    ))
+}
+
+/// Break → Complete / Discarded / Idle 전이에서 호출. 스냅샷 무효화.
+pub fn clear_break_snapshot() {
+    BREAK_SNAPSHOT_VALID.store(false, Release);
+}
+
 /// 입력 발생 시각 갱신 (rdev 콜백에서 단일 호출).
 ///
 /// 호출 순서 의존성: `score::start`가 `START_AT.get_or_init` 후 input 스레드를 spawn하므로
@@ -166,6 +306,12 @@ pub fn store_phase(p: Phase) {
     // Phase 13 FR-17: Idle/Focus 진입 시 buffer clear. Break/Complete 미clear.
     if matches!(p, Phase::Idle | Phase::Focus) {
         clear_todos();
+    }
+    // Phase 22+: Break 외 phase 진입 시 freeze snapshot 자동 정리 (stale 데이터 방지).
+    // Focus→Break 전이는 tick_loop이 transition 이후 store_phase(Break)를 호출하지 않으므로
+    // 본 분기로 인해 방금 저장한 snapshot이 지워지지 않는다 (on_phase_transition이 직접 PHASE_BITS만 갱신).
+    if !matches!(p, Phase::Break) {
+        clear_break_snapshot();
     }
 }
 

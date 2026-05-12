@@ -21,9 +21,11 @@ import { ShopTab } from "./ShopTab";
 import { ToastContainer } from "./Toast";
 import { TodosTab } from "./TodosTab";
 import { GrassTab } from "./GrassTab";
+import { type UpdateInfo } from "../../lib/updater";
 
 type MainScreenProps = {
   onResetDone: () => void;
+  updateInfo: UpdateInfo | null;
 };
 
 // Mohashim Design.html(NOTE_BG) — 따뜻한 노트 페이퍼 표면.
@@ -61,7 +63,7 @@ const NOTE_PAPER_BG: CSSProperties = {
  * - overlayScreen state: mailbox/settings 풀스크린 진입 (FR-20).
  * - mailbox-deeplink listener는 overlayScreen("mailbox")로 진입 (AC-15).
  */
-export function MainScreen({ onResetDone }: MainScreenProps) {
+export function MainScreen({ onResetDone, updateInfo }: MainScreenProps) {
   const snap = useScoreTick();
   const [tab, setTab] = useState<Tab>("todos");
   const [overlayScreen, setOverlayScreen] = useState<
@@ -237,6 +239,7 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
           pendingDeeplink={pendingDeeplink}
           onPendingDeeplinkChange={setPendingDeeplink}
           onAcceptDeeplink={handleAcceptDeeplink}
+          updateInfo={updateInfo}
         />
       ) : (
         <>

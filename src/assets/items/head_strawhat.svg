@@ -1,10 +1,12 @@
 <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-  <g transform="rotate(-8 100 52)">
+  <g transform="translate(100 48) scale(1.35) translate(-100 -48)">
+    <g transform="rotate(-8 100 52)">
     <path d="M68 56 Q70 50 100 48 Q130 50 132 56 Q130 62 100 64 Q70 62 68 56 Z" fill="#e8c878" stroke="#7a5520" stroke-width="2" stroke-linejoin="round"/>
     <path d="M82 52 Q82 32 100 28 Q118 32 118 52 Q100 56 82 52 Z" fill="#f0d590" stroke="#7a5520" stroke-width="2" stroke-linejoin="round"/>
     <path d="M83 50 Q100 54 117 50" stroke="#a23a3a" stroke-width="2.6" fill="none" stroke-linecap="round"/>
     <circle cx="112" cy="50" r="1.6" fill="#f4d160" stroke="#7a5520" stroke-width="0.8"/>
     <path d="M88 38 L89 50 M96 32 L96 50 M104 32 L104 50 M112 38 L111 50" stroke="#c2a050" stroke-width="0.7"/>
     <path d="M72 58 Q100 62 128 58" stroke="#7a5520" stroke-width="0.8" fill="none" opacity="0.4"/>
+    </g>
   </g>
 </svg>

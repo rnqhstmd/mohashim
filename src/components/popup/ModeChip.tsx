@@ -11,7 +11,7 @@ type ModeChipProps = {
  * 불필요하다는 피드백 → idle/complete/discarded 모두 chip 미노출.
  *
  * - Focus: chipFocus 적색 + "집중 중" + mhpulse dot.
- * - Break: chipBreak 주황 + "휴식 중" + mhpulse dot.
+ * - Break: chipBreak 연두 + "휴식 중" + mhpulse dot.
  * - 그 외 (Idle/Complete/Discarded): chip 미표시.
  */
 export function ModeChip({ phase }: ModeChipProps) {

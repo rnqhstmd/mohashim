@@ -8,7 +8,7 @@
       <path d="M4 0 L4 8" stroke="#8a4830" stroke-width="0.4"/>
     </pattern>
   </defs>
-  <g>
+  <g transform="translate(100 158) scale(1.2) translate(-100 -158)">
     <path d="M68 138 Q100 148 132 138 L130 154 Q100 160 70 154 Z" fill="#b56850" stroke="#5a2818" stroke-width="2" stroke-linejoin="round"/>
     <path d="M72 144 Q100 152 128 144" stroke="#8a4830" stroke-width="0.7" fill="none" opacity="0.6"/>
     <path d="M84 152 Q78 162 82 172 L96 172 Q94 162 96 152 Z" fill="url(#check-pat-blanket)" stroke="#5a2818" stroke-width="2" stroke-linejoin="round"/>

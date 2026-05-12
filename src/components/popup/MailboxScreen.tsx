@@ -51,7 +51,7 @@ function ListView({ letters, equipped, onSelect, onClose }: ListViewProps) {
             equipped={equipped}
             state="calm"
             size={80}
-            animated={false}
+            animated={true}
           />
           <p className="text-center text-sm text-ink/60">편지함이 비어있네</p>
         </div>
@@ -89,12 +89,73 @@ function ListView({ letters, equipped, onSelect, onClose }: ListViewProps) {
 
 type DetailViewProps = {
   letter: Letter;
+  equipped: Inventory["equipped"];
   onBack: () => void;
 };
 
-function DetailView({ letter, onBack }: DetailViewProps) {
+/**
+ * 본문 렌더링:
+ *   - SESSION 편지의 첫 단락(첫 \n\n 전)은 모하 대사로 간주 → 따옴표 + italic + 중앙 정렬
+ *     (할일탭 모하 대사와 동일한 스타일).
+ *   - 그 외 본문은 좌측 정렬 단락으로 렌더.
+ *   - `[...]` 마커 → 대괄호 제거 + 굵게(font-extrabold) 강조.
+ */
+function renderLetterBody(body: string, kind?: string) {
+  let phrase: string | null = null;
+  let rest = body;
+  if (kind === "SESSION") {
+    const idx = body.indexOf("\n\n");
+    if (idx > 0) {
+      phrase = body.slice(0, idx).trim();
+      rest = body.slice(idx + 2);
+    }
+  }
+
+  // 본문 후속 단락: \n 분리 → 문장 split.
+  const sentences = rest
+    .split("\n")
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  return (
+    <>
+      {phrase && (
+        <p className="mb-4 whitespace-pre-line text-center text-[14px] italic leading-[1.55] text-ink/75">
+          "{phrase}"
+        </p>
+      )}
+      {sentences.map((sentence, sIdx) => {
+        const parts = sentence.split(/(\[[^\]]+\])/g).filter((p) => p.length > 0);
+        return (
+          <p
+            key={sIdx}
+            className="mt-3 text-[14px] leading-[1.75] text-ink/85 first:mt-0"
+          >
+            {parts.map((part, pIdx) => {
+              if (part.startsWith("[") && part.endsWith("]")) {
+                return (
+                  <strong
+                    key={pIdx}
+                    className="font-extrabold text-ink"
+                  >
+                    {part.slice(1, -1)}
+                  </strong>
+                );
+              }
+              return <span key={pIdx}>{part}</span>;
+            })}
+          </p>
+        );
+      })}
+    </>
+  );
+}
+
+function DetailView({ letter, equipped, onBack }: DetailViewProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* 헤더: ← 뒤로가기 + 제목 (이전 패턴 복원) */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button
           type="button"
@@ -116,10 +177,18 @@ function DetailView({ letter, onBack }: DetailViewProps) {
           {letter.title}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink/80">
-          {letter.body}
-        </p>
+      <div className="flex-1 overflow-y-auto px-4 pb-6 pt-2">
+        {/* 캐릭터만 상단 중앙 */}
+        <div className="flex flex-col items-center">
+          <ItemOverlay
+            equipped={equipped}
+            state="calm"
+            size={84}
+            animated={false}
+          />
+        </div>
+        {/* 본문 — 문장 단위 단락, 좌측 정렬, 대괄호 마커 굵게 */}
+        <div className="mt-4">{renderLetterBody(letter.body, letter.kind)}</div>
       </div>
     </div>
   );
@@ -178,6 +247,7 @@ export function MailboxScreen({ onClose, equipped }: MailboxScreenProps) {
     return (
       <DetailView
         letter={selectedLetter}
+        equipped={equipped}
         onBack={() => setView("list")}
       />
     );

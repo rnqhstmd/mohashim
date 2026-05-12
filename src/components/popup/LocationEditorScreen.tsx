@@ -63,6 +63,7 @@ export function LocationEditorScreen({ onClose }: Props) {
       title="위치 태그 편집"
       items={items}
       kind="loc"
+      maxItems={5}
       onSave={handleSave}
       onClose={onClose}
     />

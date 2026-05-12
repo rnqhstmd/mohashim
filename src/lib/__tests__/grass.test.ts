@@ -32,136 +32,82 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-describe("grass.ts — gridLevel (BR-G1, Phase 12 ANALYSIS.md §10-1 표)", () => {
-  // ---------- 기존 회귀 (Phase 8~10) — Phase 12 표로 갱신 ----------
-  it("AC-G7: gridLevel(0, _, todos=0) === 0", async () => {
+describe("grass.ts — gridLevel (Phase 22+ 통합 가중치 모델)", () => {
+  // 공식: points = focusMins/30 + todos/2 + (avg >= 80 ? 1 : 0)
+  // 임계: 0(비활동) / 활동 0~1.5=1 / 1.5~2.5=2 / 2.5~3.5=3 / 3.5+=4
+
+  it("비활동 (sessions=0, todos=0) → 0", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(0, 0)).toBe(0);
-    expect(gridLevel(0, 100)).toBe(0);
+    expect(gridLevel(0, 0, 0, 0)).toBe(0);
+    expect(gridLevel(0, 100, 0, 0)).toBe(0);
   });
 
-  it("AC-G8: gridLevel(1, _) === 1", async () => {
+  it("2시간 집중만으로 만점 (focusMins=120) → 4", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(1, 0)).toBe(1);
-    expect(gridLevel(1, 100)).toBe(1);
+    expect(gridLevel(6, 50, 0, 120)).toBe(4); // 120/30 = 4
   });
 
-  it("AC-G9: gridLevel(2, _) === 1", async () => {
+  it("형평성: 50분×3 = 25분×6 = 150분 → 4", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(2, 0)).toBe(1);
-    expect(gridLevel(2, 100)).toBe(1);
+    expect(gridLevel(3, 70, 0, 150)).toBe(4);
+    expect(gridLevel(6, 70, 0, 150)).toBe(4);
   });
 
-  it("AC-G10: gridLevel(3, 60) === 3", async () => {
+  it("할 일 8개만으로 만점 → 4", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(3, 60)).toBe(3);
+    expect(gridLevel(0, 0, 8, 0)).toBe(4); // 8/2 = 4
   });
 
-  it("AC-G11: gridLevel(3, 59) === 2", async () => {
+  it("시너지: 1시간 + todo 3 + 평균 85 → 4", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(3, 59)).toBe(2);
+    // 60/30 + 3/2 + 1 = 4.5
+    expect(gridLevel(2, 85, 3, 60)).toBe(4);
   });
 
-  it("AC-G12: gridLevel(6, 70) === 4", async () => {
+  it("평균 점수 보너스: 25분×1 + 평균 80 → 1 (1.08)", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(6, 70)).toBe(4);
+    // 25/30 + 0 + 0.25 = 1.08 → 1.5 미만이라 활동 있어서 1
+    expect(gridLevel(1, 80, 0, 25)).toBe(1);
   });
 
-  // Phase 12 H-5 역전 해소: sessions≥6은 점수 미달이어도 최소 레벨 3 보장.
-  it("AC-G13 (Phase 12 갱신): gridLevel(6, 69) === 3 — 역전 방지", async () => {
+  it("점수 보너스 미발동: 25분×1 + 평균 79 → 1", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(6, 69)).toBe(3);
+    // 25/30 = 0.83 → 활동 있으니 최소 1
+    expect(gridLevel(1, 79, 0, 25)).toBe(1);
   });
 
-  it("AC-G14: gridLevel(5, 70) === 3 (sessions 3~5 + avg≥60)", async () => {
+  it("평균 점수 보너스 작은 가중치: 1시간 + 평균 80 → 2 (2.25)", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(5, 70)).toBe(3);
+    // 60/30 + 0 + 0.25 = 2.25 → 1.5~2.5 → 2
+    expect(gridLevel(2, 80, 0, 60)).toBe(2);
   });
 
-  it("Lv4 경계: sessions=7 + avg=70 → 4", async () => {
+  it("할 일만 적게 (todo 1~2) → 1", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(7, 70)).toBe(4);
+    expect(gridLevel(0, 0, 1, 0)).toBe(1);
+    expect(gridLevel(0, 0, 2, 0)).toBe(1);
   });
 
-  it("Lv4 경계: sessions=10 + avg=100 → 4", async () => {
+  it("할 일 3개만 → 1 (1.5 미만), 4개 → 2", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(10, 100)).toBe(4);
+    expect(gridLevel(0, 0, 3, 0)).toBe(2); // 3/2 = 1.5 → 2
+    expect(gridLevel(0, 0, 4, 0)).toBe(2); // 4/2 = 2 → 2
   });
 
-  // ---------- Phase 12 신규 (PRD AC-1~AC-9 + BR-1) ----------
-  it("AC-1: sessions=0, todos=0 → 0", async () => {
+  it("활동은 있지만 점수 미달 → 최소 1 보장", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(0, 0, 0)).toBe(0);
+    // 5분 세션 1번 → 5/30 = 0.17 → 활동 있어서 1
+    expect(gridLevel(1, 50, 0, 5)).toBe(1);
   });
 
-  it("AC-2: sessions=0, todos≥1 → 1", async () => {
+  it("경계: total 1.5 → 2, 2.5 → 3, 3.5 → 4", async () => {
     const { gridLevel } = await import("../grass");
-    expect(gridLevel(0, 0, 1)).toBe(1);
-    expect(gridLevel(0, 0, 2)).toBe(1);
-  });
-
-  it("AC-3: sessions=0, todos≥3 → 2", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(0, 0, 3)).toBe(2);
-    expect(gridLevel(0, 0, 5)).toBe(2);
-    expect(gridLevel(0, 0, 100)).toBe(2);
-  });
-
-  it("AC-4: sessions 1~2, todos<3 → 1", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(1, 90, 0)).toBe(1);
-    expect(gridLevel(1, 50, 2)).toBe(1);
-    expect(gridLevel(2, 0, 0)).toBe(1);
-    expect(gridLevel(2, 100, 2)).toBe(1);
-  });
-
-  it("AC-4b (PR #13 리뷰): sessions 1~2, todos≥3 → 2 (todos 단조 비감소)", async () => {
-    // sessions=0/todos=3 → 2 였으므로 sessions=1/todos=3에서 1로 떨어지면 역전.
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(1, 0, 3)).toBe(2);
-    expect(gridLevel(2, 50, 100)).toBe(2);
-  });
-
-  it("AC-5: sessions 3~5, avg<60 → 2", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(3, 59, 0)).toBe(2);
-    expect(gridLevel(5, 0, 0)).toBe(2);
-  });
-
-  it("AC-6: sessions 3~5, avg≥60 → 3", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(3, 60, 0)).toBe(3);
-    expect(gridLevel(5, 100, 0)).toBe(3);
-  });
-
-  it("AC-7: sessions≥6, avg<70 → 3 (역전 방지)", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(6, 69, 0)).toBe(3);
-    expect(gridLevel(10, 50, 0)).toBe(3);
-    expect(gridLevel(100, 0, 0)).toBe(3);
-  });
-
-  it("AC-8: sessions≥6, avg≥70 → 4", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(6, 70, 0)).toBe(4);
-    expect(gridLevel(10, 100, 0)).toBe(4);
-  });
-
-  it("AC-9: H-5 역전 부재 — 동일 avg에서 sessions 단조 비감소", async () => {
-    const { gridLevel } = await import("../grass");
-    for (let avg = 0; avg <= 100; avg += 10) {
-      let prev = -1;
-      for (const s of [0, 1, 2, 3, 4, 5, 6, 10, 50]) {
-        const lvl = gridLevel(s, avg, 0);
-        expect(lvl).toBeGreaterThanOrEqual(prev);
-        prev = lvl;
-      }
-    }
-  });
-
-  it("BR-1: todo 단독은 최대 레벨 2까지만 (정체성 보존)", async () => {
-    const { gridLevel } = await import("../grass");
-    expect(gridLevel(0, 0, 1000)).toBe(2);
+    // total = 1.5 (todo 3) → 2
+    expect(gridLevel(1, 0, 3, 0)).toBe(2);
+    // total = 2.5 (1시간 30분 = 90분) → 3
+    expect(gridLevel(3, 0, 0, 75)).toBe(3); // 75/30 = 2.5
+    // total = 3.5 (todo 7개) → 4
+    expect(gridLevel(0, 0, 7, 0)).toBe(4); // 7/2 = 3.5
   });
 });
 
@@ -310,19 +256,27 @@ describe("grass.ts — getMonthSessions (D-G4 월별 달력)", () => {
     }
   });
 
-  it("적재된 세션 데이터를 반영하여 cells의 sessions/avg 값 산출", async () => {
+  it("적재된 세션 데이터를 반영하여 cells의 sessions/avg/level 값 산출", async () => {
     const { getMonthSessions, formatDate } = await import("../grass");
     const todayStr = formatDate(new Date());
     inMemory.set("sessions", {
       [todayStr]: { date: todayStr, sessions: 4, avg: 75 },
     });
+    // Phase 22+ 정책: focusMins 필요. session_logs도 mock — 4세션 × 25분 = 100분.
+    inMemory.set("session_logs", [
+      { id: "sl-1", date: todayStr, start_at: "", end_at: "", duration_mins: 25, score: 75, todos_done: [], avg_db: 0, earned_sprouts: 0 },
+      { id: "sl-2", date: todayStr, start_at: "", end_at: "", duration_mins: 25, score: 75, todos_done: [], avg_db: 0, earned_sprouts: 0 },
+      { id: "sl-3", date: todayStr, start_at: "", end_at: "", duration_mins: 25, score: 75, todos_done: [], avg_db: 0, earned_sprouts: 0 },
+      { id: "sl-4", date: todayStr, start_at: "", end_at: "", duration_mins: 25, score: 75, todos_done: [], avg_db: 0, earned_sprouts: 0 },
+    ]);
 
     const md = await getMonthSessions(0);
     const todayCell = md.cells.find((c) => c.date === todayStr);
     expect(todayCell).toBeDefined();
     expect(todayCell!.sessions).toBe(4);
     expect(todayCell!.avg).toBe(75);
-    expect(todayCell!.level).toBe(3); // sessions 3~5 + avg≥60
+    // 100/30 + 0 + 0 = 3.33 → level 3.
+    expect(todayCell!.level).toBe(3);
   });
 
   it("totalSessions/avgScore 가중 평균 계산 정확 (legacy: sum 미존재, avg*sessions 폴백)", async () => {

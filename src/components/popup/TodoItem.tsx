@@ -36,15 +36,25 @@ export function TodoItem({
   const [draft, setDraft] = useState(todo.text);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // 편집 진입 시 input autofocus.
+  // 편집 진입 시 textarea autofocus + 자동 높이 조정.
   useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
   }, [editing]);
+
+  // editing 진입/draft 변경 시 textarea 높이를 콘텐츠에 맞게 조정.
+  // 다중 라인으로 wrapping된 긴 todo를 편집할 때 한 줄로 collapse되지 않도록 한다.
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editing, draft]);
 
   // 메뉴 외부 클릭 닫기.
   useEffect(() => {
@@ -95,9 +105,10 @@ export function TodoItem({
 
   // 사용자 피드백: 긴 텍스트가 한 줄 잘림(...)이 아닌 다중 라인으로 자연스럽게
   // 줄바꿈되도록 처리. 글자수는 maxLength={100}으로 이미 입력 단계에서 제한됨.
+  // 텍스트 클릭 편집 제거 — ⋮ 메뉴의 "수정" 버튼으로만 진입 (오타 클릭 방지).
   const labelBaseClass = todo.done
     ? "flex-1 whitespace-normal break-words line-through opacity-40"
-    : "flex-1 whitespace-normal break-words text-ink cursor-text";
+    : "flex-1 whitespace-normal break-words text-ink";
 
   return (
     <div className={cardClass}>
@@ -118,15 +129,15 @@ export function TodoItem({
           </button>
 
           {editing ? (
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
               value={draft}
-              maxLength={100}
+              rows={1}
+              maxLength={50}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commitEdit}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   commitEdit();
                 }
@@ -135,23 +146,10 @@ export function TodoItem({
                   cancelEdit();
                 }
               }}
-              className="flex-1 rounded-md border border-ink/30 bg-paperWarm px-1.5 py-0.5 text-sm text-ink outline-none focus:border-ink/60"
+              className="flex-1 resize-none overflow-hidden rounded-md border border-ink/30 bg-paperWarm px-1.5 py-0.5 text-sm leading-snug text-ink outline-none focus:border-ink/60"
             />
           ) : (
-            <span
-              role="button"
-              tabIndex={todo.done ? -1 : 0}
-              onClick={startEdit}
-              onKeyDown={(e) => {
-                if (!todo.done && (e.key === "Enter" || e.key === " ")) {
-                  e.preventDefault();
-                  startEdit();
-                }
-              }}
-              className={labelBaseClass}
-            >
-              {todo.text}
-            </span>
+            <span className={labelBaseClass}>{todo.text}</span>
           )}
 
           {/* Phase 21 사용자 피드백: 고정 항목은 우측 끝 핀 아이콘으로 표시. */}
@@ -188,18 +186,32 @@ export function TodoItem({
                 className="absolute right-0 top-7 z-20 min-w-[120px] overflow-hidden rounded-lg border-[1.5px] border-ink bg-paperWarm shadow-[2px_2px_0_0_#2b2520]"
               >
                 {!todo.done && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onToggleActive(todo.id);
-                      setMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-bold text-ink hover:bg-ink/5"
-                  >
-                    <span aria-hidden>📌</span>
-                    {todo.active ? "고정 해제" : "고정"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        onToggleActive(todo.id);
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-bold text-ink hover:bg-ink/5"
+                    >
+                      <span aria-hidden>📌</span>
+                      {todo.active ? "고정 해제" : "고정"}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        startEdit();
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 border-t border-ink/10 px-3 py-1.5 text-left text-xs font-bold text-ink hover:bg-ink/5"
+                    >
+                      <span aria-hidden>✏️</span>
+                      수정
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"

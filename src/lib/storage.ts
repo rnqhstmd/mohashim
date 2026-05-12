@@ -55,6 +55,10 @@ export type SessionLog = {
   avg_db: number;
   /** Phase 22 FR-11/16: 세션 완료 시 지급된 새싹 수. */
   earned_sprouts: number;
+  /** 태그 인사이트: 세션 dominant 작업 태그 ID 스냅샷. 기존 로그는 null/부재 → 분석 시 폴백. */
+  work_tag_id?: string | null;
+  /** 태그 인사이트: 세션 dominant 위치 태그 ID 스냅샷. 기존 로그는 null/부재 → 분석 시 폴백. */
+  location_id?: string | null;
 };
 export type ActivePhase = "idle" | "focus" | "break";
 
@@ -414,7 +418,13 @@ export async function getSessionLogs(): Promise<SessionLog[]> {
   // - raw 항목 자체가 null/원시값이면 빈 SessionLog 골격으로 폴백 (스프레드 TypeError 방지)
   return (raw as unknown[]).map((r) => {
     if (typeof r !== "object" || r === null) {
-      return { todos_done: [], avg_db: 0, earned_sprouts: 0 } as unknown as SessionLog;
+      return {
+        todos_done: [],
+        avg_db: 0,
+        earned_sprouts: 0,
+        work_tag_id: null,
+        location_id: null,
+      } as unknown as SessionLog;
     }
     const log = r as Record<string, unknown>;
     return {
@@ -427,6 +437,15 @@ export async function getSessionLogs(): Promise<SessionLog[]> {
         typeof log.earned_sprouts === "number" && log.earned_sprouts >= 0
           ? log.earned_sprouts
           : 0,
+      // 태그 인사이트: 기존 로그(부재) / 비문자열 / 빈 문자열은 null 폴백.
+      work_tag_id:
+        typeof log.work_tag_id === "string" && log.work_tag_id.length > 0
+          ? log.work_tag_id
+          : null,
+      location_id:
+        typeof log.location_id === "string" && log.location_id.length > 0
+          ? log.location_id
+          : null,
     } as SessionLog;
   });
 }
@@ -451,11 +470,14 @@ export async function getLastCleanupYear(): Promise<number> {
 export async function getEconomy(): Promise<Economy> {
   const raw = await get("economy");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { sprouts: 0, lastTodoSproutDate: null };
+    // DEBUG (REMOVE-AFTER-TEST): 새싹 999 강제로 상점 장착 테스트.
+    return { sprouts: 999, lastTodoSproutDate: null };
   }
   const e = raw as Record<string, unknown>;
-  const sprouts =
+  const sproutsRaw =
     typeof e.sprouts === "number" && e.sprouts >= 0 ? e.sprouts : 0;
+  // DEBUG (REMOVE-AFTER-TEST): 잔액 999 floor 적용 — Rust read_economy_state와 정합.
+  const sprouts = Math.max(sproutsRaw, 999);
   const lastTodoSproutDate =
     typeof e.lastTodoSproutDate === "string" && e.lastTodoSproutDate.length > 0
       ? e.lastTodoSproutDate

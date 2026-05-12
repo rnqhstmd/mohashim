@@ -40,6 +40,11 @@ pub static FOCUS_START_AT_MS: AtomicU64 = AtomicU64::new(0);
 /// load + 0 리셋한다. 정상 흐름은 Break→Complete 전이가 on_complete_consumed 호출보다 항상 선행.
 pub static SESSION_FINAL_SCORE: AtomicU32 = AtomicU32::new(0);
 
+/// Phase 22+: 세션 완료 시 표시할 종료시점 dB EMA 값 (f32 bits).
+/// 평균이 아닌 Focus 종료 시점의 db_ema를 BREAK_SNAPSHOT에서 인계받아 저장.
+/// on_complete_consumed가 load + 0 리셋하여 record_session_letter에 전달.
+pub static SESSION_FINAL_DB_BITS: AtomicU32 = AtomicU32::new(0);
+
 /// Phase 23 (FR-3, AC-2): Break→Complete에서 산출한 session_tag를
 /// on_complete_consumed에 인계하기 위한 holder.
 ///
@@ -50,6 +55,22 @@ pub static SESSION_FINAL_SCORE: AtomicU32 = AtomicU32::new(0);
 ///
 /// **stale 차단**: 조기 return + Discarded/reset 경로에서 take()로 명시 비움.
 pub(crate) static SESSION_TAG_HOLDER: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+/// 위치 태그 인사이트용 SESSION_TAG_HOLDER 미러. compute_session_location 결과를
+/// Break→Complete 시점에 캐시 → on_complete_consumed에서 take()로 SessionLog 적재.
+/// 동일 stale 차단 정책 (Discard / Sleep overflow / reset 경로에서 take 비움).
+pub(crate) static SESSION_LOC_HOLDER: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+/// Phase 22+: 편지 본문 전용 multi-tag 정보 (사용자 피드백).
+///
+/// SESSION_TAG_HOLDER는 다수결 1개만 보존하지만, 편지에는 세션 중 등장한 모든 작업 태그를
+/// 등장 순서로 노출한다. 첫 번째 할 일의 위치도 별도로 캐시.
+///
+/// 자료: (work_tag_ids_ordered_unique, first_todo_location_id)
+/// - work_tag_ids_ordered_unique: 등장 순서 보존 + 중복 제거 + None 제외
+/// - first_todo_location_id: SESSION_TODOS_DONE buffer의 첫 번째 todo의 location (None 가능)
+pub(crate) static SESSION_LETTER_TAGS_HOLDER: OnceLock<Mutex<Option<(Vec<String>, Option<String>)>>> =
+    OnceLock::new();
 
 /// 슬립 grace 기준 (BR-sleep-1, DEC-10a/b). wall-clock 경과 ≤ 180s: 세션 유지.
 pub const SLEEP_GRACE_SECS: u64 = 180;
@@ -121,8 +142,18 @@ pub async fn discard_session<R: Runtime>(app: AppHandle<R>) -> Result<(), String
             write_active_phase(&app, "idle");
             // Phase 23 FR-6: Discarded 경로 보류 큐 drain.
             crate::mailbox::notifier::drain_pending_notifs(&app);
-            // Phase 23 stale 차단: Discarded 경로에서 SESSION_TAG_HOLDER take() (Break→Complete race 보호).
+            // Phase 23 stale 차단: Discarded 경로에서 SESSION_TAG/LOC_HOLDER take() (Break→Complete race 보호).
             let _ = SESSION_TAG_HOLDER
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take();
+            let _ = SESSION_LOC_HOLDER
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take();
+            let _ = SESSION_LETTER_TAGS_HOLDER
                 .get_or_init(|| Mutex::new(None))
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
@@ -162,7 +193,7 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
             // 제목을 행동(집중 종료) 명시 + body에 휴식 분 표기로 강화.
             send_notification(
                 app,
-                "🍅 집중 종료!",
+                "🥔 집중 종료!",
                 &format!("{}분 휴식하고 다시 시작해요", minutes),
             );
             write_active_phase(app, "break");
@@ -176,16 +207,25 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
         (Phase::Break, Phase::Complete) => {
             let break_minutes = read_minutes(app, BREAK_MINUTES_KEY, DEFAULT_BREAK_MINUTES);
             let focus_minutes = read_minutes(app, FOCUS_MINUTES_KEY, DEFAULT_FOCUS_MINUTES);
+            // Phase 22+: 평균 → 종료시점 (BREAK_SNAPSHOT) 인계로 변경. 사용자 피드백:
+            // "집중도는 평균 ~점" 멘트가 어색 → 세션 종료 시점 work+noise 값으로 표시.
+            // store_phase(Complete)이 BREAK_SNAPSHOT을 invalidate하므로 호출 전에 load.
+            let (final_score, final_db) = match crate::score::shared::load_break_snapshot() {
+                Some((_, _, total, db, _, _)) => (total as u32, db),
+                None => {
+                    // 비정상 경로 폴백: 누적 평균으로 회귀 (이론상 도달 불가).
+                    let avg = snapshot_and_reset_session_avg();
+                    (avg, 0.0_f32)
+                }
+            };
             store_phase(Phase::Complete);
             store_time_left(0);
-            send_notification(app, "🎉 세션 완료!", "오늘도 고생하셨어요!");
-            // 토스트 + active_phase=idle은 score::tick_loop의 emit 직후 on_complete_consumed에서 수행.
-            // 토스트가 score-tick Complete payload보다 먼저 JS에 도달하지 않도록 순서 보장.
-            // Phase 18 FR-B5 (A): phase_change(break→complete) + session_complete 기록.
-            // final_score는 snapshot_and_reset_session_avg() 결과 — on_complete_consumed가
-            // 후속 호출에서 동일 함수를 호출하지 않도록 SESSION_FINAL_SCORE atomic으로 인계한다.
-            let final_score = snapshot_and_reset_session_avg();
+            // Phase 22+ 사용자 피드백: "🎉 세션 완료!" OS 알림은 편지함 도착 알림과 중복되어 제거.
+            // 편지함 push_message가 Idle 진입 후 OS 알림 + mailbox-updated emit을 발화하므로 충분.
+            // 누적 평균값은 더 이상 final_score로 사용하지 않지만, 다음 세션 정확성을 위해 reset.
+            snapshot_and_reset_session_avg();
             SESSION_FINAL_SCORE.store(final_score, Ordering::Release);
+            SESSION_FINAL_DB_BITS.store(final_db.to_bits(), Ordering::Release);
             logger::write(LogEvent::PhaseChange {
                 from: "break".into(),
                 to: "complete".into(),
@@ -194,11 +234,23 @@ pub fn on_phase_transition<R: Runtime>(app: &AppHandle<R>, from: Phase, to: Phas
             // Phase 19 FR-B1/B2: 세션 중 완료된 todo의 tag 다수결 (비파괴 buffer read).
             // drain은 후속 on_complete_consumed에서 발생하므로 이 시점에 buffer 조회 가능.
             let session_tag = compute_session_tag(app);
-            // Phase 23: session_tag를 SESSION_TAG_HOLDER에 적재 → on_complete_consumed에서 take() 회수.
+            let session_loc = compute_session_location(app);
+            // Phase 22+: 편지용 multi-tag + 첫 위치 (사용자 피드백). 비파괴 buffer read.
+            let letter_work_tags = compute_session_work_tags_ordered(app);
+            let letter_first_loc = compute_first_todo_location(app);
+            // Phase 23: holder에 적재 → on_complete_consumed에서 take() 회수.
             *SESSION_TAG_HOLDER
                 .get_or_init(|| Mutex::new(None))
                 .lock()
                 .unwrap_or_else(|p| p.into_inner()) = session_tag.clone();
+            *SESSION_LOC_HOLDER
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = session_loc.clone();
+            *SESSION_LETTER_TAGS_HOLDER
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some((letter_work_tags, letter_first_loc));
             logger::write(LogEvent::SessionComplete {
                 focus_mins: focus_minutes as u32,
                 break_mins: break_minutes as u32,
@@ -234,7 +286,11 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     // Phase 18 (A): on_phase_transition Break→Complete에서 이미 snapshot_and_reset_session_avg()를
     // 호출하여 SESSION_FINAL_SCORE atomic에 적재했다. 여기서 동일 함수를 재호출하면 0을 반환하므로
     // 인계 atomic을 load + 0 리셋하여 같은 평균을 사용한다.
+    // Phase 22+: 의미가 "평균" → "종료시점 값"으로 변경됨 (사용자 피드백).
     let avg = SESSION_FINAL_SCORE.swap(0, Ordering::AcqRel);
+    // Phase 22+: 종료시점 dB도 함께 인계 (편지 본문에 실제 dB 값 표시).
+    let final_db_bits = SESSION_FINAL_DB_BITS.swap(0, Ordering::AcqRel);
+    let final_db = f32::from_bits(final_db_bits);
     // Phase 23 (BR-3, FR-5): (focus_mins, todos_count, end_ms, start_ms) — record_session_letter 인자 인계 (log 성공 경로만).
     // - end_ms: session_log id와 mailbox letter id의 시각 기준 공유 (BR-3).
     // - start_ms: 편지 제목 "{HH:MM}~{HH:MM}"의 정확한 focus 시작 시각 (FR-5). 0이면 fallback 사용.
@@ -268,8 +324,18 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
                 // 부분 일관성 회피: session_logs/save/drain_todos 모두 skip.
                 // sessions in-memory 변경은 다음 store load 시 폐기되어 자연 회복.
                 // phase 정상 복귀는 아래 store_phase(Idle)에서 수행 (DEC-22-2).
-                // Phase 23: 조기 return 시 SESSION_TAG_HOLDER stale 차단.
+                // Phase 23: 조기 return 시 SESSION_TAG/LOC_HOLDER stale 차단.
                 let _ = SESSION_TAG_HOLDER
+                    .get_or_init(|| Mutex::new(None))
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .take();
+                let _ = SESSION_LOC_HOLDER
+                    .get_or_init(|| Mutex::new(None))
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .take();
+                let _ = SESSION_LETTER_TAGS_HOLDER
                     .get_or_init(|| Mutex::new(None))
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
@@ -308,6 +374,19 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
         // 실패 path는 위 분기에서 silent drop (MA-3).
         let todos_done = crate::score::shared::drain_todos();
         let todos_count = todos_done.len(); // Phase 23: move 전 count 확보.
+        // 태그 인사이트: Break→Complete 시점에 compute_session_tag/location이 holder에 캐시됨.
+        // 여기서 clone()으로 읽어 SessionLog 스냅샷에 저장. 후속 record_session_letter가 take()로
+        // 최종 회수 + stale 차단하므로 본 clone은 동일 값 읽기로 안전.
+        let work_tag_id = SESSION_TAG_HOLDER
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .ok()
+            .and_then(|g| g.clone());
+        let location_id = SESSION_LOC_HOLDER
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .ok()
+            .and_then(|g| g.clone());
         // Phase 22 FR-9~11: avg_db는 본 Phase 항상 0 (BR-5), earned_sprouts는 economy 결과.
         let log_ok = match crate::storage::append_session_log(
             app,
@@ -320,6 +399,8 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
             todos_done,
             0,
             earned,
+            work_tag_id,
+            location_id,
         ) {
             Ok(()) => true,
             Err(e) => {
@@ -355,21 +436,36 @@ pub fn on_complete_consumed<R: Runtime>(app: &AppHandle<R>) {
     // 큐에 적재되지 않고, drain은 Focus/Break 중 적재된 외부 알림만 처리한다.
     crate::mailbox::notifier::drain_pending_notifs(app);
     // Phase 23: record_session_letter — 반드시 store_phase(Idle) + write_active_phase("idle") 이후.
-    // SESSION_TAG_HOLDER는 항상 take()하여 stale 차단 (log 실패 시에도 비움).
+    // SESSION_TAG/LOC_HOLDER는 항상 take()하여 stale 차단 (log 실패 시에도 비움).
     let tag = SESSION_TAG_HOLDER
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .take();
+    let _ = SESSION_LOC_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    // Phase 22+: 편지용 multi-tag/first-loc 회수 (stale 차단 위해 항상 take).
+    let letter_tags = SESSION_LETTER_TAGS_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
     if let Some((rec_focus_mins, rec_todos, rec_end_ms, rec_start_ms)) = letter_args {
+        let (work_tags, first_loc) = letter_tags.unwrap_or_else(|| (Vec::new(), None));
         crate::mailbox::record_session_letter(
             app,
             rec_end_ms,
             rec_start_ms,
             avg,
+            final_db,
             rec_focus_mins,
             rec_todos,
             tag.as_deref(),
+            &work_tags,
+            first_loc.as_deref(),
         );
     }
 }
@@ -461,6 +557,58 @@ fn compute_session_tag<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     tally_session_tag(&pairs)
 }
 
+/// Phase 22+: 편지용 multi-tag 산출 (compute_session_tag의 multi 버전).
+///
+/// SESSION_TODOS_DONE buffer 순서를 보존하면서 None 제외 + 중복 제거하여 Vec<String> 반환.
+/// 빈 buffer / 모든 tag None / 스토어 조회 실패 시 빈 Vec.
+fn compute_session_work_tags_ordered<R: Runtime>(app: &AppHandle<R>) -> Vec<String> {
+    let ids = crate::score::shared::snapshot_todos();
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let pairs = crate::storage::read_todo_tags(app, &ids);
+    let mut seen = std::collections::HashSet::new();
+    let mut ordered = Vec::new();
+    for (_, tag) in pairs {
+        if let Some(t) = tag {
+            if seen.insert(t.clone()) {
+                ordered.push(t);
+            }
+        }
+    }
+    ordered
+}
+
+/// Phase 22+: 편지용 첫 번째 todo의 위치 산출.
+///
+/// SESSION_TODOS_DONE buffer 첫 번째 todo의 location_id (None일 수 있음).
+/// "첫 번째 할 일의 장소"를 세션 대표 장소로 간주 (사용자 피드백).
+fn compute_first_todo_location<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let ids = crate::score::shared::snapshot_todos();
+    if ids.is_empty() {
+        return None;
+    }
+    let pairs = crate::storage::read_todo_locations(app, &ids);
+    // 첫 번째 non-None location 반환 (buffer 순서 보존).
+    pairs.into_iter().find_map(|(_, loc)| loc)
+}
+
+/// `compute_session_tag`의 위치 미러 — 세션 dominant 위치 태그 산출.
+///
+/// SESSION_TODOS_DONE buffer + todos.loc로 다수결. `tally_session_tag`와 동일 로직 재사용.
+/// 빈 buffer / 모든 loc None / 스토어 조회 실패 시 None.
+fn compute_session_location<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let ids = crate::score::shared::snapshot_todos();
+    if ids.is_empty() {
+        return None;
+    }
+    let pairs = crate::storage::read_todo_locations(app, &ids);
+    if pairs.is_empty() {
+        return None;
+    }
+    tally_session_tag(&pairs)
+}
+
 /// FR-B2 다수결 산출 (pure 함수, atomic/IO 무의존):
 /// - tag=None은 카운트 제외
 /// - 단일 winner: 해당 tag 반환
@@ -504,8 +652,18 @@ pub fn on_sleep_overflow_discard<R: Runtime>(app: &AppHandle<R>) {
     write_active_phase(app, "idle");
     // Phase 23 FR-6: sleep discard 보류 큐 drain.
     crate::mailbox::notifier::drain_pending_notifs(app);
-    // Phase 23 stale 차단: sleep_overflow 경로에서 SESSION_TAG_HOLDER take() (Break→Complete race 보호).
+    // Phase 23 stale 차단: sleep_overflow 경로에서 SESSION_TAG/LOC_HOLDER take() (Break→Complete race 보호).
     let _ = SESSION_TAG_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    let _ = SESSION_LOC_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    let _ = SESSION_LETTER_TAGS_HOLDER
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap_or_else(|p| p.into_inner())
@@ -545,6 +703,7 @@ pub fn auto_discard_on_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
         // reset_runtime_state와 동일하게 boot 경로에서도 명시 리셋하여 다음 세션의
         // on_complete_consumed가 이전 boot 인계값을 잘못 사용하지 않도록 보호한다.
         SESSION_FINAL_SCORE.store(0, Ordering::Release);
+        SESSION_FINAL_DB_BITS.store(0, Ordering::Release);
         // Phase 18 FR-B5: boot_reset discard 기록.
         logger::write(LogEvent::SessionDiscarded {
             reason: "boot_reset".into(),
@@ -565,8 +724,14 @@ pub fn reset_runtime_state<R: Runtime>(app: &AppHandle<R>) {
     // 인계값 stale 오염 차단. on_phase_transition Break→Complete가 set한 값이
     // on_complete_consumed 호출 없이 reset되는 케이스 보호.
     SESSION_FINAL_SCORE.store(0, Ordering::Release);
-    // Phase 23: SESSION_TAG_HOLDER stale 차단 + 보류 큐 drain.
+    SESSION_FINAL_DB_BITS.store(0, Ordering::Release);
+    // Phase 23: SESSION_TAG/LOC_HOLDER stale 차단 + 보류 큐 drain.
     let _ = SESSION_TAG_HOLDER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    let _ = SESSION_LOC_HOLDER
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap_or_else(|p| p.into_inner())

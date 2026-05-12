@@ -54,6 +54,9 @@ pub fn run() {
             shop::equip_item,
             shop::unequip_slot,
             shop::get_inventory,
+            // DEBUG (REMOVE-AFTER-TEST): 월간 리포트 수동 트리거.
+            insight::trigger_monthly_letter_test,
+            relaunch,
         ])
         .setup(|app| {
             // macOS 26 회귀: Tauri/tao의 default ActivationPolicy가 Regular라 Info.plist의
@@ -133,23 +136,49 @@ pub fn run() {
                 // 카운트다운 부재. 후속 Phase에서 시각적 fallback 검토 필요.
                 eprintln!("[mohashim] score start failed: {err}");
             }
-            // Phase 23 FR-8: 알림 액션 타입 등록 + 딥링크 핸들러 설치.
+            // Phase 23 FR-8: 알림 액션 타입 등록.
             if let Err(err) = mailbox::register_notification_actions(app.handle()) {
                 eprintln!("[mohashim] mailbox register_notification_actions failed: {err}");
             }
-            mailbox::install_notification_action_handler(app.handle());
+            // 자동 deeplink(알림 직후 윈도우 활성화 시 mailbox 강제 진입) 휴리스틱 비활성화 —
+            // false positive(다른 의도로 트레이 클릭/포커스해도 mailbox로 강제 이동)가 발생하여
+            // 사용자 의도와 어긋남. 사용자는 우상단 📬 아이콘으로 명시적으로 편지함에 진입한다.
+            // mailbox::install_notification_action_handler(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
             // Phase 18 (E, MA-2): 트레이 quit / Cmd+Q / 시스템 종료 모두 RunEvent::Exit로 통합 캡처.
             // AppQuit 이벤트 기록 후 BufWriter flush로 종료 race 방어.
             if let tauri::RunEvent::Exit = event {
                 logger::write(logger::LogEvent::AppQuit);
                 logger::flush();
             }
+            // macOS dock 아이콘 / 알림 클릭으로 인한 앱 재활성화 — 메인 윈도우 hide 상태에서도
+            // 노출되도록 보장. install_notification_action_handler의 Focused 휴리스틱은
+            // hide 윈도우에서 동작하지 않으므로 본 RunEvent::Reopen이 보조 진입점.
+            //
+            // Reopen 변형은 macOS/iOS 전용 (Windows에 미존재) — Windows에서는 알림 토스트 클릭이
+            // Tauri 알림 플러그인의 활성화 콜백을 직접 발화하지 않는 한계가 있어 별도 처리 필요.
+            // 후속 작업: Windows toast XML launch protocol 통합.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                mailbox::on_app_reactivation(app_handle);
+            }
+            // unused 경고 회피 (Windows 빌드에서 app_handle 미사용 차단).
+            #[cfg(not(target_os = "macos"))]
+            let _ = app_handle;
         });
+}
+
+/// 앱을 재시작한다. 현재 실행 파일을 새 프로세스로 spawn 후 현재 프로세스를 종료.
+#[tauri::command]
+fn relaunch(app: tauri::AppHandle) {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).spawn();
+    }
+    app.exit(0);
 }
 
 /// store `auto_launch_enabled` ↔ OS launcher 정합 (FR-9, DEC-9-1).

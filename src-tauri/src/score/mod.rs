@@ -18,8 +18,8 @@ use crate::power;
 use crate::score::phase::{final_tray_state, grace_from, state_from_total, LiveState, Phase};
 use crate::score::shared::{
     apply_noise_loud_hysteresis, current_phase, load_db_ema, seconds_idle, store_time_left,
-    time_left_secs, AX_GRANTED, EMIT_ERR_COUNT, IDLE_NOISE_LOUD_TICKS, MIC_GRANTED, SCORE_STARTED,
-    START_AT,
+    time_left_secs, update_work_ema, AX_GRANTED, EMIT_ERR_COUNT, IDLE_NOISE_LOUD_TICKS,
+    MIC_GRANTED, SCORE_STARTED, START_AT,
 };
 use crate::score::state::ScoreSnapshot;
 use crate::score::{noise::noise_score, work::work_score};
@@ -163,22 +163,55 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         }
 
         // 2) 기존 work/noise/state/grace 산출.
+        //
+        // Break phase 점수 freeze (Phase 22+): cur_phase가 Break면 EMA 갱신 및 raw 산출을 모두
+        // 스킵하고 BREAK_SNAPSHOT에 저장된 Focus 종료 시점 값을 그대로 사용한다.
+        // 예외: Focus→Break 전이 tick에서는 cur_phase가 아직 Focus이므로 live 산출 → 후속에서 snapshot 저장.
+        let cur_phase_pre = current_phase();
         let idle = if AX_GRANTED.load(Relaxed) {
             seconds_idle()
         } else {
             0
         };
-        let db = if MIC_GRANTED.load(Relaxed) {
-            load_db_ema()
-        } else {
-            0.0
-        };
 
-        let work = work_score(idle);
-        let noise = noise_score(db);
-        let total = work.saturating_add(noise); // BR-9: 0..=100. saturating_add로 u8 overflow 방어.
-        let live = state_from_total(total);
-        let grace = grace_from(idle, work);
+        let (work_raw, work, noise, db, total, live, grace) =
+            if cur_phase_pre == Phase::Break {
+                if let Some((w, n, t, snap_db, g, l)) =
+                    crate::score::shared::load_break_snapshot()
+                {
+                    // grace_from은 work_raw 기준 계산이지만, Break 중엔 snapshot grace를 그대로 노출.
+                    // work_raw는 emit 페이로드에 포함되지 않으므로 0으로 placeholder.
+                    (0u8, w, n, snap_db, t, l, g)
+                } else {
+                    // Snapshot 무효 (이론상 도달 불가) → live 산출 폴백.
+                    let db_live = if MIC_GRANTED.load(Relaxed) {
+                        load_db_ema()
+                    } else {
+                        0.0
+                    };
+                    let raw = work_score(idle);
+                    let smoothed = update_work_ema(raw);
+                    let w = smoothed.round().clamp(0.0, 80.0) as u8;
+                    let n = noise_score(db_live);
+                    let t = w.saturating_add(n);
+                    (raw, w, n, db_live, t, state_from_total(t), grace_from(idle, raw))
+                }
+            } else {
+                let db_live = if MIC_GRANTED.load(Relaxed) {
+                    load_db_ema()
+                } else {
+                    0.0
+                };
+                // Issue #25: raw work_score는 step function이라 입력 정지/재개 시 점수가 급변한다.
+                // EMA로 평활하여 부드럽게 수렴 (Phase 22+ 비대칭: 회복 tau=90s, 차감 tau=30s).
+                // grace_from은 work=0 정확 판정이 필요하므로 raw 값을 그대로 전달.
+                let raw = work_score(idle);
+                let smoothed = update_work_ema(raw);
+                let w = smoothed.round().clamp(0.0, 80.0) as u8;
+                let n = noise_score(db_live);
+                let t = w.saturating_add(n);
+                (raw, w, n, db_live, t, state_from_total(t), grace_from(idle, raw))
+            };
 
         // Phase 8 R-G2: Focus tick 세션 평균 누적은 phase transition 이후에 수행하여
         // wake tick에서 전이가 발생한 경우를 제외한다 (아래 phase 분기 후 phase_at_emit 조건 확인).
@@ -186,7 +219,7 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
         // 3) phase 분기 (FR-4a/4b, AC-3 Complete 1-tick).
         let phase_at_emit;
         let time_left_for_emit;
-        let cur_phase = current_phase();
+        let cur_phase = cur_phase_pre;
         match cur_phase {
             Phase::Focus | Phase::Break => {
                 let cur = time_left_secs();
@@ -198,7 +231,17 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
                     } else {
                         Phase::Complete
                     };
+                    // Focus→Break 전이: 현재 live 값을 freeze 스냅샷에 저장 (Break 동안 그대로 emit).
+                    if cur_phase == Phase::Focus && to == Phase::Break {
+                        crate::score::shared::store_break_snapshot(
+                            work, noise, total, db, grace, live,
+                        );
+                    }
                     timer::on_phase_transition(&app, cur_phase, to);
+                    // Break→Complete 전이: snapshot 무효화 (Complete tick부터 live 산출).
+                    if cur_phase == Phase::Break && to == Phase::Complete {
+                        crate::score::shared::clear_break_snapshot();
+                    }
                     phase_at_emit = to;
                     time_left_for_emit = time_left_secs();
                 } else {
@@ -286,12 +329,13 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // 1) 아이콘 + tooltip: tray_state 변경 시에만 (BR-T7, AC-T11).
-        if Some(tray_state) != prev_tray_state {
+        let state_changed = Some(tray_state) != prev_tray_state;
+        let title_changed = Some(&title) != prev_title.as_ref();
+
+        // 1) 아이콘: tray_state 변경 시 (BR-T7, AC-T11).
+        if state_changed {
             match tray::apply_icon(&app, tray_state) {
                 Ok(()) => {
-                    // tooltip 라벨도 동기화 (Phase 0 패턴 유지).
-                    let _ = tray::apply_tooltip_label(&app, tray_state);
                     prev_tray_state = Some(tray_state);
                 }
                 Err(e) => {
@@ -301,8 +345,17 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // 2) 타이틀: format_title 결과 변경 시에만 (None→None 재호출 방지).
-        if Some(&title) != prev_title.as_ref() {
+        // 2) 툴팁: state 또는 title(mm:ss) 변경 시 갱신.
+        // Issue #26: Windows는 set_title이 no-op이라 mm:ss를 호버 툴팁에 포함시켜야 한다.
+        // macOS는 title이 메뉴바에 직접 노출되고 툴팁은 보조 정보로 동작.
+        if state_changed || title_changed {
+            let _ = tray::apply_tooltip_label(&app, tray_state, title.as_deref());
+        }
+
+        // 3) 타이틀: format_title 결과 변경 시에만 (None→None 재호출 방지).
+        //   macOS NSStatusItem.title — 메뉴바 아이콘 옆 텍스트 노출.
+        //   Windows — no-op (시스템 트레이는 라벨 미지원). mm:ss는 위 툴팁 경로로 가시화.
+        if title_changed {
             match tray::apply_title(&app, title.as_deref()) {
                 Ok(()) => {
                     prev_title = Some(title);

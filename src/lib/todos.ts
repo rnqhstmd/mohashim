@@ -13,7 +13,10 @@ import {
   setWorkTags,
   getLocations,
   setLocations,
+  getTodos,
+  setTodos,
 } from "./storage";
+import { formatDate } from "./grass";
 
 // ---------- 색상 / 액센트 ----------
 
@@ -40,24 +43,20 @@ export const COLOR_PALETTE: readonly string[] = [
 // ---------- 기본 태그 ----------
 
 /**
- * 기본 작업 태그 6종. 안정 prefix(`wt-default-*`)로 시드 멱등성 + 향후 식별 용이.
+ * 기본 작업 태그 3종 (공부 → 개발 → 디자인). 안정 prefix(`wt-default-*`)로 시드 멱등성 유지.
  */
 export const DEFAULT_WORK_TAGS: readonly WorkTag[] = [
-  { id: "wt-default-dev",     emoji: "💻", label: "개발",   color: COLOR_PALETTE[0] },
-  { id: "wt-default-study",   emoji: "📚", label: "공부",   color: COLOR_PALETTE[1] },
-  { id: "wt-default-design",  emoji: "🎨", label: "디자인", color: COLOR_PALETTE[6] },
-  { id: "wt-default-reading", emoji: "📖", label: "독서",   color: COLOR_PALETTE[2] },
-  { id: "wt-default-writing", emoji: "✍️", label: "글쓰기", color: COLOR_PALETTE[3] },
-  { id: "wt-default-misc",    emoji: "📋", label: "잡무",   color: COLOR_PALETTE[5] },
+  { id: "wt-default-study",  emoji: "📚", label: "공부",   color: COLOR_PALETTE[1] },
+  { id: "wt-default-dev",    emoji: "💻", label: "개발",   color: COLOR_PALETTE[0] },
+  { id: "wt-default-design", emoji: "🎨", label: "디자인", color: COLOR_PALETTE[6] },
 ];
 
 /**
- * 기본 위치 태그 4종. U-2: 사무실 → "회사".
+ * 기본 위치 태그 3종 (집/카페/도서관).
  */
 export const DEFAULT_LOCATIONS: readonly Location[] = [
   { id: "loc-default-home",    emoji: "🏠", label: "집",     color: COLOR_PALETTE[7] },
   { id: "loc-default-cafe",    emoji: "☕", label: "카페",   color: COLOR_PALETTE[4] },
-  { id: "loc-default-office",  emoji: "🏢", label: "회사",   color: COLOR_PALETTE[8] },
   { id: "loc-default-library", emoji: "📚", label: "도서관", color: COLOR_PALETTE[9] },
 ];
 
@@ -195,5 +194,35 @@ export async function seedDefaultTags(): Promise<void> {
     if (lc.length === 0) await setLocations([...DEFAULT_LOCATIONS]);
   } catch (err) {
     console.error("[mohashim] seedDefaultTags failed", err);
+  }
+}
+
+/**
+ * 부팅 시점 일별 청소 — 어제 이전에 완료된 todo는 삭제, 미완료는 모두 보존.
+ *
+ * 정책 (사용자 요청):
+ *   - 미완료(`done=false`) → 항상 유지 (재시도/이월 자연스러움).
+ *   - 완료(`done=true`) + completedAt이 오늘 → 유지 (오늘 성취 가시화).
+ *   - 완료 + completedAt이 어제 이전 → 삭제 (잔디에 이미 기록됨).
+ *   - 완료 + completedAt 부재/손상 → 삭제 (정합성 회복).
+ *
+ * 실패는 console.error swallow — 부팅 흐름 비차단.
+ */
+export async function cleanupCompletedTodos(): Promise<void> {
+  try {
+    const todos = await getTodos();
+    const today = formatDate(new Date());
+    const filtered = todos.filter((t) => {
+      if (!t.done) return true;
+      if (!t.completedAt) return false;
+      const parsed = new Date(t.completedAt);
+      if (Number.isNaN(parsed.getTime())) return false;
+      return formatDate(parsed) === today;
+    });
+    if (filtered.length !== todos.length) {
+      await setTodos(filtered);
+    }
+  } catch (err) {
+    console.error("[mohashim] cleanupCompletedTodos failed", err);
   }
 }

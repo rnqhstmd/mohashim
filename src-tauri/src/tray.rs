@@ -3,12 +3,10 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{
     image::Image,
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
 };
-use tauri_plugin_autostart::ManagerExt;
-
 use crate::score::phase::{LiveState, Phase};
 
 static ICON_CACHE: OnceLock<HashMap<LiveState, Image<'static>>> = OnceLock::new();
@@ -83,16 +81,6 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "모하 열기", true, None::<&str>)?;
     let separator_top = PredefinedMenuItem::separator(app)?;
 
-    let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
-    let autostart_item = CheckMenuItem::with_id(
-        app,
-        "autostart",
-        "자동 시작",
-        true,
-        autostart_enabled,
-        None::<&str>,
-    )?;
-
     #[cfg(target_os = "windows")]
     let pin_guide_item = MenuItem::with_id(
         app,
@@ -105,13 +93,13 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let separator_bottom = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
+    // 자동 시작 메뉴 항목 제거 — 설정 화면의 자동 시작 토글로 일원화 (사용자 피드백).
     #[cfg(target_os = "windows")]
     let menu = Menu::with_items(
         app,
         &[
             &open_item,
             &separator_top,
-            &autostart_item,
             &pin_guide_item,
             &separator_bottom,
             &quit_item,
@@ -120,17 +108,8 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     #[cfg(not(target_os = "windows"))]
     let menu = Menu::with_items(
         app,
-        &[
-            &open_item,
-            &separator_top,
-            &autostart_item,
-            &separator_bottom,
-            &quit_item,
-        ],
+        &[&open_item, &separator_top, &separator_bottom, &quit_item],
     )?;
-
-    // 핸들러에서 set_checked로 즉시 갱신하기 위해 Clone된 핸들 캡처.
-    let autostart_item_for_handler = autostart_item.clone();
 
     // FR-1/BR-2/AC-4: TrayIconBuilder 빌드 시점에 초기 아이콘 설정.
     // `.icon()`을 체이닝하지 않으면 score 첫 tick에서 apply_icon이 호출될 때까지
@@ -173,26 +152,7 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                     show_at_tray_position(app, &win);
                 }
             }
-            "autostart" => {
-                let manager = app.autolaunch();
-                let new_state = !manager.is_enabled().unwrap_or(false);
-                let result = if new_state {
-                    manager.enable()
-                } else {
-                    manager.disable()
-                };
-                match result {
-                    Ok(()) => {
-                        if let Err(e) = autostart_item_for_handler.set_checked(new_state) {
-                            eprintln!("[mohashim] tray autostart set_checked failed: {e}");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[mohashim] tray autostart toggle failed: {e}");
-                        // 실패 시 체크 상태는 변경하지 않는다 — 다음 클릭 때 재시도.
-                    }
-                }
-            }
+            // "autostart" 메뉴 항목 제거됨 — 설정 화면 자동 시작 토글로 일원화.
             #[cfg(target_os = "windows")]
             "pin_guide" => {
                 // 모달은 메인 팝업 내부에 렌더되므로 팝업이 hide 상태였다면 함께 노출.
@@ -378,7 +338,6 @@ fn apply_initial_position<R: Runtime>(
     };
 
     let sf = monitor.scale_factor_or_1();
-    // Phase 21 사용자 피드백: 팝업 좌측 선을 아이콘 좌측 끝에 정렬.
     let icon_left_logical = icon_pos_phys.x as f64 / sf;
     let icon_right_logical = (icon_pos_phys.x as f64 + icon_size_phys.width as f64) / sf;
     let icon_bottom_y_logical = (icon_pos_phys.y as f64 + icon_size_phys.height as f64) / sf;
@@ -389,16 +348,11 @@ fn apply_initial_position<R: Runtime>(
     let mon_right_logical = mon_left_logical + monitor.size().width as f64 / sf;
     let mon_bottom_logical = mon_top_logical + monitor.size().height as f64 / sf;
 
-    // Phase 21 사용자 피드백 (Windows): 작업표시줄 트레이 아이콘이 우측 끝 클러스터에
-    // 위치하면 popup_left = icon_left가 화면 우측 경계를 넘어 clamp으로 좌측 시프트되며
-    // 아이콘과 팝업의 시각 정렬이 어긋난다. icon_left + popup_w가 화면 밖으로 나가면
-    // popup_right = icon_right로 우측 정렬하여 아이콘이 팝업 하단 우측 모서리 근처에
-    // 위치하도록 한다 — "아이콘 바로 위" UX.
-    let mut x = if icon_left_logical + POPUP_W > mon_right_logical {
-        (icon_right_logical - POPUP_W).round()
-    } else {
-        icon_left_logical.round()
-    };
+    // 사용자 피드백: 팝업 중심을 아이콘 중심에 맞춘다.
+    // popup_center_x = icon_center_x → popup_left = icon_center_x - POPUP_W/2.
+    // 모니터 경계 clamp는 아래에서 별도 처리 (`max(mon_left)`, `min(mon_right - POPUP_W)`).
+    let icon_center_x = (icon_left_logical + icon_right_logical) / 2.0;
+    let mut x = (icon_center_x - POPUP_W / 2.0).round();
     #[cfg(target_os = "macos")]
     let mut y = icon_bottom_y_logical.round();
     #[cfg(not(target_os = "macos"))]
@@ -530,16 +484,25 @@ pub fn apply_title<R: Runtime>(
         .map_err(|e| format!("set_title failed: {e}"))
 }
 
-/// 한국어 라벨 tooltip. tray_state 변경 시 호출.
+/// 한국어 라벨 tooltip. tray_state 또는 시간 변경 시 호출.
+///
+/// Issue #26: Windows 시스템 트레이는 아이콘 옆 텍스트 라벨을 지원하지 않으므로
+/// (macOS NSStatusItem 전용 API) mm:ss를 호버 툴팁에 포함시켜 가시성을 확보한다.
+/// `time_suffix`가 Some이면 `"모하심 — 집중 중 25:00"` 형태로 표시.
 pub fn apply_tooltip_label<R: Runtime>(
     app: &AppHandle<R>,
     state: LiveState,
+    time_suffix: Option<&str>,
 ) -> Result<(), String> {
     let tray = app
         .tray_by_id("main")
         .ok_or_else(|| "tray 'main' not found".to_string())?;
     let label = label_for(state);
-    tray.set_tooltip(Some(format!("모하심 — {label}")))
+    let tooltip = match time_suffix {
+        Some(t) if !t.is_empty() => format!("모하심 — {label} {t}"),
+        _ => format!("모하심 — {label}"),
+    };
+    tray.set_tooltip(Some(tooltip))
         .map_err(|e| format!("set_tooltip failed: {e}"))
 }
 

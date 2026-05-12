@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { discardSession } from "../../lib/timer";
-import { Potato } from "../Potato";
+import { ItemOverlay } from "./ItemOverlay";
 import type { PotatoState } from "../../lib/phrases";
-import { getBreakMinutes, getFocusMinutes } from "../../lib/storage";
+import {
+  getBreakMinutes,
+  getFocusMinutes,
+  STORE_DEFAULTS,
+  type Inventory,
+} from "../../lib/storage";
 import { DiscardModal } from "./DiscardModal";
 
 type TimerDetailScreenProps = {
@@ -15,6 +20,8 @@ type TimerDetailScreenProps = {
    * 본 prop은 호환성을 위해 남기되 렌더에는 사용하지 않는다.
    */
   phrase?: string;
+  /** 장착 아이템 — 타이머 상세에서도 캐릭터에 동일하게 노출. 미전달 시 빈 슬롯. */
+  equipped?: Inventory["equipped"];
   onBack: () => void;
 };
 
@@ -39,8 +46,10 @@ export function TimerDetailScreen({
   phase,
   timeLeft,
   potatoState,
+  equipped,
   onBack,
 }: TimerDetailScreenProps) {
+  const equippedSafe = equipped ?? STORE_DEFAULTS.inventory.equipped;
   const [showDiscard, setShowDiscard] = useState(false);
   const [totalSecs, setTotalSecs] = useState<number | null>(null);
 
@@ -78,7 +87,8 @@ export function TimerDetailScreen({
       : 0;
   // dashOffset: progress=1(시작) → 0, progress=0(완료) → RING_C (꽉 빈 원호).
   const dashOffset = RING_C * (1 - progress);
-  const ringColor = phase === "focus" ? "#dc4646" : "#d68a6a";
+  // 휴식 중 링 색상은 chipBreak(#7cc47a, 연두)과 통일.
+  const ringColor = phase === "focus" ? "#dc4646" : "#7cc47a";
 
   return (
     <div className="relative z-10 flex h-full flex-col">
@@ -123,7 +133,12 @@ export function TimerDetailScreen({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <Potato state={potatoState} size={84} animated={true} />
+            <ItemOverlay
+              equipped={equippedSafe}
+              state={potatoState}
+              size={84}
+              animated={true}
+            />
             <span className="mt-1 text-3xl font-extrabold tabular-nums tracking-tight text-ink">
               {formatMmSs(timeLeft)}
             </span>

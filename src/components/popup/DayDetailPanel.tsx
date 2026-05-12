@@ -184,11 +184,21 @@ export function DayDetailPanel({ date, onClose, excludeRef }: DayDetailPanelProp
             </h4>
             {logs.length > 0 ? (
               <ul className="mt-1 space-y-0.5 text-sm text-ink/80">
-                {logs.map((log, idx) => (
-                  <li key={log.id}>
-                    [{idx + 1}] {formatSessionTime(log.start_at, log.end_at)} · {log.duration_mins}분 · {log.score}점
-                  </li>
-                ))}
+                {logs.map((log, idx) => {
+                  // 전체 span(end - start) = focus + break이므로 break = span - duration.
+                  // 음수/NaN 가드: invalid이거나 음수면 0으로 폴백.
+                  const startMs = new Date(log.start_at).getTime();
+                  const endMs = new Date(log.end_at).getTime();
+                  const totalMins = Number.isFinite(startMs) && Number.isFinite(endMs)
+                    ? Math.max(0, Math.round((endMs - startMs) / 60000))
+                    : log.duration_mins;
+                  const breakMins = Math.max(0, totalMins - log.duration_mins);
+                  return (
+                    <li key={log.id}>
+                      [{idx + 1}] {formatSessionTime(log.start_at, log.end_at)} · {log.duration_mins}분 집중, {breakMins}분 휴식 · {log.score}점
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <div className="mt-1 text-xs text-ink/40">세션 기록 없음</div>

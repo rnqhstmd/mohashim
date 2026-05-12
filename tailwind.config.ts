@@ -25,7 +25,7 @@ const config: Config = {
         // Phase 3: ModeChip 배경 색상 (FR-chip-color).
         chipIdle: "#9ca3af",
         chipFocus: "#dc4646",
-        chipBreak: "#d68a6a",
+        chipBreak: "#7cc47a",
         // Phase 4: character/잔디 색상 토큰.
         sproutVivid: "#4CAF50",
         sproutFresh: "#81C784",

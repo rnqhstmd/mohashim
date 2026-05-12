@@ -68,10 +68,11 @@ export function TagListEditor<T extends AnyTag>({
 
   const handleAdd = () => {
     if (maxItems !== undefined && draft.length >= maxItems) return;
+    // ID 포맷 통일: default 태그(wt-default-*, loc-default-*)와 동일한 hyphen prefix 사용.
     const newId =
       kind === "work"
-        ? `wt${Date.now()}${Math.random().toString(36).slice(2)}`
-        : `loc${Date.now()}${Math.random().toString(36).slice(2)}`;
+        ? `wt-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        : `loc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const newTag = {
       id: newId,
       emoji: EMOJI_PALETTE[0],
@@ -168,7 +169,7 @@ export function TagListEditor<T extends AnyTag>({
                 <button
                   type="button"
                   onClick={() => setEditingId(editing ? null : item.id)}
-                  className="px-2 text-xs font-semibold text-ink/55 hover:text-ink"
+                  className="shrink-0 whitespace-nowrap px-2 text-xs font-semibold text-ink/55 hover:text-ink"
                 >
                   {editing ? "완료" : "✎"}
                 </button>
@@ -176,7 +177,7 @@ export function TagListEditor<T extends AnyTag>({
                   type="button"
                   onClick={() => handleDelete(item.id)}
                   disabled={draft.length <= 1}
-                  className="px-2 text-xs text-red-500 disabled:text-ink/20"
+                  className="shrink-0 px-2 text-xs text-red-500 disabled:text-ink/20"
                 >
                   ×
                 </button>
@@ -220,14 +221,21 @@ export function TagListEditor<T extends AnyTag>({
             </div>
           );
         })}
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={maxItems !== undefined && draft.length >= maxItems}
-          className="w-full rounded-xl border border-dashed border-ink/25 py-3 text-sm font-semibold text-ink/55 hover:border-ink/40 hover:text-ink/75 disabled:opacity-40 disabled:hover:border-ink/25"
-        >
-          ＋ 새 {kind === "work" ? "작업 태그" : "위치 태그"} 추가
-        </button>
+        {(() => {
+          const atCap = maxItems !== undefined && draft.length >= maxItems;
+          return (
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={atCap}
+              className="w-full rounded-xl border border-dashed border-ink/25 py-3 text-sm font-semibold text-ink/55 hover:border-ink/40 hover:text-ink/75 disabled:opacity-40 disabled:hover:border-ink/25"
+            >
+              {atCap
+                ? `최대 ${maxItems}개까지 추가할 수 있어요`
+                : `＋ 새 ${kind === "work" ? "작업 태그" : "위치 태그"} 추가`}
+            </button>
+          );
+        })()}
       </div>
 
       <DiscardChangesModal

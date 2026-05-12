@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { WorkTag, Location } from "../../lib/storage";
 import { TagPicker } from "./TagPicker";
 
@@ -22,6 +22,15 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedLoc, setSelectedLoc] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState<PickerOpen>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 텍스트 변경 시 textarea 높이 자동 조정 — 한 줄을 넘기면 줄바꿈되며 카드가 위로 늘어남.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
 
   const handleSubmit = () => {
     const trimmed = text.trim();
@@ -33,8 +42,8 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
     setPickerOpen(null);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
@@ -91,14 +100,15 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
         >
           📍
         </button>
-        <input
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={text}
-          maxLength={100}
+          rows={1}
+          maxLength={50}
           placeholder="할 일을 입력하세요"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="min-w-0 flex-1 rounded-md border border-ink/20 bg-paperWarm px-2.5 py-1 text-sm text-ink placeholder:text-ink/40 outline-none focus:border-ink/50"
+          className="min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-ink/20 bg-paperWarm px-2.5 py-1 text-sm leading-snug text-ink placeholder:text-ink/40 outline-none focus:border-ink/50"
         />
         <button
           type="button"
