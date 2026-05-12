@@ -155,15 +155,15 @@ fn pick_complete_phrase(score: u32, seed: u32) -> &'static str {
 /// 기존 모하심 톤(친근 구어·오타 허용·캐릭터스러움)에 맞춰 작성.
 fn pick_praise_line(score: u32) -> &'static str {
     if score >= 90 {
-        "왁 완전 열심히 했네!! 크크"
+        "왁 완전 열심히 했네!!"
     } else if score >= 75 {
         "키키 완전 고생했네"
     } else if score >= 50 {
         "이정도면 나쁘지 않움 크크"
     } else if score >= 25 {
-        "ㅋㅋㅋㅋㅋㅋ아놔 점수 모심 근데 한 번 봐줄게~"
+        "ㅋㅋㅋㅋㅋㅋ아놔 점수 모심 근데 한번만 봐줄게~"
     } else {
-        "아 징자 이건 못 참겠다 전화 한 번 해야겠다.."
+        "아 징자 이건 못 참겠다 전화 한번 해야겠다.."
     }
 }
 
@@ -576,7 +576,7 @@ mod tests {
         // 25점 미만은 위로 라인 포함.
         let body = format_session_body(25, 10, -56.0, 1, 1, &[], None, 0);
         assert!(
-            body.contains("전화 한 번"),
+            body.contains("전화 한번"),
             "low score (<25) should include consolation, got: {body}"
         );
     }
