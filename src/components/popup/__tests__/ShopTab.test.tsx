@@ -213,12 +213,12 @@ describe("ShopTab", () => {
       expect(screen.getByText("동글 안경")).toBeInTheDocument();
     });
 
-    // "머리" 탭 클릭.
-    fireEvent.click(screen.getByRole("button", { name: "머리" }));
+    // "모자" 탭 클릭.
+    fireEvent.click(screen.getByRole("button", { name: "모자" }));
 
     await waitFor(() => {
-      expect(screen.getByText("새싹 핀")).toBeInTheDocument();
-      expect(screen.getByText("노란 안전모")).toBeInTheDocument();
+      expect(screen.getByText("밀짚모자")).toBeInTheDocument();
+      expect(screen.getByText("예술가 모자")).toBeInTheDocument();
       expect(screen.getByText("마법사 고깔")).toBeInTheDocument();
       expect(screen.queryByText("동글 안경")).not.toBeInTheDocument();
     });

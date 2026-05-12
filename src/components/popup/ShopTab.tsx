@@ -22,9 +22,9 @@ import {
 import { getEconomy, getInventory, type Economy, type Inventory } from "../../lib/storage";
 
 const SLOT_TABS: ReadonlyArray<{ id: Slot; label: string }> = [
-  { id: "face", label: "얼굴" },
-  { id: "head", label: "머리" },
-  { id: "back", label: "등" },
+  { id: "face", label: "안경" },
+  { id: "head", label: "모자" },
+  { id: "back", label: "목도리" },
 ];
 
 const DEFAULT_INVENTORY: Inventory = {

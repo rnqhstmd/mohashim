@@ -7,18 +7,12 @@ type PomodoroCardProps = {
   timeLeft: number;
   potatoState: PotatoState;
   phrase: string;
-  /** Phase 21: 데시벨 인라인 노출 — 캐릭터 헤더 내부에서 dB 라벨/숫자 표기. */
   db: number;
   /**
-   * 사용자 피드백: idle 화면에 직전 세션 점수를 노출하는 대신, 세션 진행 중에
-   * 실시간 점수(work_score + noise_score, 0~100)를 카드 헤더 우측에 큼지막하게
-   * 보여준다. complete phase에서는 세션 평균 점수가 표시된다 (score-tick에서
-   * total이 평균으로 갱신됨).
+   * 실시간 점수(0~100). complete phase에서는 세션 평균.
    */
   total: number;
-  /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. */
   equipped: Inventory["equipped"];
-  /** Phase 26 FR-22 / AC-14: 새싹 잔액. dB 상태 행 끝에 ` · 🌱 N` 형태로 통합. */
   sprouts: number;
   onTimerClick: () => void;
 };
@@ -40,10 +34,13 @@ function envFromDb(db: number): { icon: string; label: string; danger: boolean }
 }
 
 /**
- * Todos 탭 상단 카드 — focus/break/complete phase에서 노출 (Phase 21 사용자 피드백 재구조).
+ * Todos 탭 상단 카드 — focus/break/complete phase에서 노출.
  *
- * FocusStartButton과 동일 레이아웃 골격 — 우상단 모드 칩 / 좌측 큰 Potato /
- * 우측 헤더 + 환경 라벨 + 멘트 / 하단 풀폭 [타이머 보기 | mm:ss] 버튼.
+ * FocusStartButton과 동일 레이아웃:
+ *   좌측 컬럼: 캐릭터 + "모하 🌱 N"
+ *   우측 컬럼: 실시간 점수 + dB → 대사(중앙·2줄) → 타이머 보기 버튼
+ *
+ * MainHeader가 phase 칩(집중중/휴식중)을 단일 진실 소스로 노출 — 본 카드 내부 중복 칩 제거.
  */
 export function PomodoroCard({
   phase,
@@ -57,14 +54,6 @@ export function PomodoroCard({
   onTimerClick,
 }: PomodoroCardProps) {
   const isComplete = phase === "complete";
-  const modeLabel =
-    phase === "focus" ? "집중 중" : phase === "break" ? "휴식 중" : "세션 완료";
-  const chipBg =
-    phase === "focus"
-      ? "bg-chipFocus"
-      : phase === "break"
-      ? "bg-chipBreak"
-      : "bg-emerald-500";
 
   const inactive = db === 0;
   const dbSpl = inactive ? 0 : Math.max(0, Math.min(120, db + 94));
@@ -74,82 +63,75 @@ export function PomodoroCard({
   const dbColor = inactive ? "#8a93a6" : env.danger ? "#d8554b" : "#5fa97a";
 
   return (
-    <div className="relative border-b border-ink/10 bg-paperWarm/70 px-3 pb-2.5 pt-2.5 backdrop-blur-[1px]">
-      {/* 우상단 절대 위치 — 모드 칩. */}
-      <span
-        className={`absolute right-3 top-2 inline-flex items-center gap-1 rounded-full border border-ink/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-[1px_1px_0_0_#2b2520] ${chipBg}`}
-      >
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-mhpulse" />
-        {modeLabel}
-      </span>
-
-      {/* 1행: 큰 Potato + 우측 헤더 영역 */}
-      <div className="flex items-start gap-3">
-        <div className="shrink-0">
+    <div className="border-b border-ink/10 bg-paperWarm/70 px-3 pb-3 pt-2 backdrop-blur-[1px]">
+      {/* 2컬럼 — items-stretch(기본) + 좌측 justify-between으로 이름과 버튼 horizontally aligned */}
+      <div className="flex gap-3">
+        {/* 좌측: 캐릭터(top) / 이름·새싹(bottom) */}
+        <div className="flex shrink-0 flex-col items-center justify-between">
           <ItemOverlay
             equipped={equipped}
             state={potatoState}
-            size={88}
+            size={80}
             animated={true}
           />
-        </div>
-        <div className="min-w-0 flex-1 pt-1">
-          <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">
-            <span>안녕 난 모하야!</span>
-          </h2>
-
-          {/* 실시간 점수 — 세션 진행 중 가독성 우선의 큰 숫자 표시 (사용자 피드백). */}
-          <div className="mt-1 flex items-baseline gap-1 tabular-nums">
-            <span className="text-[28px] font-extrabold leading-none text-ink">
-              {Math.max(0, Math.min(100, Math.round(total)))}
+          <div className="flex items-center gap-1">
+            <span className="text-[14px] font-extrabold text-ink">모하</span>
+            <span className="flex items-center gap-0.5 text-[12px] font-bold text-ink/70">
+              <span aria-hidden>🌱</span>
+              <span className="tabular-nums">{sprouts.toLocaleString()}</span>
             </span>
-            <span className="text-[11px] font-bold text-ink/55">/ 100</span>
           </div>
+        </div>
 
-          {/* 상태 행: 환경 라벨 dB + 새싹 잔액(Phase 26 FR-22 / AC-14).
-              형태: `{env 아이콘} {label} {N}dB · 🌱 {잔액}`. */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
+        {/* 우측: 점수+dB(top) / 대사(중앙) / 타이머 보기 버튼(bottom) */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          {/* 점수 + dB 한 행 */}
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-1 tabular-nums">
+              <span className="text-[22px] font-extrabold leading-none text-ink">
+                {Math.max(0, Math.min(100, Math.round(total)))}
+              </span>
+              <span className="text-[10px] font-bold text-ink/55">/ 100</span>
+            </div>
             <span
-              className="inline-flex items-center gap-1 tabular-nums"
+              className="inline-flex items-center gap-1 text-[11px] font-bold"
               style={{ color: dbColor }}
             >
               <span aria-hidden>{env.icon}</span>
               <span>{env.label}</span>
-              <span className="ml-0.5 opacity-90">
-                {inactive ? "—" : `${Math.round(dbSpl)}dB`}
-              </span>
-              <span className="ml-1 opacity-70" aria-hidden>·</span>
-              <span className="inline-flex items-center gap-0.5 text-ink/80">
-                <span aria-hidden>🌱</span>
-                <span className="tabular-nums">{sprouts.toLocaleString()}</span>
-              </span>
+              {!inactive && (
+                <span className="ml-0.5 tabular-nums opacity-90">
+                  {Math.round(dbSpl)}dB
+                </span>
+              )}
             </span>
           </div>
 
-          <p className="mt-1 break-words text-xs italic text-ink/75">
-            "{phrase}"
-          </p>
+          {/* 대사: 좌우/수직 중앙 정렬, 최대 2줄 고정 영역. whitespace-pre-line으로 phrases.ts \n 보존. */}
+          <div className="flex min-h-[2.8rem] flex-1 items-center justify-center">
+            <p className="whitespace-pre-line text-center text-[14px] italic leading-[1.35] text-ink/75 line-clamp-2">
+              "{phrase}"
+            </p>
+          </div>
+
+          {/* 타이머 보기 버튼 — 대사 바로 하단 */}
+          <button
+            type="button"
+            onClick={onTimerClick}
+            disabled={isComplete}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-ink bg-ink px-3 py-1.5 text-xs font-extrabold tracking-tight text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[2px_3px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_1px_0_0_rgba(40,30,20,0.18)] disabled:cursor-default disabled:bg-ink/40 disabled:shadow-none"
+          >
+            <span aria-hidden>⏱</span>
+            <span>{isComplete ? "세션 완료" : "타이머 보기"}</span>
+            <span
+              aria-hidden
+              className="border-l border-paperWarm/30 pl-1.5 text-[10px] font-bold text-paperWarm/80 tabular-nums"
+            >
+              {formatMmSs(timeLeft)}
+            </span>
+          </button>
         </div>
       </div>
-
-      {/* 2행: 타이머 보기 풀폭 버튼. */}
-      <button
-        type="button"
-        onClick={onTimerClick}
-        disabled={isComplete}
-        className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-ink bg-ink py-2.5 text-sm font-extrabold tracking-tight text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[2px_3px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_1px_0_0_rgba(40,30,20,0.18)] disabled:cursor-default disabled:bg-ink/40 disabled:shadow-none"
-      >
-        <span aria-hidden className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-paperWarm/15">
-          ⏱
-        </span>
-        <span>{isComplete ? "세션 완료" : "타이머 보기"}</span>
-        <span
-          aria-hidden
-          className="inline-block w-[44px] border-l border-paperWarm/30 pl-2 text-right text-xs font-bold text-paperWarm/80 tabular-nums"
-        >
-          {formatMmSs(timeLeft)}
-        </span>
-      </button>
     </div>
   );
 }

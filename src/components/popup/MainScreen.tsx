@@ -226,7 +226,10 @@ export function MainScreen({ onResetDone }: MainScreenProps) {
       {/* Phase 26 FR-20 / AC-15: overlayScreen 분기. mailbox/settings는 풀스크린 단독,
           BottomTabBar 숨김 (Q&A 결정 2). null이면 메인 헤더 + 탭 + 바텀바 노출. */}
       {overlayScreen === "mailbox" ? (
-        <MailboxScreen onClose={() => setOverlayScreen(null)} />
+        <MailboxScreen
+          onClose={() => setOverlayScreen(null)}
+          equipped={equipped}
+        />
       ) : overlayScreen === "settings" ? (
         <SettingsScreen
           onResetDone={onResetDone}
