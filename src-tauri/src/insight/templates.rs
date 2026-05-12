@@ -134,13 +134,13 @@ fn render_closing(template: TemplateId) -> &'static str {
 fn render_tag_insight(template: TemplateId, t: &TagLabels) -> Option<String> {
     match template {
         TemplateId::Standard => match (&t.top_work, &t.top_location) {
-            (Some((w, c)), Some((l, _))) => Some(format!(
-                "이번 달 가장 많이 한 건 [{}]({}세션)! 주 활동지는 바로 [{}]!",
-                w, c, l
+            (Some((w, _)), Some((l, _))) => Some(format!(
+                "이번 달 가장 많이 한 건 [{}]! 주 활동지는 바로 [{}]!",
+                w, l
             )),
-            (Some((w, c)), None) => Some(format!(
-                "이번 달 가장 많이 한 건 [{}]({}세션)!",
-                w, c
+            (Some((w, _)), None) => Some(format!(
+                "이번 달 가장 많이 한 건 [{}]!",
+                w
             )),
             (None, Some((l, _))) => Some(format!("주 활동지는 바로 [{}]!", l)),
             (None, None) => None,

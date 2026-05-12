@@ -262,21 +262,6 @@ export function SettingsScreen({
           }}
         />
 
-        {/* DEBUG (REMOVE-AFTER-TEST): 월간 리포트 발송 트리거 */}
-        <Row
-          icon="🧪"
-          label="월간 리포트 테스트"
-          sub="합성 데이터로 편지 1통 발송"
-          onClick={() => {
-            void invoke("trigger_monthly_letter_test")
-              .then(() =>
-                console.log("[mohashim] monthly letter test triggered")
-              )
-              .catch((err) =>
-                console.error("[mohashim] trigger_monthly_letter_test failed", err)
-              );
-          }}
-        />
       </div>
 
       {/* 데이터 초기화 — 명시적으로 노출 */}
