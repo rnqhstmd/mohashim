@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Potato } from "../Potato";
-import { getMailbox, type Letter } from "../../lib/storage";
+import { ItemOverlay } from "./ItemOverlay";
+import { getMailbox, type Inventory, type Letter } from "../../lib/storage";
 import { markAllRead } from "../../lib/mailbox";
 
 function truncate60(s: string): string {
@@ -15,11 +15,12 @@ function truncate60(s: string): string {
 
 type ListViewProps = {
   letters: Letter[];
+  equipped: Inventory["equipped"];
   onSelect: (id: string) => void;
   onClose: () => void;
 };
 
-function ListView({ letters, onSelect, onClose }: ListViewProps) {
+function ListView({ letters, equipped, onSelect, onClose }: ListViewProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Phase 26 FR-20: 좌상단 ← 버튼으로 메인 화면 복귀. */}
@@ -46,10 +47,13 @@ function ListView({ letters, onSelect, onClose }: ListViewProps) {
       </div>
       {letters.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
-          <Potato state="calm" size={80} animated={false} />
-          <p className="text-center text-sm text-ink/60">
-            아직 편지가 없어. 함께 집중해보자!
-          </p>
+          <ItemOverlay
+            equipped={equipped}
+            state="calm"
+            size={80}
+            animated={false}
+          />
+          <p className="text-center text-sm text-ink/60">편지함이 비어있네</p>
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
@@ -128,6 +132,8 @@ function DetailView({ letter, onBack }: DetailViewProps) {
 type MailboxScreenProps = {
   /** Phase 26 FR-20: 좌상단 ← 버튼이 호출. 오버레이를 닫고 메인 화면 복귀. */
   onClose: () => void;
+  /** 빈 상태 캐릭터에 적용할 인벤토리 장착 상태(상점 구매 아이템 노출). */
+  equipped: Inventory["equipped"];
 };
 
 /**
@@ -138,7 +144,7 @@ type MailboxScreenProps = {
  *
  * Phase 26: list 뷰의 ← 버튼은 오버레이 닫기 (onClose), detail 뷰의 ← 버튼은 list 복귀.
  */
-export function MailboxScreen({ onClose }: MailboxScreenProps) {
+export function MailboxScreen({ onClose, equipped }: MailboxScreenProps) {
   const [letters, setLetters] = useState<Letter[]>([]);
   const [view, setView] = useState<"list" | "detail">("list");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -180,6 +186,7 @@ export function MailboxScreen({ onClose }: MailboxScreenProps) {
   return (
     <ListView
       letters={letters}
+      equipped={equipped}
       onSelect={(id) => {
         setSelectedId(id);
         setView("detail");

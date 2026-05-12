@@ -2,16 +2,12 @@ import { useEffect, useState } from "react";
 import { ItemOverlay } from "./ItemOverlay";
 import type { PotatoState } from "../../lib/phrases";
 import { getFocusMinutes, type Inventory } from "../../lib/storage";
-import { useIdleChipLabel } from "../../lib/idleChip";
 
 type FocusStartButtonProps = {
   potatoState: PotatoState;
   phrase: string;
-  /** Phase 21: 데시벨 인라인 노출 — 캐릭터 헤더 내부에서 dB 라벨/숫자 표기. */
   db: number;
-  /** Phase 25 FR-1: 캐릭터 레이어 장착 상태. */
   equipped: Inventory["equipped"];
-  /** Phase 26 FR-22 / AC-14: 새싹 잔액. dB 상태 행 끝에 ` · 🌱 N` 형태로 통합. */
   sprouts: number;
   onStart: () => Promise<void>;
 };
@@ -26,13 +22,12 @@ function envFromDb(db: number): { icon: string; label: string; danger: boolean }
 }
 
 /**
- * Todos 탭 상단 — idle phase에서 노출 (Phase 21 사용자 피드백 재구조).
+ * Todos 탭 상단 — idle phase에서 노출.
  *
  * 레이아웃:
- *   - 우상단 절대 위치 "평상시" 칩.
- *   - 좌측 큰 Potato (size 88) + 우측 헤더("안녕 난 모하야!") + 환경 라벨 + 멘트.
- *   - 직전 세션 점수 표시는 제거 (사용자 피드백) — 잔디 탭 상세 조회로 일원화.
- *   - 하단 풀폭 [▶ 집중 시작 | N분] 버튼.
+ *   좌측 컬럼: 캐릭터 이미지 + 하단에 "모하 🌱 N".
+ *   우측 컬럼: dB 환경 상태 + 모하 대사(phrase).
+ *   전체 너비: [▶ 집중 시작 | N분] 버튼.
  */
 export function FocusStartButton({
   potatoState,
@@ -43,9 +38,6 @@ export function FocusStartButton({
   onStart,
 }: FocusStartButtonProps) {
   const [focusMins, setFocusMins] = useState<number>(25);
-  // Phase 21 사용자 피드백 (재개정): "평상시" 고정 텍스트 → 회전 무작위 멘트로
-  // 교체. 본 컴포넌트는 idle phase 마운트 동안 항상 active=true.
-  const idleLabel = useIdleChipLabel(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,71 +63,61 @@ export function FocusStartButton({
   const dbColor = inactive ? "#8a93a6" : env.danger ? "#d8554b" : "#5fa97a";
 
   return (
-    <div className="relative border-b border-ink/10 bg-paperWarm/70 px-3 pb-3 pt-2.5 backdrop-blur-[1px]">
-      {/* 우상단 절대 위치 — 8초 회전 무작위 idle 멘트 (Phase 21 사용자 피드백). */}
-      <span className="absolute right-3 top-2 inline-flex items-center gap-1 rounded-full border border-ink/80 bg-deepNavy px-2 py-0.5 text-[10px] font-bold text-white shadow-[1px_1px_0_0_#2b2520]">
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-white" />
-        {idleLabel || "쉬는 중"}
-      </span>
-
-      {/* 1행: 큰 Potato + 우측 헤더 영역 */}
-      <div className="flex items-start gap-3">
-        <div className="shrink-0">
+    <div className="border-b border-ink/10 bg-paperWarm/70 px-3 pb-3 pt-2 backdrop-blur-[1px]">
+      {/* 2컬럼 — items-stretch(기본)로 두 컬럼 동일 높이.
+          좌측 justify-between으로 모하·새싹 이름이 우측 집중 시작 버튼과 horizontally aligned. */}
+      <div className="flex gap-3">
+        {/* 좌측: 캐릭터(top) / 이름·새싹(bottom) */}
+        <div className="flex shrink-0 flex-col items-center justify-between">
           <ItemOverlay
             equipped={equipped}
             state={potatoState}
-            size={88}
+            size={80}
             animated={true}
           />
-        </div>
-        <div className="min-w-0 flex-1 pt-1">
-          <h2 className="flex items-center gap-1 text-[15px] font-extrabold leading-tight text-ink">
-            <span>안녕 난 모하야!</span>
-          </h2>
-
-          {/* 상태 행: 환경 라벨 dB + 새싹 잔액(Phase 26 FR-22 / AC-14).
-              형태: `{env 아이콘} {label} {N}dB · 🌱 {잔액}`. */}
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold">
-            <span
-              className="inline-flex items-center gap-1 tabular-nums"
-              style={{ color: dbColor }}
-            >
-              <span aria-hidden>{env.icon}</span>
-              <span>{env.label}</span>
-              <span className="ml-0.5 opacity-90">
-                {inactive ? "—" : `${Math.round(dbSpl)}dB`}
-              </span>
-              <span className="ml-1 opacity-70" aria-hidden>·</span>
-              <span className="inline-flex items-center gap-0.5 text-ink/80">
-                <span aria-hidden>🌱</span>
-                <span className="tabular-nums">{sprouts.toLocaleString()}</span>
-              </span>
+          <div className="flex items-center gap-1">
+            <span className="text-[14px] font-extrabold text-ink">모하</span>
+            <span className="flex items-center gap-0.5 text-[12px] font-bold text-ink/70">
+              <span aria-hidden>🌱</span>
+              <span className="tabular-nums">{sprouts.toLocaleString()}</span>
             </span>
           </div>
+        </div>
 
-          {/* 멘트 — 따옴표로 감싼 인용 스타일. 말풍선 도형 제거(헤더와 통합). */}
-          <p className="mt-1 break-words text-xs italic text-ink/75">
-            "{phrase}"
-          </p>
+        {/* 우측: dB(top) / 대사(중앙·2줄) / 집중 시작 버튼(bottom) */}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <span
+            className="inline-flex items-center gap-1 text-[11px] font-bold"
+            style={{ color: dbColor }}
+          >
+            <span aria-hidden>{env.icon}</span>
+            <span>{env.label}</span>
+            {!inactive && (
+              <span className="ml-0.5 tabular-nums opacity-90">
+                {Math.round(dbSpl)}dB
+              </span>
+            )}
+          </span>
+          {/* 대사: 좌우/수직 중앙 정렬, 2줄 고정 영역. whitespace-pre-line으로 phrases.ts의 \n 줄바꿈 보존. */}
+          <div className="flex min-h-[2.8rem] flex-1 items-center justify-center">
+            <p className="whitespace-pre-line text-center text-[14px] italic leading-[1.35] text-ink/75 line-clamp-2">
+              "{phrase}"
+            </p>
+          </div>
+          {/* 집중 시작 버튼 — 대사 바로 하단 */}
+          <button
+            type="button"
+            onClick={() => { void onStart(); }}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-ink bg-ink px-3 py-1.5 text-xs font-extrabold tracking-tight text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[2px_3px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_1px_0_0_rgba(40,30,20,0.18)]"
+          >
+            <span aria-hidden>▶</span>
+            <span>집중 시작</span>
+            <span aria-hidden className="border-l border-paperWarm/30 pl-1.5 text-[10px] font-bold text-paperWarm/70">
+              {focusMins}분
+            </span>
+          </button>
         </div>
       </div>
-
-      {/* 2행: 집중 시작 버튼 (full-width). */}
-      <button
-        type="button"
-        onClick={() => {
-          void onStart();
-        }}
-        className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-ink bg-ink py-2.5 text-sm font-extrabold tracking-tight text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px hover:shadow-[2px_3px_0_0_rgba(40,30,20,0.22)] active:translate-y-0 active:shadow-[1px_1px_0_0_rgba(40,30,20,0.18)]"
-      >
-        <span aria-hidden className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-paperWarm/15">
-          ▶
-        </span>
-        <span>집중 시작</span>
-        <span aria-hidden className="border-l border-paperWarm/30 pl-2 text-xs font-bold text-paperWarm/70">
-          {focusMins}분
-        </span>
-      </button>
     </div>
   );
 }
