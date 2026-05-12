@@ -14,6 +14,22 @@ pub static LAST_INPUT_AT_MS: AtomicU64 = AtomicU64::new(0);
 /// Relaxed ordering으로 일시적 staleness 허용 — 1Hz tick 해상도에서 무관.
 pub static DB_EMA_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Issue #25: 작업 점수 EMA 평활값 (f32 bits).
+///
+/// `work_score(idle)`는 step function이라 idle 경계에서 점수가 급변한다 — 사용자가
+/// 입력을 멈추면 빠르게 0으로 떨어지고, 재개하면 80으로 즉시 복귀해 체감이 거칠다.
+/// tick_loop가 매 1Hz에 raw 값을 EMA로 평활하여 천천히 수렴하도록 한다.
+///
+/// alpha = 1 - exp(-dt/tau), dt=1s, tau=30s → ≈ 0.0328
+/// 30초 후 raw 값의 ~63%까지 수렴, 90초 후 ~95% 수렴.
+///
+/// 초기값: 0x42a00000 = f32 80.0 bits (grace period 기본 점수와 일치 — 부팅 직후 0으로
+/// 시작해 30초간 점차 올라가며 misleading한 "산만" 표시되는 회귀를 방지).
+pub static WORK_SCORE_EMA_BITS: AtomicU32 = AtomicU32::new(0x42a00000);
+
+/// EMA 평활 계수. 1Hz tick, tau=30s 기준.
+pub const WORK_EMA_ALPHA: f32 = 0.0328;
+
 /// 권한 게이팅 캐시 (start 시 1회 기록).
 pub static MIC_GRANTED: AtomicBool = AtomicBool::new(false);
 pub static AX_GRANTED: AtomicBool = AtomicBool::new(false);
@@ -116,6 +132,27 @@ pub fn store_db_ema(v: f32) {
 /// f32 EMA 값 atomic 로드.
 pub fn load_db_ema() -> f32 {
     f32::from_bits(DB_EMA_BITS.load(Relaxed))
+}
+
+/// Issue #25: work_score EMA 평활값 atomic 로드.
+pub fn load_work_ema() -> f32 {
+    f32::from_bits(WORK_SCORE_EMA_BITS.load(Relaxed))
+}
+
+/// Issue #25: work_score EMA 평활값 atomic 저장.
+pub fn store_work_ema(v: f32) {
+    WORK_SCORE_EMA_BITS.store(v.to_bits(), Relaxed);
+}
+
+/// Issue #25: raw work_score를 EMA로 평활하여 갱신·반환 (순수 함수 아님 — atomic mutation).
+///
+/// next = alpha * raw + (1 - alpha) * prev
+/// tau≈30s, dt=1s → 입력 정지·재개 양방향 모두 천천히 수렴 → 점수 급변 회귀 차단.
+pub fn update_work_ema(raw: u8) -> f32 {
+    let prev = load_work_ema();
+    let next = WORK_EMA_ALPHA * (raw as f32) + (1.0 - WORK_EMA_ALPHA) * prev;
+    store_work_ema(next);
+    next
 }
 
 /// 입력 발생 시각 갱신 (rdev 콜백에서 단일 호출).

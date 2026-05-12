@@ -243,12 +243,16 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                             apply_initial_position(app, &win, &rect);
                             let _ = win.show();
                             let _ = win.set_focus();
+                            // Windows 보조: 알림 발화 직후 트레이 클릭으로 윈도우를 열면
+                            // mailbox-deeplink를 직접 emit. Focused 이벤트 미발화 회귀 대비.
+                            crate::mailbox::try_emit_deeplink_if_pending(app);
                         }
                         Err(e) => {
                             eprintln!("[mohashim] is_visible err: {e} → fallback show");
                             apply_initial_position(app, &win, &rect);
                             let _ = win.show();
                             let _ = win.set_focus();
+                            crate::mailbox::try_emit_deeplink_if_pending(app);
                         }
                     }
                 } else {
@@ -530,16 +534,25 @@ pub fn apply_title<R: Runtime>(
         .map_err(|e| format!("set_title failed: {e}"))
 }
 
-/// 한국어 라벨 tooltip. tray_state 변경 시 호출.
+/// 한국어 라벨 tooltip. tray_state 또는 시간 변경 시 호출.
+///
+/// Issue #26: Windows 시스템 트레이는 아이콘 옆 텍스트 라벨을 지원하지 않으므로
+/// (macOS NSStatusItem 전용 API) mm:ss를 호버 툴팁에 포함시켜 가시성을 확보한다.
+/// `time_suffix`가 Some이면 `"모하심 — 집중 중 25:00"` 형태로 표시.
 pub fn apply_tooltip_label<R: Runtime>(
     app: &AppHandle<R>,
     state: LiveState,
+    time_suffix: Option<&str>,
 ) -> Result<(), String> {
     let tray = app
         .tray_by_id("main")
         .ok_or_else(|| "tray 'main' not found".to_string())?;
     let label = label_for(state);
-    tray.set_tooltip(Some(format!("모하심 — {label}")))
+    let tooltip = match time_suffix {
+        Some(t) if !t.is_empty() => format!("모하심 — {label} {t}"),
+        _ => format!("모하심 — {label}"),
+    };
+    tray.set_tooltip(Some(tooltip))
         .map_err(|e| format!("set_tooltip failed: {e}"))
 }
 

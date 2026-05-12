@@ -188,14 +188,15 @@ export function SettingsScreen({
           onClick={() => setView("loc")}
         />
 
-        {/* 알림 안내 */}
+        {/* 알림 안내 — kind: "notification"로 OS 네이티브 알림 권한 설정 패널 진입.
+            (이전 회귀: "microphone"으로 잘못 호출되어 마이크 권한 화면이 열림.) */}
         <Row
           icon="🔔"
           label="알림"
           sub="시스템 설정 → 알림에서 모하심 권한"
           onClick={() => {
             void invoke("open_permission_settings", {
-              kind: "microphone",
+              kind: "notification",
             }).catch((err) =>
               console.error("[mohashim] open notification settings failed", err)
             );
@@ -211,6 +212,22 @@ export function SettingsScreen({
             void invoke("open_log_dir").catch((err) =>
               console.error("[mohashim] open_log_dir failed", err)
             );
+          }}
+        />
+
+        {/* DEBUG (REMOVE-AFTER-TEST): 월간 리포트 발송 트리거 */}
+        <Row
+          icon="🧪"
+          label="월간 리포트 테스트"
+          sub="합성 데이터로 편지 1통 발송"
+          onClick={() => {
+            void invoke("trigger_monthly_letter_test")
+              .then(() =>
+                console.log("[mohashim] monthly letter test triggered")
+              )
+              .catch((err) =>
+                console.error("[mohashim] trigger_monthly_letter_test failed", err)
+              );
           }}
         />
       </div>

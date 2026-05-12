@@ -9,6 +9,7 @@
 //! (Allrounder를 Standard 앞에 두어 4구간 균형형이 도달 가능 — AC-7.)
 
 use chrono::DateTime;
+use std::collections::HashMap;
 
 /// 4구간 시간대(00~06/06~12/12~18/18~24).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,7 +86,7 @@ impl Default for BucketStats {
     }
 }
 
-/// 월간 통계 (4시간대 + 4dB 버킷 + 총합).
+/// 월간 통계 (4시간대 + 4dB 버킷 + 총합 + 태그/위치 매트릭스).
 #[derive(Clone, Debug)]
 pub struct MonthlyStats {
     pub total_sessions: u32,
@@ -96,6 +97,11 @@ pub struct MonthlyStats {
     /// Phase 27 FR-3 / BR-1: 해당 월 session_logs.earned_sprouts 합계.
     /// 5종 본문의 {총새싹} 변수에 사용.
     pub total_sprouts: u32,
+    /// 태그 인사이트: 작업 태그 ID → BucketStats (해당 월 한정 집계).
+    /// 부재 세션(work_tag_id=None)은 집계 제외 → 빈 HashMap이면 태그 행 생략.
+    pub work_tag_stats: HashMap<String, BucketStats>,
+    /// 태그 인사이트: 위치 태그 ID → BucketStats (해당 월 한정 집계).
+    pub location_stats: HashMap<String, BucketStats>,
 }
 
 /// 5종 템플릿 ID (FR-9 우선순위 분기).
@@ -186,13 +192,51 @@ pub fn pick_best_index(buckets: &[BucketStats; 4]) -> Option<usize> {
     best
 }
 
-/// 올라운더 판정 — 모집단 표준편차 σ ≤ 5 + 모든 구간 ≥ 10세션 (MA-5, FR-13).
+/// 태그 인사이트: count 최댓값 후보 선택. 동률 시 avg_score 큰 쪽 우선.
+/// 모든 BucketStats가 count=0이거나 빈 맵이면 None.
+pub fn pick_top_tag(stats: &HashMap<String, BucketStats>) -> Option<(String, u32)> {
+    stats
+        .iter()
+        .filter(|(_, b)| b.count > 0)
+        .max_by(|a, b| {
+            a.1.count.cmp(&b.1.count).then_with(|| {
+                a.1
+                    .avg_score
+                    .partial_cmp(&b.1.avg_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
+        .map(|(k, v)| (k.clone(), v.count))
+}
+
+/// 태그 인사이트: count >= min_count 필터 후 avg_score 최댓값 후보 선택.
+/// 의미 있는 표본 보장을 위해 min_count는 호출자가 지정 (보통 3).
+pub fn pick_best_tag(
+    stats: &HashMap<String, BucketStats>,
+    min_count: u32,
+) -> Option<(String, i64)> {
+    stats
+        .iter()
+        .filter(|(_, b)| b.count >= min_count)
+        .max_by(|a, b| {
+            a.1
+                .avg_score
+                .partial_cmp(&b.1.avg_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(k, v)| (k.clone(), v.avg_score.round() as i64))
+}
+
+/// 올라운더 판정 — 모집단 표준편차 σ ≤ 5 + 모든 구간 ≥ 5세션.
 ///
-/// 1단계 가드: count<10 버킷이 하나라도 있으면 즉시 false (short-circuit).
+/// 사용자 피드백 반영: 임계값 10 → 5로 완화 (총 20세션부터 도달 가능, 이전 40세션 → 절반).
+/// 보다 자주 발동하여 균형형 사용자가 적절한 인사이트를 받도록 조정.
+///
+/// 1단계 가드: count<5 버킷이 하나라도 있으면 즉시 false (short-circuit).
 /// 2단계: σ 계산 후 ≤ 5 검증.
 pub fn is_allrounder(buckets: &[BucketStats; 4]) -> bool {
-    // 1. 전 구간 ≥ 10세션 가드 — count<10인 버킷 하나라도 있으면 즉시 false.
-    if buckets.iter().any(|b| b.count < 10) {
+    // 1. 전 구간 ≥ 5세션 가드.
+    if buckets.iter().any(|b| b.count < 5) {
         return false;
     }
     // 2. 가드 통과 시에만 모집단 표준편차 σ 계산.
@@ -228,6 +272,9 @@ pub fn analyze_monthly_pattern(
     let mut time_score_sums: [f64; 4] = [0.0; 4];
     let mut db_counts: [u32; 4] = [0; 4];
     let mut db_score_sums: [f64; 4] = [0.0; 4];
+    // 태그 인사이트 집계: (tag_id) → (count, score_sum) 누적 후 마지막에 BucketStats로 변환.
+    let mut work_tag_counts: HashMap<String, (u32, f64)> = HashMap::new();
+    let mut loc_counts: HashMap<String, (u32, f64)> = HashMap::new();
 
     // YYYY-MM- 접두사로 비교 — date="2026-04"(일자 없는 형식)이 "2026-04" 모든 달에
     // 매칭되는 오용 방지. 정상 형식은 항상 "YYYY-MM-DD"이므로 접두사 매칭에 영향 없음.
@@ -277,6 +324,28 @@ pub fn analyze_monthly_pattern(
         let d_idx = classify_db(avg_db);
         db_counts[d_idx] += 1;
         db_score_sums[d_idx] += score as f64;
+
+        // 태그 인사이트 집계 — 부재(work_tag_id=None) / 빈 문자열은 자연 skip.
+        if let Some(tag) = log
+            .get("work_tag_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            let entry = work_tag_counts
+                .entry(tag.to_string())
+                .or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += score as f64;
+        }
+        if let Some(loc) = log
+            .get("location_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            let entry = loc_counts.entry(loc.to_string()).or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += score as f64;
+        }
     }
 
     // 2. 0세션 → None (FR-2).
@@ -298,6 +367,31 @@ pub fn analyze_monthly_pattern(
         bucket(db_counts[3], db_score_sums[3]),
     ];
 
+    let work_tag_stats: HashMap<String, BucketStats> = work_tag_counts
+        .into_iter()
+        .map(|(k, (c, s))| {
+            (
+                k,
+                BucketStats {
+                    count: c,
+                    avg_score: if c == 0 { 0.0 } else { s / c as f64 },
+                },
+            )
+        })
+        .collect();
+    let location_stats: HashMap<String, BucketStats> = loc_counts
+        .into_iter()
+        .map(|(k, (c, s))| {
+            (
+                k,
+                BucketStats {
+                    count: c,
+                    avg_score: if c == 0 { 0.0 } else { s / c as f64 },
+                },
+            )
+        })
+        .collect();
+
     let stats = MonthlyStats {
         total_sessions,
         total_minutes,
@@ -305,6 +399,8 @@ pub fn analyze_monthly_pattern(
         time_buckets,
         db_buckets,
         total_sprouts,
+        work_tag_stats,
+        location_stats,
     };
 
     // 3. 1~9세션 → Encouragement (FR-3).
@@ -462,10 +558,10 @@ mod tests {
     }
 
     #[test]
-    fn is_allrounder_short_circuits_when_any_count_under_10() {
-        // MA-5 1단계 가드: count<10 버킷이 있으면 즉시 false.
+    fn is_allrounder_short_circuits_when_any_count_under_5() {
+        // 1단계 가드: count<5 버킷이 있으면 즉시 false (임계값 10 → 5 완화).
         let buckets = [
-            BucketStats { count: 9, avg_score: 80.0 },
+            BucketStats { count: 4, avg_score: 80.0 },
             BucketStats { count: 10, avg_score: 80.0 },
             BucketStats { count: 10, avg_score: 80.0 },
             BucketStats { count: 10, avg_score: 80.0 },
@@ -474,8 +570,8 @@ mod tests {
     }
 
     #[test]
-    fn is_allrounder_passes_when_sigma_under_5_and_all_ge_10() {
-        // 평균 80, 편차 적음 → σ ≤ 5.
+    fn is_allrounder_passes_when_sigma_under_5_and_all_ge_5() {
+        // 평균 80, 편차 적음 → σ ≤ 5. count 임계값 10 → 5 완화 적용.
         let buckets = [
             BucketStats { count: 10, avg_score: 78.0 },
             BucketStats { count: 12, avg_score: 80.0 },
@@ -680,9 +776,8 @@ mod tests {
     }
 
     #[test]
-    fn analyze_allrounder_requires_all_buckets_ge_10() {
-        // FR-13: 4구간 모두 ≥10 + σ ≤ 5 검증 — is_allrounder 단위 동작.
-        // (analyze_monthly_pattern 통합 동작은 analyze_allrounder_via_analyze 참조.)
+    fn analyze_allrounder_requires_all_buckets_ge_5() {
+        // 4구간 모두 ≥5 + σ ≤ 5 검증 (임계값 10 → 5 완화).
         let buckets = [
             BucketStats { count: 10, avg_score: 78.0 },
             BucketStats { count: 12, avg_score: 80.0 },
@@ -692,7 +787,7 @@ mod tests {
         assert!(is_allrounder(&buckets));
 
         let buckets2 = [
-            BucketStats { count: 5, avg_score: 80.0 }, // count<10
+            BucketStats { count: 4, avg_score: 80.0 }, // count<5
             BucketStats { count: 12, avg_score: 80.0 },
             BucketStats { count: 11, avg_score: 80.0 },
             BucketStats { count: 15, avg_score: 80.0 },

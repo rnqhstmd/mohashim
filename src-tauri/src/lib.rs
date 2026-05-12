@@ -54,6 +54,8 @@ pub fn run() {
             shop::equip_item,
             shop::unequip_slot,
             shop::get_inventory,
+            // DEBUG (REMOVE-AFTER-TEST): 월간 리포트 수동 트리거.
+            insight::trigger_monthly_letter_test,
         ])
         .setup(|app| {
             // macOS 26 회귀: Tauri/tao의 default ActivationPolicy가 Regular라 Info.plist의
@@ -142,13 +144,27 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
             // Phase 18 (E, MA-2): 트레이 quit / Cmd+Q / 시스템 종료 모두 RunEvent::Exit로 통합 캡처.
             // AppQuit 이벤트 기록 후 BufWriter flush로 종료 race 방어.
             if let tauri::RunEvent::Exit = event {
                 logger::write(logger::LogEvent::AppQuit);
                 logger::flush();
             }
+            // macOS dock 아이콘 / 알림 클릭으로 인한 앱 재활성화 — 메인 윈도우 hide 상태에서도
+            // 노출되도록 보장. install_notification_action_handler의 Focused 휴리스틱은
+            // hide 윈도우에서 동작하지 않으므로 본 RunEvent::Reopen이 보조 진입점.
+            //
+            // Reopen 변형은 macOS/iOS 전용 (Windows에 미존재) — Windows에서는 알림 토스트 클릭이
+            // Tauri 알림 플러그인의 활성화 콜백을 직접 발화하지 않는 한계가 있어 별도 처리 필요.
+            // 후속 작업: Windows toast XML launch protocol 통합.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                mailbox::on_app_reactivation(app_handle);
+            }
+            // unused 경고 회피 (Windows 빌드에서 app_handle 미사용 차단).
+            #[cfg(not(target_os = "macos"))]
+            let _ = app_handle;
         });
 }
 

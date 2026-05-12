@@ -248,6 +248,60 @@ pub fn register_notification_actions<R: Runtime>(_app: &AppHandle<R>) -> Result<
     Ok(())
 }
 
+/// LAST_NOTIF_AT_MS가 최근 발화 윈도우 내라면 mailbox-deeplink를 emit하고 atomic을 소비한다.
+///
+/// 호출 컨텍스트:
+/// - 트레이 좌클릭으로 윈도우를 노출한 직후 (Windows에서 알림 클릭 후 트레이 진입 경로).
+/// - `install_notification_action_handler`의 Focused 핸들러와 동시 호출되어도 swap(0)이
+///   원자적 단일 소비를 보장 — 누가 먼저 호출되든 두 번째는 `last > 0` 가드에서 즉시 skip.
+pub fn try_emit_deeplink_if_pending<R: Runtime>(app: &AppHandle<R>) {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let last = LAST_NOTIF_AT_MS.swap(0, Ordering::AcqRel);
+    if last > 0 && now_ms.saturating_sub(last) < NOTIF_DEEPLINK_WINDOW_MS {
+        if let Err(e) = app.emit("mailbox-deeplink", json!({})) {
+            eprintln!("[mohashim] try_emit_deeplink_if_pending emit failed: {e}");
+        }
+    }
+}
+
+/// 앱 재활성화 시 메인 윈도우를 노출하고 알림 deeplink를 평가한다.
+///
+/// 호출자: `lib.rs::run`의 `RunEvent::Reopen` 분기 — macOS dock 아이콘 클릭과
+/// Windows 작업 표시줄/알림 토스트 클릭으로 인한 앱 재활성화를 모두 포착한다.
+/// hide 상태 윈도우는 Focused 이벤트를 발화하지 못하므로 (Focused 기반 단일 휴리스틱이
+/// 동작하지 않음), 본 경로가 알림 클릭 → 윈도우 노출의 보조 경로 역할을 한다.
+///
+/// 동작:
+/// 1) main 윈도우 show + unminimize + set_focus (3단 활성화, 각 단계 실패는 swallow).
+/// 2) LAST_NOTIF_AT_MS swap(0) 후 NOTIF_DEEPLINK_WINDOW_MS 이내면 mailbox-deeplink emit.
+///    swap(0)으로 동일 알림 중복 처리 차단 + Focused 핸들러와 자연스러운 양립.
+pub fn on_app_reactivation<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(win) = app.get_webview_window("main") {
+        if let Err(e) = win.show() {
+            eprintln!("[mohashim] reactivation show failed: {e}");
+        }
+        if let Err(e) = win.unminimize() {
+            eprintln!("[mohashim] reactivation unminimize failed: {e}");
+        }
+        if let Err(e) = win.set_focus() {
+            eprintln!("[mohashim] reactivation set_focus failed: {e}");
+        }
+    }
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let last = LAST_NOTIF_AT_MS.swap(0, Ordering::AcqRel);
+    if last > 0 && now_ms.saturating_sub(last) < NOTIF_DEEPLINK_WINDOW_MS {
+        if let Err(e) = app.emit("mailbox-deeplink", json!({})) {
+            eprintln!("[mohashim] reactivation deeplink emit failed: {e}");
+        }
+    }
+}
+
 /// OS 알림 클릭 핸들러 설치 (FR-8 minimal, BR-9).
 ///
 /// Phase 23 minimal 휴리스틱:

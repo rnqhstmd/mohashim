@@ -18,8 +18,8 @@ use crate::power;
 use crate::score::phase::{final_tray_state, grace_from, state_from_total, LiveState, Phase};
 use crate::score::shared::{
     apply_noise_loud_hysteresis, current_phase, load_db_ema, seconds_idle, store_time_left,
-    time_left_secs, AX_GRANTED, EMIT_ERR_COUNT, IDLE_NOISE_LOUD_TICKS, MIC_GRANTED, SCORE_STARTED,
-    START_AT,
+    time_left_secs, update_work_ema, AX_GRANTED, EMIT_ERR_COUNT, IDLE_NOISE_LOUD_TICKS,
+    MIC_GRANTED, SCORE_STARTED, START_AT,
 };
 use crate::score::state::ScoreSnapshot;
 use crate::score::{noise::noise_score, work::work_score};
@@ -174,11 +174,16 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             0.0
         };
 
-        let work = work_score(idle);
+        // Issue #25: raw work_score는 step function이라 입력 정지/재개 시 점수가 급변한다.
+        // EMA(tau≈30s)로 평활하여 부드럽게 수렴하도록 한다. grace_from은 work=0 정확 판정이
+        // 필요하므로 raw 값을 그대로 전달 (Gone 상태 판정 정확성 유지).
+        let work_raw = work_score(idle);
+        let work_smoothed = update_work_ema(work_raw);
+        let work = work_smoothed.round().clamp(0.0, 80.0) as u8;
         let noise = noise_score(db);
         let total = work.saturating_add(noise); // BR-9: 0..=100. saturating_add로 u8 overflow 방어.
         let live = state_from_total(total);
-        let grace = grace_from(idle, work);
+        let grace = grace_from(idle, work_raw);
 
         // Phase 8 R-G2: Focus tick 세션 평균 누적은 phase transition 이후에 수행하여
         // wake tick에서 전이가 발생한 경우를 제외한다 (아래 phase 분기 후 phase_at_emit 조건 확인).
@@ -286,12 +291,13 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // 1) 아이콘 + tooltip: tray_state 변경 시에만 (BR-T7, AC-T11).
-        if Some(tray_state) != prev_tray_state {
+        let state_changed = Some(tray_state) != prev_tray_state;
+        let title_changed = Some(&title) != prev_title.as_ref();
+
+        // 1) 아이콘: tray_state 변경 시 (BR-T7, AC-T11).
+        if state_changed {
             match tray::apply_icon(&app, tray_state) {
                 Ok(()) => {
-                    // tooltip 라벨도 동기화 (Phase 0 패턴 유지).
-                    let _ = tray::apply_tooltip_label(&app, tray_state);
                     prev_tray_state = Some(tray_state);
                 }
                 Err(e) => {
@@ -301,8 +307,17 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // 2) 타이틀: format_title 결과 변경 시에만 (None→None 재호출 방지).
-        if Some(&title) != prev_title.as_ref() {
+        // 2) 툴팁: state 또는 title(mm:ss) 변경 시 갱신.
+        // Issue #26: Windows는 set_title이 no-op이라 mm:ss를 호버 툴팁에 포함시켜야 한다.
+        // macOS는 title이 메뉴바에 직접 노출되고 툴팁은 보조 정보로 동작.
+        if state_changed || title_changed {
+            let _ = tray::apply_tooltip_label(&app, tray_state, title.as_deref());
+        }
+
+        // 3) 타이틀: format_title 결과 변경 시에만 (None→None 재호출 방지).
+        //   macOS NSStatusItem.title — 메뉴바 아이콘 옆 텍스트 노출.
+        //   Windows — no-op (시스템 트레이는 라벨 미지원). mm:ss는 위 툴팁 경로로 가시화.
+        if title_changed {
             match tray::apply_title(&app, title.as_deref()) {
                 Ok(()) => {
                     prev_title = Some(title);

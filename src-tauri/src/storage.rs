@@ -400,6 +400,90 @@ pub(crate) fn read_todo_tags<R: Runtime>(
     result
 }
 
+/// `read_todo_tags`의 위치 태그 미러 — 세션 dominant location 산출용.
+///
+/// 동일 패턴으로 (todo_id, Option<location_id>) 페어 반환. 빈 문자열은 None 정규화.
+pub(crate) fn read_todo_locations<R: Runtime>(
+    app: &AppHandle<R>,
+    ids: &[String],
+) -> Vec<(String, Option<String>)> {
+    use std::collections::HashMap;
+    let store = match app.store(STORE_FILE) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[mohashim] read_todo_locations store open failed: {e}");
+            return Vec::new();
+        }
+    };
+    let value = match store.get("todos") {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let arr = match value.as_array() {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    let mut lookup: HashMap<&str, &Value> = HashMap::with_capacity(arr.len());
+    for item in arr {
+        if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+            lookup.insert(id, item);
+        }
+    }
+    let mut result = Vec::with_capacity(ids.len());
+    for id in ids {
+        let Some(item) = lookup.get(id.as_str()) else { continue };
+        let loc = item
+            .get("loc")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        result.push((id.clone(), loc));
+    }
+    result
+}
+
+/// 작업 태그 ID → label 룩업. 부재/삭제 시 None.
+pub(crate) fn read_work_tag_label<R: Runtime>(
+    app: &AppHandle<R>,
+    tag_id: &str,
+) -> Option<String> {
+    let store = app.store(STORE_FILE).ok()?;
+    let arr = store.get("work_tags")?;
+    let arr = arr.as_array()?;
+    for item in arr {
+        let id = item.get("id").and_then(|v| v.as_str())?;
+        if id == tag_id {
+            return item
+                .get("label")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+        }
+    }
+    None
+}
+
+/// 위치 태그 ID → label 룩업. 부재/삭제 시 None.
+pub(crate) fn read_location_label<R: Runtime>(
+    app: &AppHandle<R>,
+    loc_id: &str,
+) -> Option<String> {
+    let store = app.store(STORE_FILE).ok()?;
+    let arr = store.get("locations")?;
+    let arr = arr.as_array()?;
+    for item in arr {
+        let id = item.get("id").and_then(|v| v.as_str())?;
+        if id == loc_id {
+            return item
+                .get("label")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+        }
+    }
+    None
+}
+
 /// Todo 완료 카운트 +1 (Phase 12 FR-2) + 세션 buffer 적재 (Phase 13 FR-14).
 ///
 /// sessions[date].todos_completed += 1. 레코드 미존재 시 신규 생성 (sessions=0, avg=0, sum=0).
@@ -489,6 +573,8 @@ pub(crate) fn append_session_log<R: Runtime>(
     todos_done: Vec<String>,
     avg_db: u32,
     earned_sprouts: u32,
+    work_tag_id: Option<String>,
+    location_id: Option<String>,
 ) -> Result<(), String> {
     let store = app
         .store(STORE_FILE)
@@ -507,6 +593,10 @@ pub(crate) fn append_session_log<R: Runtime>(
         "avg_db": avg_db,
         // Phase 22 FR-11 / FR-16: 세션 완료 시 지급된 새싹 수.
         "earned_sprouts": earned_sprouts,
+        // 태그 인사이트: 세션 dominant 작업/위치 태그 ID 스냅샷.
+        // 기존 로그에는 부재 → 분석 시 None 폴백.
+        "work_tag_id": work_tag_id,
+        "location_id": location_id,
     }));
     store.set("session_logs", Value::Array(arr));
     // save는 호출자가 단일 처리 (DEC-10-8).

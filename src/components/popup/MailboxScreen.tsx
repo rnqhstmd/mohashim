@@ -89,12 +89,53 @@ function ListView({ letters, equipped, onSelect, onClose }: ListViewProps) {
 
 type DetailViewProps = {
   letter: Letter;
+  equipped: Inventory["equipped"];
   onBack: () => void;
 };
 
-function DetailView({ letter, onBack }: DetailViewProps) {
+/**
+ * 본문 렌더링:
+ *   - 문장 단위로 split → 각 문장을 중앙 정렬 단락으로 렌더 (가독성).
+ *   - `[...]` 마커 → 대괄호 제거 + 굵게(font-extrabold) 강조.
+ *   - 줄바꿈 \n도 단락 경계로 처리.
+ */
+function renderLetterBody(body: string) {
+  // 1) \n으로 1차 단락 분리. 2) 각 단락을 . ! ? 뒤 공백 기준 문장 split.
+  const sentences = body
+    .split("\n")
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  return sentences.map((sentence, sIdx) => {
+    const parts = sentence.split(/(\[[^\]]+\])/g).filter((p) => p.length > 0);
+    return (
+      <p
+        key={sIdx}
+        className="mt-3 text-[14px] leading-[1.75] text-ink/85 first:mt-0"
+      >
+        {parts.map((part, pIdx) => {
+          if (part.startsWith("[") && part.endsWith("]")) {
+            return (
+              <strong
+                key={pIdx}
+                className="font-extrabold text-ink"
+              >
+                {part.slice(1, -1)}
+              </strong>
+            );
+          }
+          return <span key={pIdx}>{part}</span>;
+        })}
+      </p>
+    );
+  });
+}
+
+function DetailView({ letter, equipped, onBack }: DetailViewProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* 헤더: ← 뒤로가기 + 제목 (이전 패턴 복원) */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button
           type="button"
@@ -116,10 +157,18 @@ function DetailView({ letter, onBack }: DetailViewProps) {
           {letter.title}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink/80">
-          {letter.body}
-        </p>
+      <div className="flex-1 overflow-y-auto px-4 pb-6 pt-2">
+        {/* 캐릭터만 상단 중앙 */}
+        <div className="flex flex-col items-center">
+          <ItemOverlay
+            equipped={equipped}
+            state="calm"
+            size={84}
+            animated={false}
+          />
+        </div>
+        {/* 본문 — 문장 단위 단락, 좌측 정렬, 대괄호 마커 굵게 */}
+        <div className="mt-4">{renderLetterBody(letter.body)}</div>
       </div>
     </div>
   );
@@ -178,6 +227,7 @@ export function MailboxScreen({ onClose, equipped }: MailboxScreenProps) {
     return (
       <DetailView
         letter={selectedLetter}
+        equipped={equipped}
         onBack={() => setView("list")}
       />
     );
