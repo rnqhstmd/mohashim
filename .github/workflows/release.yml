@@ -55,10 +55,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🩹 모하심 v1.0.3 — 핫픽스
+            ## 🩹 모하심 v1.0.4 — 핫픽스
 
-            ### 🐛 수정
-            - 할일 등록 등 텍스트 입력 시 웹뷰 맞춤법 검사로 한글에 **빨간 밑줄이 표시되던 문제** 수정.
+            ### 🛠 변경
+            - 설정 → 앱 업데이트 화면의 "다운로드" 버튼 라벨을 **"다운로드 링크"로 변경**. 클릭하면 GitHub Releases 페이지가 외부 브라우저에서 열립니다 (자동 다운로드/설치는 아직 미지원).
 
             ### 📥 설치 방법
             - **macOS**: `Mohashim.dmg` 파일을 열어 Applications 폴더로 드래그하세요.
@@ -82,10 +82,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🩹 모하심 v1.0.3 — 핫픽스
+            ## 🩹 모하심 v1.0.4 — 핫픽스
 
-            ### 🐛 수정
-            - 할일 등록 등 텍스트 입력 시 웹뷰 맞춤법 검사로 한글에 **빨간 밑줄이 표시되던 문제** 수정.
+            ### 🛠 변경
+            - 설정 → 앱 업데이트 화면의 "다운로드" 버튼 라벨을 **"다운로드 링크"로 변경**. 클릭하면 GitHub Releases 페이지가 외부 브라우저에서 열립니다 (자동 다운로드/설치는 아직 미지원).
 
             ### 📥 설치 방법
             - **macOS**: `Mohashim.dmg` 파일을 열어 Applications 폴더로 드래그하세요.
