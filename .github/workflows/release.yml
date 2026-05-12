@@ -55,18 +55,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🎉 모하심 v1.0.0 — 첫 정식 릴리즈
+            ## 🩹 모하심 v1.0.1 — 핫픽스
 
-            감자 캐릭터 모하와 함께하는 집중도 측정 + 포모도로 앱의 첫 정식 버전입니다.
-
-            ### ✨ 주요 기능
-            - 키보드·마우스 + 마이크 소음 하이브리드 집중도 측정 (0~100점)
-            - 포모도로 타이머 + 28일 잔디 그래프
-            - 감자 캐릭터 '모하' — 5단계 표정 반응
-            - 새싹 경제 시스템 — 세션 완료/출석 보상, 상점에서 캐릭터 꾸미기
-            - 편지함 — 세션 완료 편지, 출석 보상 편지
-            - 월간 집중 인사이트 + 잔디 자랑하기 (PNG 합성)
-            - 완전 로컬 저장 — 외부 서버 없음
+            ### 🐛 수정
+            - Windows MSI 릴리즈 빌드 실패 수정 — Rename 단계가 잘못된 경로를 보고 있어 산출물을 찾지 못하던 문제 해결
 
             ### 📥 설치 방법
             - **macOS**: `Mohashim.dmg` 파일을 열어 Applications 폴더로 드래그하세요.
@@ -90,18 +82,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🎉 모하심 v1.0.0 — 첫 정식 릴리즈
+            ## 🩹 모하심 v1.0.1 — 핫픽스
 
-            감자 캐릭터 모하와 함께하는 집중도 측정 + 포모도로 앱의 첫 정식 버전입니다.
-
-            ### ✨ 주요 기능
-            - 키보드·마우스 + 마이크 소음 하이브리드 집중도 측정 (0~100점)
-            - 포모도로 타이머 + 28일 잔디 그래프
-            - 감자 캐릭터 '모하' — 5단계 표정 반응
-            - 새싹 경제 시스템 — 세션 완료/출석 보상, 상점에서 캐릭터 꾸미기
-            - 편지함 — 세션 완료 편지, 출석 보상 편지
-            - 월간 집중 인사이트 + 잔디 자랑하기 (PNG 합성)
-            - 완전 로컬 저장 — 외부 서버 없음
+            ### 🐛 수정
+            - Windows MSI 릴리즈 빌드 실패 수정 — Rename 단계가 잘못된 경로를 보고 있어 산출물을 찾지 못하던 문제 해결
 
             ### 📥 설치 방법
             - **macOS**: `Mohashim.dmg` 파일을 열어 Applications 폴더로 드래그하세요.
@@ -140,7 +124,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $msi = Get-ChildItem -Path "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi" -Filter "*.msi" | Select-Object -First 1
+          $msi = Get-ChildItem -Path "src-tauri\target\release\bundle\msi" -Filter "*.msi" | Select-Object -First 1
           if ($msi) {
             Copy-Item $msi.FullName -Destination "Mohashim_Windows.msi"
             Write-Host "Renamed: $($msi.Name) -> Mohashim_Windows.msi"
