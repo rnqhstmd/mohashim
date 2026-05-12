@@ -72,6 +72,17 @@ pub enum LogEvent {
     AudioError {
         message: String,
     },
+    /// reason: `"session"` | `"attendance"`
+    SproutEarned {
+        reason: String,
+        amount: u32,
+        balance_after: u32,
+    },
+    SproutSpent {
+        item_id: String,
+        amount: u32,
+        balance_after: u32,
+    },
 }
 
 /// 오늘 날짜의 jsonl 파일을 OpenOptions::append로 열고 BufWriter로 래핑.
@@ -198,7 +209,11 @@ pub fn log_dir() -> Option<PathBuf> {
     LOG_DIR.get().cloned()
 }
 
-/// 30일 초과 `mohashim-*.jsonl` 파일 삭제 (FR-B7).
+/// 1년(365일) 초과 `mohashim-*.jsonl` 파일 삭제.
+///
+/// JSONL 로그는 하루 약 5KB 수준이라 연간 누적해도 2MB 미만이다.
+/// session_complete / sprout_earned 등 경제 활동 감사 로그가 포함되므로
+/// 최소 1년치를 보존한다.
 fn cleanup_old_files(dir: &std::path::Path) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -208,7 +223,7 @@ fn cleanup_old_files(dir: &std::path::Path) {
         }
     };
     let cutoff = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(30 * 24 * 60 * 60))
+        .checked_sub(std::time::Duration::from_secs(365 * 24 * 60 * 60))
         .unwrap_or(std::time::UNIX_EPOCH);
     for entry in entries.flatten() {
         let path = entry.path();

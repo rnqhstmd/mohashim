@@ -93,6 +93,11 @@ pub async fn purchase_item<R: Runtime>(
     //    - "insufficient_sprouts:{부족분}" → TS UI에서 부족분 툴팁 표시.
     //    - "store_error:{원인}" → 잔액 부족과 분리된 store 오류 의미론.
     let new_balance = crate::economy::try_charge(&app, item.price)?;
+    crate::logger::write(crate::logger::LogEvent::SproutSpent {
+        item_id: item_id.clone(),
+        amount: item.price,
+        balance_after: new_balance,
+    });
 
     // 5) inventory.owned 갱신 + save (economy + inventory 단일 save 묶음).
     let next_inv = apply_purchase_owned(inv, &item_id);

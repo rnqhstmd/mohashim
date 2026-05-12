@@ -113,6 +113,11 @@ pub fn award_session_complete<R: Runtime>(
     let state = read_economy_state(&store);
     let (next, earned) = apply_session_reward(state, avg_score);
     write_economy_state(&store, &next);
+    crate::logger::write(crate::logger::LogEvent::SproutEarned {
+        reason: "session".to_string(),
+        amount: earned,
+        balance_after: next.sprouts,
+    });
     Ok(earned)
 }
 
@@ -160,6 +165,11 @@ fn award_todo_added<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         None => return Ok(()), // 멱등 no-op.
     };
     write_economy_state(&store, &next);
+    crate::logger::write(crate::logger::LogEvent::SproutEarned {
+        reason: "attendance".to_string(),
+        amount: 1,
+        balance_after: next.sprouts,
+    });
     store
         .save()
         .map_err(|e| format!("store save failed: {e}"))?;
