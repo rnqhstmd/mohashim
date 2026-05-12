@@ -653,14 +653,6 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           {relaunching ? "재시작 중..." : "앱 재시작"}
         </button>
 
-        {updateInfo && (
-          <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3 text-[11px] leading-relaxed text-ink/70">
-            <p>
-              다운로드 후 설치 프로그램을 실행해주세요. 설치 완료 후 재시작
-              버튼을 눌러 새 버전을 시작할 수 있어요.
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
