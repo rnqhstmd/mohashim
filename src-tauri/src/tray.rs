@@ -147,7 +147,6 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let tray = TrayIconBuilder::with_id("main")
         .icon(initial_image)
         .icon_as_template(true)
-        .title("M")
         .tooltip("모하심")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -223,23 +222,7 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         })
         .build(app)?;
 
-    eprintln!("[mohashim] tray icon registered successfully");
     app.manage(tray);
-
-    // 진단: 런루프 시작 후 3초 뒤 실제 배치 rect 확인 (setup() 시점엔 height=0).
-    {
-        let app_diag = app.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            if let Some(t) = app_diag.tray_by_id("main") {
-                match t.rect() {
-                    Ok(Some(rect)) => eprintln!("[mohashim] tray rect (3s): pos={:?} size={:?}", rect.position, rect.size),
-                    Ok(None) => eprintln!("[mohashim] tray rect (3s): None — NOT in menu bar"),
-                    Err(e) => eprintln!("[mohashim] tray rect (3s) error: {e}"),
-                }
-            }
-        });
-    }
 
     // FR-B1: 5장 PNG/ICO 메모리 캐시.
     match load_icons(app) {
