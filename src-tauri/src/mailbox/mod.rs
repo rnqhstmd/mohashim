@@ -148,6 +148,24 @@ fn pick_complete_phrase(score: u32, seed: u32) -> &'static str {
     bucket[(seed as usize) % bucket.len()]
 }
 
+/// 점수 구간별 칭찬 라인 1개 선택 — 객관 수치 직전에 삽입되어 사용자 피드백 강화.
+///
+/// 캐릭터 헤더(`pick_complete_phrase`)와 역할 분담: 헤더는 친근체 인사,
+/// 본 함수는 점수 성취도에 비례한 직접적인 칭찬/격려.
+fn pick_praise_line(score: u32) -> &'static str {
+    if score >= 90 {
+        "와, 완벽한 집중이었어! ✨ 진짜 너무 잘했어 👏"
+    } else if score >= 75 {
+        "이 정도면 박수받을 만해! 👏 진짜 멋져"
+    } else if score >= 50 {
+        "꾸준히 잘하고 있어, 멋져 👍"
+    } else if score >= 25 {
+        "끝까지 함께해줘서 고마워 💚"
+    } else {
+        "그래도 시작이 반이야~ 다음엔 더 가볍게 가보자 🌱"
+    }
+}
+
 /// 세션 편지 본문 포맷 — 친근 구어체 + 핵심 수치 볼드 마커.
 ///
 /// Phase 22+ 변경:
@@ -179,16 +197,17 @@ fn format_session_body(
         0
     };
     let phrase = pick_complete_phrase(score, phrase_seed);
-    // phrase는 점수별 격려(헤더 역할), intro는 객관 정보 위주로 분담 — 중복 칭찬 회피.
+    // 3단 구성: phrase(친근체 헤더) → praise(점수 칭찬) → 객관 수치 + 격려(todos_done==0).
+    let praise = pick_praise_line(score);
     let intro = if todos_done == 0 {
         format!(
-            "{}\n\n[{}분] 집중에 [{}점] 받았어. 소음은 [{}dB]였고, 새싹 [{}개] 챙겨가~\n다음엔 할 일 완료도 같이 눌러주면 더 뿌듯할 거야!",
-            phrase, focus_mins, score, db_int, earned
+            "{}\n\n{}\n\n[{}분] 집중에 [{}점] 받았어. 소음은 [{}dB]였고, 새싹 [{}개] 챙겨가~\n다음엔 할 일 완료도 같이 눌러주면 더 뿌듯할 거야!",
+            phrase, praise, focus_mins, score, db_int, earned
         )
     } else {
         format!(
-            "{}\n\n[{}분] 집중에 [{}점] 받았고, 소음 [{}dB] 환경에서 할 일 [{}개]도 끝냈어. 새싹 [{}개] 챙겨가~",
-            phrase, focus_mins, score, db_int, todos_done, earned
+            "{}\n\n{}\n\n[{}분] 집중에 [{}점] 받았고, 소음 [{}dB] 환경에서 할 일 [{}개]도 끝냈어. 새싹 [{}개] 챙겨가~",
+            phrase, praise, focus_mins, score, db_int, todos_done, earned
         )
     };
     // 태그 라인: "이번 세션에선 [{loc}]에서 [{t1}], [{t2}]을 했어!"
@@ -538,6 +557,26 @@ mod tests {
         assert!(
             body.contains("다음엔 할 일 완료도"),
             "zero-todos branch should include encouragement, got: {body}"
+        );
+    }
+
+    #[test]
+    fn format_session_body_high_score_includes_perfect_praise() {
+        // 90점 이상은 완벽 칭찬 라인 포함.
+        let body = format_session_body(25, 100, -56.0, 0, 5, &[], None, 0);
+        assert!(
+            body.contains("완벽한 집중이었어"),
+            "high score (>=90) should include perfect praise, got: {body}"
+        );
+    }
+
+    #[test]
+    fn format_session_body_low_score_includes_consolation() {
+        // 25점 미만은 위로 라인 포함.
+        let body = format_session_body(25, 10, -56.0, 1, 1, &[], None, 0);
+        assert!(
+            body.contains("시작이 반이야"),
+            "low score (<25) should include consolation, got: {body}"
         );
     }
 
