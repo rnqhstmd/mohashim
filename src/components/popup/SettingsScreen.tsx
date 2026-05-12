@@ -151,7 +151,7 @@ export function SettingsScreen({
     }
   };
 
-  if (view === "update" && updateInfo) {
+  if (view === "update") {
     return <UpdateScreen updateInfo={updateInfo} onClose={() => setView("main")} />;
   }
   if (view === "loc") {
@@ -492,7 +492,7 @@ function AutoStartScreen({ on, disabled, onToggle, onClose }: AutoStartScreenPro
 }
 
 type UpdateScreenProps = {
-  updateInfo: UpdateInfo;
+  updateInfo: UpdateInfo | null;
   onClose: () => void;
 };
 
@@ -535,7 +535,7 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
       </div>
 
       <div className="flex flex-1 flex-col gap-3 px-4 pt-2">
-        {/* 버전 비교 카드 */}
+        {/* 버전 정보 카드 */}
         <div className="rounded-xl border border-ink/15 bg-paperWarm/80 px-4 py-3 shadow-[1px_1px_0_0_rgba(40,37,32,0.06)]">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-ink/55">현재 버전</span>
@@ -543,14 +543,27 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span className="text-[11px] font-semibold text-ink/55">최신 버전</span>
-            <span className="text-[12px] font-extrabold text-amber-600">
-              v{updateInfo.version}
-            </span>
+            {updateInfo ? (
+              <span className="text-[12px] font-extrabold text-amber-600">
+                v{updateInfo.version}
+              </span>
+            ) : (
+              <span className="text-[12px] font-extrabold text-emerald-600">
+                v{APP_VERSION}
+              </span>
+            )}
           </div>
         </div>
 
+        {/* 업데이트 없음 */}
+        {!updateInfo && (
+          <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3 text-[11px] leading-relaxed text-ink/70">
+            <p>최신 버전을 사용 중이에요.</p>
+          </div>
+        )}
+
         {/* 릴리즈 노트 */}
-        {updateInfo.body && (
+        {updateInfo?.body && (
           <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3">
             <p className="text-[11px] font-semibold text-ink">업데이트 내용</p>
             <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-ink/70">
@@ -559,18 +572,20 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           </div>
         )}
 
-        {/* 다운로드 버튼 */}
-        <button
-          type="button"
-          onClick={() => {
-            void openUrl(updateInfo.releaseUrl).catch((err: unknown) =>
-              console.error("[mohashim] open release url failed", err)
-            );
-          }}
-          className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-[#3e4d70] px-3 py-2.5 text-[13px] font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
-        >
-          다운로드
-        </button>
+        {/* 다운로드 버튼 — 업데이트 있을 때만 */}
+        {updateInfo && (
+          <button
+            type="button"
+            onClick={() => {
+              void openUrl(updateInfo.releaseUrl).catch((err: unknown) =>
+                console.error("[mohashim] open release url failed", err)
+              );
+            }}
+            className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-[#3e4d70] px-3 py-2.5 text-[13px] font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
+          >
+            다운로드
+          </button>
+        )}
 
         {/* 재시작 버튼 */}
         <button
@@ -584,13 +599,14 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           {relaunching ? "재시작 중..." : "앱 재시작"}
         </button>
 
-        {/* 안내 */}
-        <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3 text-[11px] leading-relaxed text-ink/70">
-          <p>
-            다운로드 후 설치 프로그램을 실행해주세요. 설치 완료 후 재시작
-            버튼을 눌러 새 버전을 시작할 수 있어요.
-          </p>
-        </div>
+        {updateInfo && (
+          <div className="rounded-xl border border-ink/10 bg-paperWarm/50 p-3 text-[11px] leading-relaxed text-ink/70">
+            <p>
+              다운로드 후 설치 프로그램을 실행해주세요. 설치 완료 후 재시작
+              버튼을 눌러 새 버전을 시작할 수 있어요.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
