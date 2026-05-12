@@ -626,7 +626,7 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           </div>
         )}
 
-        {/* 다운로드 버튼 — 업데이트 있을 때만 */}
+        {/* 다운로드 링크 — 클릭 시 GitHub Releases 페이지로 이동, 사용자가 직접 자산 선택 */}
         {updateInfo && (
           <button
             type="button"
@@ -637,7 +637,7 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
             }}
             className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-[#3e4d70] px-3 py-2.5 text-[13px] font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
           >
-            다운로드
+            다운로드 링크
           </button>
         )}
 

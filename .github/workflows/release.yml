@@ -55,17 +55,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🩹 모하심 v1.0.3 — 핫픽스
+            ## 🩹 모하심 v1.0.4 — 핫픽스
 
-            ### 🐛 수정
-            - 할일 등록 등 텍스트 입력 시 웹뷰 맞춤법 검사로 한글에 **빨간 밑줄이 표시되던 문제** 수정.
-
-            ### 📥 설치 방법
-            - **macOS**: `Mohashim.dmg` 파일을 열어 Applications 폴더로 드래그하세요.
-            - **Windows**: `Mohashim_Windows.msi` 파일을 실행하세요.
-
-            > **macOS 첫 실행 시** "개발자를 확인할 수 없음" 경고가 뜨면
-            > `시스템 설정 → 개인정보 보호 및 보안`에서 **그래도 열기**를 눌러주세요.
+            ### 🛠 변경 내역
+            - 설정 → 앱 업데이트 화면의 "다운로드" 버튼 라벨을 **"다운로드 링크"로 변경**. 클릭하면 GitHub Releases 페이지가 외부 브라우저에서 열립니다 (자동 다운로드/설치는 아직 미지원).
+            - 위 내용을 수정하였고 오후 반차를 사용했습니다.
 
             ### 🔍 전체 변경사항
             [CHANGELOG.md](https://github.com/rnqhstmd/mohashim/blob/main/CHANGELOG.md)에서 확인하세요.
@@ -82,17 +76,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🩹 모하심 v1.0.3 — 핫픽스
+            ## 🩹 모하심 v1.0.4 — 핫픽스
 
-            ### 🐛 수정
-            - 할일 등록 등 텍스트 입력 시 웹뷰 맞춤법 검사로 한글에 **빨간 밑줄이 표시되던 문제** 수정.
-
-            ### 📥 설치 방법
-            - **macOS**: `Mohashim.dmg` 파일을 열어 Applications 폴더로 드래그하세요.
-            - **Windows**: `Mohashim_Windows.msi` 파일을 실행하세요.
-
-            > **macOS 첫 실행 시** "개발자를 확인할 수 없음" 경고가 뜨면
-            > `시스템 설정 → 개인정보 보호 및 보안`에서 **그래도 열기**를 눌러주세요.
+            ### 🛠 변경 내역
+            - 설정 → 앱 업데이트 화면의 "다운로드" 버튼 라벨을 **"다운로드 링크"로 변경**. 클릭하면 GitHub Releases 페이지가 외부 브라우저에서 열립니다 (자동 다운로드/설치는 아직 미지원).
+            - 위 내용을 수정하였고 오후 반차를 사용했습니다.
 
             ### 🔍 전체 변경사항
             [CHANGELOG.md](https://github.com/rnqhstmd/mohashim/blob/main/CHANGELOG.md)에서 확인하세요.
