@@ -162,6 +162,7 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
 
   return (
     <div className="flex h-full flex-col">
+      {/* 헤더: ← 뒤로가기 / 제목 / 저장 (TagListEditor와 동일 패턴) */}
       <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
         <button
           type="button"
@@ -169,9 +170,19 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
           className="inline-flex items-center gap-1.5 text-sm font-bold text-ink/75 hover:text-ink"
         >
           <span aria-hidden>←</span>
-          <span>시간 편집</span>
+          <span>뒤로</span>
         </button>
-        <div className="w-12" />
+        <h2 className="text-sm font-extrabold text-ink">시간 편집</h2>
+        <button
+          type="button"
+          onClick={() => {
+            void handleSave();
+          }}
+          disabled={!enabled}
+          className="text-sm font-bold text-deepNavy disabled:text-ink/30"
+        >
+          저장
+        </button>
       </div>
 
       <div className="flex flex-1 flex-col gap-4 p-4">
@@ -216,17 +227,6 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
             </p>
           )}
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            void handleSave();
-          }}
-          disabled={!enabled}
-          className="mt-2 inline-flex items-center justify-center self-end rounded-lg border-[1.5px] border-ink bg-ink px-4 py-2 text-xs font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_rgba(40,30,20,0.18)] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none disabled:cursor-not-allowed disabled:border-ink/30 disabled:bg-ink/30 disabled:text-paperWarm/70 disabled:shadow-none disabled:hover:translate-y-0"
-        >
-          저장
-        </button>
       </div>
 
       <DiscardChangesModal

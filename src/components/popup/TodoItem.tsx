@@ -133,7 +133,7 @@ export function TodoItem({
               ref={inputRef}
               value={draft}
               rows={1}
-              maxLength={100}
+              maxLength={50}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commitEdit}
               onKeyDown={(e) => {

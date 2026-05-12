@@ -108,7 +108,7 @@ fn compute_session_title_range(
     }
 }
 
-/// 세션 편지 본문 포맷 (FR-5 양식: 5요소 + 줄바꿈 1회 + session_tag 1줄).
+/// 세션 편지 본문 포맷 — 친근 구어체 + 핵심 수치 볼드 마커.
 fn format_session_body(
     focus_mins: u32,
     score: u32,
@@ -116,15 +116,13 @@ fn format_session_body(
     earned: u32,
     session_tag: Option<&str>,
 ) -> String {
+    let intro = format!(
+        "오늘 [{}분] 동안 같이 집중 잘 했어!\n집중도는 평균 [{}점], 주변 소음은 [0dB]였고 할 일 [{}개]도 같이 끝냈네. 새싹 [+{}개] 챙겨가, 진짜 멋졌어!",
+        focus_mins, score, todos_done, earned
+    );
     match session_tag {
-        Some(tag) => format!(
-            "총 {}분 / 집중도 평균 {}점 / 평균 소음 0dB / 완료한 할 일 {}개 / 🌱 +{}\n#{}",
-            focus_mins, score, todos_done, earned, tag
-        ),
-        None => format!(
-            "총 {}분 / 집중도 평균 {}점 / 평균 소음 0dB / 완료한 할 일 {}개 / 🌱 +{}",
-            focus_mins, score, todos_done, earned
-        ),
+        Some(tag) => format!("{}\n오늘 한 작업은 [{}]였어.", intro, tag),
+        None => intro,
     }
 }
 
@@ -267,17 +265,10 @@ pub fn try_emit_deeplink_if_pending<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// 앱 재활성화 시 메인 윈도우를 노출하고 알림 deeplink를 평가한다.
+/// 앱 재활성화 시 메인 윈도우를 노출한다 (macOS dock 아이콘 클릭 / Reopen 이벤트).
 ///
-/// 호출자: `lib.rs::run`의 `RunEvent::Reopen` 분기 — macOS dock 아이콘 클릭과
-/// Windows 작업 표시줄/알림 토스트 클릭으로 인한 앱 재활성화를 모두 포착한다.
-/// hide 상태 윈도우는 Focused 이벤트를 발화하지 못하므로 (Focused 기반 단일 휴리스틱이
-/// 동작하지 않음), 본 경로가 알림 클릭 → 윈도우 노출의 보조 경로 역할을 한다.
-///
-/// 동작:
-/// 1) main 윈도우 show + unminimize + set_focus (3단 활성화, 각 단계 실패는 swallow).
-/// 2) LAST_NOTIF_AT_MS swap(0) 후 NOTIF_DEEPLINK_WINDOW_MS 이내면 mailbox-deeplink emit.
-///    swap(0)으로 동일 알림 중복 처리 차단 + Focused 핸들러와 자연스러운 양립.
+/// 자동 mailbox-deeplink emit은 의도적으로 제거 — 사용자가 우상단 📬 아이콘을
+/// 명시적으로 클릭해 편지함에 진입하는 단일 경로만 유지한다 (false positive 차단).
 pub fn on_app_reactivation<R: Runtime>(app: &AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         if let Err(e) = win.show() {
@@ -288,16 +279,6 @@ pub fn on_app_reactivation<R: Runtime>(app: &AppHandle<R>) {
         }
         if let Err(e) = win.set_focus() {
             eprintln!("[mohashim] reactivation set_focus failed: {e}");
-        }
-    }
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let last = LAST_NOTIF_AT_MS.swap(0, Ordering::AcqRel);
-    if last > 0 && now_ms.saturating_sub(last) < NOTIF_DEEPLINK_WINDOW_MS {
-        if let Err(e) = app.emit("mailbox-deeplink", json!({})) {
-            eprintln!("[mohashim] reactivation deeplink emit failed: {e}");
         }
     }
 }
@@ -388,31 +369,32 @@ mod tests {
     #[test]
     fn format_session_body_with_tag() {
         let body = format_session_body(25, 80, 3, 5, Some("study"));
+        assert!(body.contains("[25분]"));
+        assert!(body.contains("[80점]"));
+        assert!(body.contains("[3개]"));
+        assert!(body.contains("[+5개]"));
         assert!(
-            body.ends_with("🌱 +5\n#study"),
-            "body should end with reward + tag line, got: {body}"
+            body.ends_with("오늘 한 작업은 [study]였어."),
+            "tag line should be appended at end, got: {body}"
         );
-        assert!(body.contains("총 25분"));
-        assert!(body.contains("집중도 평균 80점"));
-        assert!(body.contains("완료한 할 일 3개"));
     }
 
     #[test]
     fn format_session_body_no_tag() {
         let body = format_session_body(25, 80, 3, 5, None);
+        assert!(body.contains("[+5개]"));
         assert!(
-            body.ends_with("🌱 +5"),
-            "body should end with reward (no newline), got: {body}"
+            !body.contains("오늘 한 작업은"),
+            "no tag line when session_tag is None, got: {body}"
         );
-        assert!(!body.contains('\n'), "body must not contain newline when tag=None");
     }
 
     #[test]
     fn format_session_body_zero_todos() {
         let body = format_session_body(50, 70, 0, 5, None);
         assert!(
-            body.contains("완료한 할 일 0개"),
-            "body should contain '완료한 할 일 0개', got: {body}"
+            body.contains("[0개]"),
+            "body should contain '[0개]' for zero todos, got: {body}"
         );
     }
 

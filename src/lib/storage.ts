@@ -470,11 +470,14 @@ export async function getLastCleanupYear(): Promise<number> {
 export async function getEconomy(): Promise<Economy> {
   const raw = await get("economy");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { sprouts: 0, lastTodoSproutDate: null };
+    // DEBUG (REMOVE-AFTER-TEST): 새싹 999 강제로 상점 장착 테스트.
+    return { sprouts: 999, lastTodoSproutDate: null };
   }
   const e = raw as Record<string, unknown>;
-  const sprouts =
+  const sproutsRaw =
     typeof e.sprouts === "number" && e.sprouts >= 0 ? e.sprouts : 0;
+  // DEBUG (REMOVE-AFTER-TEST): 잔액 999 floor 적용 — Rust read_economy_state와 정합.
+  const sprouts = Math.max(sproutsRaw, 999);
   const lastTodoSproutDate =
     typeof e.lastTodoSproutDate === "string" && e.lastTodoSproutDate.length > 0
       ? e.lastTodoSproutDate

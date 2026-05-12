@@ -165,11 +165,11 @@ export function SettingsScreen({
         {/* 시간 편집 — 집중/휴식 모두 한 화면에서 */}
         <Row
           icon="⏱"
-          label="시간 편집"
+          label="집중·휴식 시간"
           sub={
             focusMin !== null && breakMin !== null
-              ? `집중 ${focusMin}분 · 휴식 ${breakMin}분`
-              : "—"
+              ? `집중 시간과 휴식 시간 편집 · 현재 집중 ${focusMin}분 / 휴식 ${breakMin}분`
+              : "집중 시간과 휴식 시간을 편집합니다"
           }
           onClick={() => setView("durations")}
         />
@@ -178,13 +178,13 @@ export function SettingsScreen({
         <Row
           icon="🏷"
           label="작업 태그"
-          sub="이름 · 색상 · 이모지"
+          sub="할 일 등록 시 어떤 종류의 작업인지 분류해요"
           onClick={() => setView("work")}
         />
         <Row
           icon="📍"
           label="위치 태그"
-          sub="집 · 카페 · 회사 등"
+          sub="할 일 등록 시 어디에서 작업할지 분류해요"
           onClick={() => setView("loc")}
         />
 

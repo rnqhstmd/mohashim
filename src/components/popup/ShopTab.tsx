@@ -199,7 +199,7 @@ function ItemCard({
       </span>
       <span className="text-[10px] text-deep/70">🌱 {item.price}</span>
 
-      {/* 액션 버튼 */}
+      {/* 액션 버튼 — 색상 구분: 구매=amber(주의), 장착=emerald(확정), 해제=회색(취소) */}
       {!isOwned && !isEquipped && (
         <button
           type="button"
@@ -212,7 +212,7 @@ function ItemCard({
           className={
             isInsufficient
               ? "mt-1 rounded-md bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink/40"
-              : "mt-1 rounded-md bg-deep px-2 py-0.5 text-[10px] font-bold text-white"
+              : "mt-1 rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-amber-600"
           }
         >
           구매
@@ -225,7 +225,7 @@ function ItemCard({
             e.stopPropagation();
             onEquip();
           }}
-          className="mt-1 rounded-md bg-deepNavy px-2 py-0.5 text-[10px] font-bold text-white"
+          className="mt-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700"
         >
           장착
         </button>
@@ -237,7 +237,7 @@ function ItemCard({
             e.stopPropagation();
             onUnequip();
           }}
-          className="mt-1 rounded-md bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink/65"
+          className="mt-1 rounded-md bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink/65 hover:bg-ink/15"
         >
           해제
         </button>

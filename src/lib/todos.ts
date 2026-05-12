@@ -13,7 +13,10 @@ import {
   setWorkTags,
   getLocations,
   setLocations,
+  getTodos,
+  setTodos,
 } from "./storage";
+import { formatDate } from "./grass";
 
 // ---------- 색상 / 액센트 ----------
 
@@ -191,5 +194,35 @@ export async function seedDefaultTags(): Promise<void> {
     if (lc.length === 0) await setLocations([...DEFAULT_LOCATIONS]);
   } catch (err) {
     console.error("[mohashim] seedDefaultTags failed", err);
+  }
+}
+
+/**
+ * 부팅 시점 일별 청소 — 어제 이전에 완료된 todo는 삭제, 미완료는 모두 보존.
+ *
+ * 정책 (사용자 요청):
+ *   - 미완료(`done=false`) → 항상 유지 (재시도/이월 자연스러움).
+ *   - 완료(`done=true`) + completedAt이 오늘 → 유지 (오늘 성취 가시화).
+ *   - 완료 + completedAt이 어제 이전 → 삭제 (잔디에 이미 기록됨).
+ *   - 완료 + completedAt 부재/손상 → 삭제 (정합성 회복).
+ *
+ * 실패는 console.error swallow — 부팅 흐름 비차단.
+ */
+export async function cleanupCompletedTodos(): Promise<void> {
+  try {
+    const todos = await getTodos();
+    const today = formatDate(new Date());
+    const filtered = todos.filter((t) => {
+      if (!t.done) return true;
+      if (!t.completedAt) return false;
+      const parsed = new Date(t.completedAt);
+      if (Number.isNaN(parsed.getTime())) return false;
+      return formatDate(parsed) === today;
+    });
+    if (filtered.length !== todos.length) {
+      await setTodos(filtered);
+    }
+  } catch (err) {
+    console.error("[mohashim] cleanupCompletedTodos failed", err);
   }
 }

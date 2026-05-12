@@ -10,7 +10,7 @@
       <stop offset="100%" stop-color="#7858b8"/>
     </linearGradient>
   </defs>
-  <g>
+  <g transform="translate(100 158) scale(1.2) translate(-100 -158)">
     <ellipse cx="100" cy="160" rx="55" ry="32" fill="url(#aura-grad)"/>
     <path d="M68 138 Q100 148 132 138 L130 154 Q100 160 70 154 Z" fill="url(#scarf-grad)" stroke="#5a3aa0" stroke-width="2" stroke-linejoin="round"/>
     <path d="M84 152 Q78 164 82 174 L96 174 Q94 164 96 152 Z" fill="url(#scarf-grad)" stroke="#5a3aa0" stroke-width="2" stroke-linejoin="round"/>

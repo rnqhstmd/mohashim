@@ -209,6 +209,7 @@ export function TodosTab({
         timeLeft={timeLeft}
         potatoState={potatoState}
         phrase={phrase}
+        equipped={equipped}
         onBack={() => setView("list")}
       />
     );

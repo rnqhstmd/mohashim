@@ -84,7 +84,7 @@ pub fn render_letter_title(template: TemplateId, year_month: &str) -> String {
     match template {
         TemplateId::Standard => format!("🌱 {}월의 모하 관찰 일기 도착!", m),
         TemplateId::Allrounder => format!("⚖️ 기복 없는 집중러, {}월의 너에게", m),
-        TemplateId::NightOwl => format!("🦉 밤의 지배자에게 보내는 {}월의 편지", m),
+        TemplateId::NightOwl => format!("🦉 새벽의 감성을 좋아하는 {}월의 너에게", m),
         TemplateId::NoiseChampion => format!("🎧 무소의 뿔처럼 집중하는 {}월의 너에게", m),
         TemplateId::Encouragement => format!("👀 {}월, 우리 조금 더 친해지자!", m),
     }
@@ -118,6 +118,18 @@ impl Default for TagLabels {
     }
 }
 
+/// 5종 템플릿별 끝맺음 응원 멘트 — 다음 달 활동 기대 톤으로 통일.
+/// 데이터 부재 시에도 항상 합성되어 letter가 자연스럽게 마무리되도록 한다.
+fn render_closing(template: TemplateId) -> &'static str {
+    match template {
+        TemplateId::Standard => "다음 달도 이 페이스 그대로 함께 가보자!",
+        TemplateId::Allrounder => "이 꾸준함, 다음 달에도 보여줄 거지? 기대하고 있을게!",
+        TemplateId::NightOwl => "다음 달에도 너의 고요한 시간 옆에서 응원할게!",
+        TemplateId::NoiseChampion => "어떤 환경이든 굴하지 않는 너, 다음 달도 변함없이 빛날 거야!",
+        TemplateId::Encouragement => "기다리고 있을게. 다음 달엔 더 자주 만나자!",
+    }
+}
+
 /// 5종 템플릿별 태그 인사이트 한 줄 합성. 모든 후보 None이면 None 반환 → 본문에서 자연 생략.
 fn render_tag_insight(template: TemplateId, t: &TagLabels) -> Option<String> {
     match template {
@@ -135,7 +147,7 @@ fn render_tag_insight(template: TemplateId, t: &TagLabels) -> Option<String> {
         },
         TemplateId::Allrounder => match (&t.best_score_work, &t.top_work) {
             (Some((w, s)), _) => Some(format!(
-                "점수가 가장 좋았던 건 [{}]! 평균 {}점이나 됐네!",
+                "점수가 가장 좋았던 건 [{}]! 평균 [{}점]이나 됐네!",
                 w, s
             )),
             (None, Some((w, _))) => {
@@ -145,20 +157,20 @@ fn render_tag_insight(template: TemplateId, t: &TagLabels) -> Option<String> {
         },
         TemplateId::NightOwl => match (&t.top_work, &t.top_location) {
             (Some((w, _)), Some((l, _))) => Some(format!(
-                "새벽엔 주로 [{}]에 시간을 썼네! 머문 곳은 바로 [{}]!",
+                "새벽엔 주로 [{}]에 시간을 썼네! 주로 머문 곳은 [{}]!",
                 w, l
             )),
             (Some((w, _)), None) => {
                 Some(format!("새벽엔 주로 [{}]에 시간을 썼네!", w))
             }
             (None, Some((l, _))) => {
-                Some(format!("주로 머문 곳은 바로 [{}]!", l))
+                Some(format!("주로 머문 곳은 [{}]!", l))
             }
             (None, None) => None,
         },
         TemplateId::NoiseChampion => match (&t.best_score_work, &t.top_work) {
             (Some((w, s)), _) => Some(format!(
-                "시끄러운 환경에서도 흔들리지 않은 건 [{}]! 평균 {}점이나 유지했네!",
+                "시끄러운 환경에서도 흔들리지 않은 건 [{}]! 평균 [{}점]이나 유지했네!",
                 w, s
             )),
             (None, Some((w, _))) => {
@@ -212,7 +224,7 @@ pub fn render_letter_body(
             let db_idx = analysis.best_db_idx.unwrap_or(0);
             let db_label = format_db_range_label(db_idx);
             format!(
-                "이번 달 우리는 총 {}번, {}을 함께했고, 새싹은 무려 {}개나 수확했어!\n지켜보니까 너는 [{}]에 집중력(평균 {}점)이 제일 좋더라고! 그리고 주변 소음이 [{}]일 때 점수가 제일 높았어. 너만의 집중 공식을 찾은 것 같아 매우 기쁨 기쁨 기쁨!!",
+                "이번 달 우리는 총 [{}번], [{}]을 함께했고, 새싹 [{}개]를 수확했어!\n지켜보니까 너는 [{}]에 집중력(평균 [{}점])이 제일 좋더라고! 그리고 주변 소음이 [{}]일 때 점수가 제일 높았어. 너만의 집중 공식을 찾은 것 같아 매우 기쁨 기쁨 기쁨!!",
                 total_sessions, total_time, total_sprouts, time_label, best_score, db_label
             )
         }
@@ -221,16 +233,16 @@ pub fn render_letter_body(
             let db_idx = analysis.best_db_idx.unwrap_or(0);
             let db_label = format_db_range_label(db_idx);
             format!(
-                "이번 달 총 {} 몰입 완료! 그리고 새싹 {}개 획득을 축하해.\n이번 달 네 데이터를 분석해 봤는데, 넌 특정 시간대를 타지 않고 언제든(전체 평균 {}점) 집중을 잘 유지했어. 기복 없이 꾸준한 모습, 꽤 믓짐. 그래도 소음만큼은 [{}]일 때 효율이 가장 좋았으니, 다음 달 환경 세팅할 때 참고해!",
-                total_time, total_sprouts, avg_score, db_label
+                "이번 달 우리는 총 [{}번], [{}]을 함께했고, 새싹 [{}개]를 수확했어!\n이번 달 네 데이터를 분석해 봤는데, 넌 특정 시간대를 타지 않고 언제든(전체 평균 [{}점]) 집중을 잘 유지했어. 기복 없이 꾸준한 모습, 꽤 믓짐. 그래도 소음만큼은 [{}]일 때 효율이 가장 좋았으니, 다음 달 환경 세팅할 때 참고해!",
+                total_sessions, total_time, total_sprouts, avg_score, db_label
             )
         }
         TemplateId::NightOwl => {
             // ③ 올빼미형 — 라벨 통일: "[새벽 시간 (0시~6시)]"로 가독성 개선.
             let dawn_avg = stats.time_buckets[0].avg_score.round() as i64;
             format!(
-                "이번 달 수확한 새싹은 총 {}개! (총 {} 집중)\n근데 너... 밤에 안 자고 뭐해? 남들 다 자는 [새벽 시간 (0시~6시)]에 평균 점수가 {}점으로 제일 높더라구. 고요한 밤의 감성이 너랑 잘 맞나 봐. 집중도 좋지만, 다음 달엔 건강도 생각해서 잠은 꼭 챙겨 자!!",
-                total_sprouts, total_time, dawn_avg
+                "이번 달 우리는 총 [{}번], [{}]을 함께했고, 새싹 [{}개]를 수확했어!\n근데 너... 밤에 안 자고 뭐해? 남들 다 자는 [새벽 시간 (0시~6시)]에 평균 점수가 [{}점]으로 제일 높더라구. 고요한 밤의 감성이 너랑 잘 맞나 봐. 집중도 좋지만, 다음 달엔 건강도 생각해서 잠은 꼭 챙겨 자!!",
+                total_sessions, total_time, total_sprouts, dawn_avg
             )
         }
         TemplateId::NoiseChampion => {
@@ -238,24 +250,25 @@ pub fn render_letter_body(
             let db_idx = analysis.best_db_idx.unwrap_or(2);
             let best_score = stats.db_buckets[db_idx].avg_score.round() as i64;
             format!(
-                "이번 달 총 획득 새싹 {}개! 대단해.\n진짜 놀라운 점,,, 너는 주변 소음이 [약간 시끄러운 환경 (60~80dB)]일 때 오히려 집중 점수({}점)가 가장 높았다는 거야. 백색소음을 즐기는 스타일이구나? 어디서든 굴하지 않고 몰입하는 거 진짜 믓져!! 내가 다 뿌듯해.",
-                total_sprouts, best_score
+                "이번 달 우리는 총 [{}번], [{}]을 함께했고, 새싹 [{}개]를 수확했어!\n진짜 놀라운 점,,, 너는 주변 소음이 [약간 시끄러운 환경 (60~80dB)]일 때 오히려 집중 점수([{}점])가 가장 높았다는 거야. 백색소음을 즐기는 스타일이구나? 어디서든 굴하지 않고 몰입하는 거 진짜 믓져!! 내가 다 뿌듯해.",
+                total_sessions, total_time, total_sprouts, best_score
             )
         }
         TemplateId::Encouragement => {
             // ⑤ 격려형 — 1~9세션 또는 폴백.
             format!(
-                "이번 달 네가 모은 새싹은 총 {}개야!\n우리가 함께한 시간(총 {}회)이 조금 짧아서, 내가 네 집중 패턴을 완벽하게 파악하진 못했어. 하지만 네가 바쁜 와중에도 {}이나 나랑 같이 몰입하려고 노력한 건 똑똑히 기억해. 다음 달에는 조금 더 자주 만나서 너만의 집중 황금 시간대를 꼭 찾아보자. 내가 옆에서 계속 지켜볼게!",
-                total_sprouts, total_sessions, total_time
+                "이번 달 우리는 총 [{}번], [{}]을 함께했고, 새싹 [{}개]를 수확했어!\n함께한 시간이 조금 짧아서 내가 네 집중 패턴을 완벽하게 파악하진 못했어. 하지만 네가 바쁜 와중에도 나랑 같이 몰입하려고 노력한 건 똑똑히 기억해. 다음 달에는 조금 더 자주 만나서 너만의 집중 황금 시간대를 꼭 찾아보자. 내가 옆에서 계속 지켜볼게!",
+                total_sessions, total_time, total_sprouts
             )
         }
     };
 
-    // 태그 인사이트 행 — 데이터 부재 시 None 반환되어 자연 생략.
-    match render_tag_insight(analysis.template, tag_labels) {
+    // 태그 인사이트 행(옵셔널) + 끝맺음 응원(항상).
+    let with_tag = match render_tag_insight(analysis.template, tag_labels) {
         Some(line) => format!("{}\n{}", base_body, line),
         None => base_body,
-    }
+    };
+    format!("{}\n{}", with_tag, render_closing(analysis.template))
 }
 
 #[cfg(test)]
@@ -358,7 +371,7 @@ mod tests {
     fn title_night_owl_full_form() {
         let a = make_analysis(TemplateId::NightOwl, 12, 80.0);
         let title = render_letter_title_with_analysis(&a, "2026-04");
-        assert_eq!(title, "🦉 밤의 지배자에게 보내는 4월의 편지");
+        assert_eq!(title, "🦉 새벽의 감성을 좋아하는 4월의 너에게");
     }
 
     #[test]
@@ -389,7 +402,7 @@ mod tests {
         let a = make_analysis(TemplateId::Standard, 12, 80.0);
         let body = render_letter_body(&a, "2026-04", &TagLabels::default());
         // AC-1: "총세션", "총새싹", "기쁨 기쁨 기쁨" 포함.
-        assert!(body.contains("총 12번"));
+        assert!(body.contains("총 [12번]"));
         assert!(body.contains("42개")); // {총새싹} 치환 (AC-8)
         assert!(body.contains("기쁨 기쁨 기쁨"));
     }
@@ -421,7 +434,7 @@ mod tests {
         let a = make_analysis(TemplateId::Encouragement, 5, 60.0);
         let body = render_letter_body(&a, "2026-04", &TagLabels::default());
         assert!(body.contains("내가 옆에서 계속 지켜볼게"));
-        assert!(body.contains("총 5회"));
+        assert!(body.contains("총 [5번]"));
         assert!(body.contains("42개")); // {총새싹}
     }
 

@@ -168,6 +168,26 @@ fn award_todo_added<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     if let Err(e) = app.emit("economy-updated", ()) {
         eprintln!("[mohashim] economy-updated emit failed: {e}");
     }
+
+    // 출석 보상 편지 — 하루 첫 todo 등록 시 1통 발송 (멱등 가드 통과 시점).
+    let now = chrono::Local::now();
+    let nanos = now.timestamp_subsec_nanos();
+    let letter_id = format!("attendance-{}-{}", now.timestamp_millis().max(0) as u64, nanos);
+    let title = "오늘도 만나서 반가워! 🌱".to_string();
+    let body = format!(
+        "오늘 첫 할 일을 등록했네! 출석 새싹 [+1개] 챙겨가.\n잔액은 [{}개], 오늘도 같이 잘해보자!",
+        next.sprouts
+    );
+    let letter = crate::mailbox::state::Letter {
+        id: letter_id,
+        kind: "ATTENDANCE".to_string(),
+        title,
+        body,
+        created_at: now.to_rfc3339(),
+        read: false,
+        session_tag: None,
+    };
+    crate::mailbox::append_letter_and_emit(app, letter);
     Ok(())
 }
 

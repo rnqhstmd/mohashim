@@ -135,11 +135,14 @@ pub fn run() {
                 // 카운트다운 부재. 후속 Phase에서 시각적 fallback 검토 필요.
                 eprintln!("[mohashim] score start failed: {err}");
             }
-            // Phase 23 FR-8: 알림 액션 타입 등록 + 딥링크 핸들러 설치.
+            // Phase 23 FR-8: 알림 액션 타입 등록.
             if let Err(err) = mailbox::register_notification_actions(app.handle()) {
                 eprintln!("[mohashim] mailbox register_notification_actions failed: {err}");
             }
-            mailbox::install_notification_action_handler(app.handle());
+            // 자동 deeplink(알림 직후 윈도우 활성화 시 mailbox 강제 진입) 휴리스틱 비활성화 —
+            // false positive(다른 의도로 트레이 클릭/포커스해도 mailbox로 강제 이동)가 발생하여
+            // 사용자 의도와 어긋남. 사용자는 우상단 📬 아이콘으로 명시적으로 편지함에 진입한다.
+            // mailbox::install_notification_action_handler(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())

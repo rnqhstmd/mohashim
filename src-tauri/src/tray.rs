@@ -243,16 +243,12 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                             apply_initial_position(app, &win, &rect);
                             let _ = win.show();
                             let _ = win.set_focus();
-                            // Windows 보조: 알림 발화 직후 트레이 클릭으로 윈도우를 열면
-                            // mailbox-deeplink를 직접 emit. Focused 이벤트 미발화 회귀 대비.
-                            crate::mailbox::try_emit_deeplink_if_pending(app);
                         }
                         Err(e) => {
                             eprintln!("[mohashim] is_visible err: {e} → fallback show");
                             apply_initial_position(app, &win, &rect);
                             let _ = win.show();
                             let _ = win.set_focus();
-                            crate::mailbox::try_emit_deeplink_if_pending(app);
                         }
                     }
                 } else {
@@ -382,7 +378,6 @@ fn apply_initial_position<R: Runtime>(
     };
 
     let sf = monitor.scale_factor_or_1();
-    // Phase 21 사용자 피드백: 팝업 좌측 선을 아이콘 좌측 끝에 정렬.
     let icon_left_logical = icon_pos_phys.x as f64 / sf;
     let icon_right_logical = (icon_pos_phys.x as f64 + icon_size_phys.width as f64) / sf;
     let icon_bottom_y_logical = (icon_pos_phys.y as f64 + icon_size_phys.height as f64) / sf;
@@ -393,16 +388,11 @@ fn apply_initial_position<R: Runtime>(
     let mon_right_logical = mon_left_logical + monitor.size().width as f64 / sf;
     let mon_bottom_logical = mon_top_logical + monitor.size().height as f64 / sf;
 
-    // Phase 21 사용자 피드백 (Windows): 작업표시줄 트레이 아이콘이 우측 끝 클러스터에
-    // 위치하면 popup_left = icon_left가 화면 우측 경계를 넘어 clamp으로 좌측 시프트되며
-    // 아이콘과 팝업의 시각 정렬이 어긋난다. icon_left + popup_w가 화면 밖으로 나가면
-    // popup_right = icon_right로 우측 정렬하여 아이콘이 팝업 하단 우측 모서리 근처에
-    // 위치하도록 한다 — "아이콘 바로 위" UX.
-    let mut x = if icon_left_logical + POPUP_W > mon_right_logical {
-        (icon_right_logical - POPUP_W).round()
-    } else {
-        icon_left_logical.round()
-    };
+    // 사용자 피드백: 팝업 중심을 아이콘 중심에 맞춘다.
+    // popup_center_x = icon_center_x → popup_left = icon_center_x - POPUP_W/2.
+    // 모니터 경계 clamp는 아래에서 별도 처리 (`max(mon_left)`, `min(mon_right - POPUP_W)`).
+    let icon_center_x = (icon_left_logical + icon_right_logical) / 2.0;
+    let mut x = (icon_center_x - POPUP_W / 2.0).round();
     #[cfg(target_os = "macos")]
     let mut y = icon_bottom_y_logical.round();
     #[cfg(not(target_os = "macos"))]

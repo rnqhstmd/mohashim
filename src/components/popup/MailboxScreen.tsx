@@ -51,7 +51,7 @@ function ListView({ letters, equipped, onSelect, onClose }: ListViewProps) {
             equipped={equipped}
             state="calm"
             size={80}
-            animated={false}
+            animated={true}
           />
           <p className="text-center text-sm text-ink/60">편지함이 비어있네</p>
         </div>

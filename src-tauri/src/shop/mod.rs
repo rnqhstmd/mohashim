@@ -43,9 +43,9 @@ fn build_receipt_letter(item: &CatalogEntry, balance_after: u32) -> Letter {
         now.timestamp_millis().max(0) as u64,
         now.timestamp_subsec_nanos()
     );
-    let title = format!("{} 구매 완료", item.name_ko);
+    let title = format!("{} 구매 완료!", item.name_ko);
     let body = format!(
-        "🌱 {}🌱 차감 / 잔액 {}🌱 / 인벤토리에서 장착하세요",
+        "새싹 [{}개]를 사용했고, 잔액은 [{}개]야.\n상점에서 [내 아이템]을 체크하면 장착할 수 있어. 모하의 새 모습 보러 가자!",
         item.price, balance_after
     );
     Letter {

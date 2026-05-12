@@ -104,7 +104,7 @@ export function TodoInput({ workTags, locations, onSubmit }: TodoInputProps) {
           ref={textareaRef}
           value={text}
           rows={1}
-          maxLength={100}
+          maxLength={50}
           placeholder="할 일을 입력하세요"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
