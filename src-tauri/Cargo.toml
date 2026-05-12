@@ -1,6 +1,6 @@
 [package]
 name = "mohashim"
-version = "1.0.2"
+version = "1.0.3"
 description = "모하심 — 키보드/마우스 + 마이크 dB 하이브리드 집중도 측정 데스크탑 앱"
 edition = "2021"
 rust-version = "1.77.2"
