@@ -88,9 +88,9 @@ export function PomodoroCard({
 
         {/* 우측: 점수+dB(top) / 대사(중앙) / 타이머 보기 버튼(bottom) */}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          {/* 점수 + dB 한 행 */}
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="flex items-baseline gap-1 tabular-nums">
+          {/* 점수 + dB 한 행 — 중앙선 기준으로 좌/우 절반 차지 (각 절반 내부에서 중앙 정렬) */}
+          <div className="flex items-baseline">
+            <div className="flex flex-1 items-baseline justify-center gap-1 tabular-nums">
               <span className="text-[22px] font-extrabold leading-none text-ink">
                 {Math.max(0, Math.min(100, Math.round(total)))}
               </span>
@@ -104,18 +104,20 @@ export function PomodoroCard({
                 ?
               </button>
             </div>
-            <span
-              className="inline-flex items-center gap-1 text-[11px] font-bold"
-              style={{ color: dbColor }}
-            >
-              <span aria-hidden>{env.icon}</span>
-              <span>{env.label}</span>
-              {!inactive && (
-                <span className="ml-0.5 tabular-nums opacity-90">
-                  {Math.round(dbSpl)}dB
-                </span>
-              )}
-            </span>
+            <div className="flex flex-1 justify-center">
+              <span
+                className="inline-flex items-center gap-1 text-[11px] font-bold"
+                style={{ color: dbColor }}
+              >
+                <span aria-hidden>{env.icon}</span>
+                <span>{env.label}</span>
+                {!inactive && (
+                  <span className="ml-0.5 tabular-nums opacity-90">
+                    {Math.round(dbSpl)}dB
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
 
           {/* 대사: 좌우/수직 중앙 정렬, 최대 2줄 고정 영역. whitespace-pre-line으로 phrases.ts \n 보존. */}

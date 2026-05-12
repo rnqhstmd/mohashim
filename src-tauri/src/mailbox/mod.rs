@@ -20,7 +20,7 @@ use state::{append_with_cap, mark_all_read_in_place, read_mailbox, write_mailbox
 
 /// Letter를 mailbox에 append + persist + 알림 push + emit하는 도메인 무지 인프라 (Phase 24 v2).
 ///
-/// **도메인 무지 원칙**: 본 함수는 letter가 SESSION/SYSTEM/MONTHLY 어느 종류인지 알지 않는다.
+/// **도메인 무지 원칙**: 본 함수는 letter가 SESSION/SYSTEM/MONTHLY/ATTENDANCE 어느 종류인지 알지 않는다.
 /// 도메인(timer / shop)이 Letter struct를 만들어 호출하고, 인프라는 4단계를 수행한다:
 ///   1) MAILBOX_MUTEX 획득 → read_mailbox → append_with_cap → write_mailbox → store.save
 ///   2) push_message(title, body) — phase 분기 내장 (Focus/Break: 보류, Idle: 즉시 발화)
@@ -148,6 +148,25 @@ fn pick_complete_phrase(score: u32, seed: u32) -> &'static str {
     bucket[(seed as usize) % bucket.len()]
 }
 
+/// 점수 구간별 칭찬 라인 1개 선택 — 객관 수치 직전에 삽입되어 사용자 피드백 강화.
+///
+/// 캐릭터 헤더(`pick_complete_phrase`)와 역할 분담: 헤더는 친근체 인사,
+/// 본 함수는 점수 성취도에 비례한 장난기+따듯함 톤의 칭찬/위로.
+/// 기존 모하심 톤(친근 구어·오타 허용·캐릭터스러움)에 맞춰 작성.
+fn pick_praise_line(score: u32) -> &'static str {
+    if score >= 90 {
+        "왁 완전 열심히 했네!!"
+    } else if score >= 75 {
+        "키키 완전 고생했네"
+    } else if score >= 50 {
+        "이정도면 나쁘지 않움 크크"
+    } else if score >= 25 {
+        "ㅋㅋㅋㅋㅋㅋ아놔 점수 모심 근데 한번만 봐줄게~"
+    } else {
+        "아 징자 이건 못 참겠다 전화 한번 해야겠다.."
+    }
+}
+
 /// 세션 편지 본문 포맷 — 친근 구어체 + 핵심 수치 볼드 마커.
 ///
 /// Phase 22+ 변경:
@@ -179,16 +198,17 @@ fn format_session_body(
         0
     };
     let phrase = pick_complete_phrase(score, phrase_seed);
-    // phrase는 점수별 격려(헤더 역할), intro는 객관 정보 위주로 분담 — 중복 칭찬 회피.
+    // 3단 구성: phrase(친근체 헤더) → praise(점수 칭찬) → 객관 수치 + 격려(todos_done==0).
+    let praise = pick_praise_line(score);
     let intro = if todos_done == 0 {
         format!(
-            "{}\n\n[{}분] 집중에 [{}점] 받았어. 소음은 [{}dB]였고, 새싹 [{}개] 챙겨가~\n다음엔 할 일 완료도 같이 눌러주면 더 뿌듯할 거야!",
-            phrase, focus_mins, score, db_int, earned
+            "{}\n\n{}\n\n[{}분] 집중에 [{}점] 받았어. 소음은 [{}dB]였고, 새싹 [{}개] 챙겨가~\n다음엔 할 일 완료도 같이 눌러주면 더 뿌듯할 거야!",
+            phrase, praise, focus_mins, score, db_int, earned
         )
     } else {
         format!(
-            "{}\n\n[{}분] 집중에 [{}점] 받았고, 소음 [{}dB] 환경에서 할 일 [{}개]도 끝냈어. 새싹 [{}개] 챙겨가~",
-            phrase, focus_mins, score, db_int, todos_done, earned
+            "{}\n\n{}\n\n[{}분] 집중에 [{}점] 받았고, 소음 [{}dB] 환경에서 할 일 [{}개]도 끝냈어. 새싹 [{}개] 챙겨가~",
+            phrase, praise, focus_mins, score, db_int, todos_done, earned
         )
     };
     // 태그 라인: "이번 세션에선 [{loc}]에서 [{t1}], [{t2}]을 했어!"
@@ -538,6 +558,26 @@ mod tests {
         assert!(
             body.contains("다음엔 할 일 완료도"),
             "zero-todos branch should include encouragement, got: {body}"
+        );
+    }
+
+    #[test]
+    fn format_session_body_high_score_includes_perfect_praise() {
+        // 90점 이상은 강한 칭찬 라인 포함.
+        let body = format_session_body(25, 100, -56.0, 0, 5, &[], None, 0);
+        assert!(
+            body.contains("열심히 했네"),
+            "high score (>=90) should include perfect praise, got: {body}"
+        );
+    }
+
+    #[test]
+    fn format_session_body_low_score_includes_consolation() {
+        // 25점 미만은 위로 라인 포함.
+        let body = format_session_body(25, 10, -56.0, 1, 1, &[], None, 0);
+        assert!(
+            body.contains("전화 한번"),
+            "low score (<25) should include consolation, got: {body}"
         );
     }
 

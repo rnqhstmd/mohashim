@@ -8,6 +8,9 @@ export type UpdateInfo = {
   body: string | null;
 };
 
+/** semver `M.m.p` 형식 검증 (선택 `v` 접두사 허용). 비semver 태그는 비교 불가 → null 반환 경로로 안전 폴백. */
+const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)$/;
+
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   try {
     const res = await fetch(
@@ -23,19 +26,29 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
       prerelease: boolean;
     };
     if (data.draft || data.prerelease) return null;
-    const latest = data.tag_name.replace(/^v/, "");
-    if (!isNewer(latest, APP_VERSION)) return null;
-    return { version: latest, releaseUrl: data.html_url, body: data.body ?? null };
+    const latest = parseSemver(data.tag_name);
+    const current = parseSemver(APP_VERSION);
+    if (!latest || !current) return null; // 비semver 태그는 silent 무시 (회귀 방지).
+    if (!isNewer(latest, current)) return null;
+    return {
+      version: data.tag_name.replace(/^v/, ""),
+      releaseUrl: data.html_url,
+      body: data.body ?? null,
+    };
   } catch {
     return null;
   }
 }
 
-function isNewer(latest: string, current: string): boolean {
-  const parse = (v: string) => v.split(".").map(Number);
-  const [lM, lm, lp] = parse(latest);
-  const [cM, cm, cp] = parse(current);
-  if (lM !== cM) return lM > cM;
-  if (lm !== cm) return lm > cm;
-  return lp > cp;
+function parseSemver(s: string): [number, number, number] | null {
+  const m = SEMVER_RE.exec(s);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function isNewer(latest: [number, number, number], current: [number, number, number]): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (latest[i] !== current[i]) return latest[i] > current[i];
+  }
+  return false;
 }

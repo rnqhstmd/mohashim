@@ -19,7 +19,6 @@ use std::sync::{Mutex, OnceLock};
 use chrono::NaiveDate;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
-use tauri_plugin_opener::OpenerExt;
 
 /// 30일 cleanup 멱등성 가드 (J).
 static CLEANUP_DONE: AtomicBool = AtomicBool::new(false);
@@ -232,32 +231,3 @@ fn cleanup_old_files(dir: &std::path::Path) {
     }
 }
 
-/// 로그 폴더 OS 파일 매니저로 열기 (FR-B9, D-3).
-///
-/// Phase 21 사용자 피드백: tauri-plugin-opener의 open_path가 sandboxed 환경 또는
-/// 특정 path 케이스에서 침묵 실패하는 경우가 보고됐다. opener 호출이 실패하면
-/// `std::process::Command`로 OS 네이티브 명령(`open` / `explorer`)을 fallback으로
-/// 시도하여 신뢰도를 높인다.
-#[tauri::command]
-pub async fn open_log_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    let dir = log_dir().ok_or_else(|| "log_dir not initialized".to_string())?;
-    let dir_str = dir.to_string_lossy().to_string();
-
-    // 1차: tauri-plugin-opener의 표준 경로.
-    if let Err(e) = app
-        .opener()
-        .open_path(dir_str.clone(), None::<&str>)
-    {
-        eprintln!("[mohashim] open_log_dir opener failed, fallback to OS command: {e}");
-        // 2차: OS 네이티브 명령으로 fallback.
-        let result = if cfg!(target_os = "macos") {
-            std::process::Command::new("open").arg(&dir_str).spawn()
-        } else if cfg!(target_os = "windows") {
-            std::process::Command::new("explorer").arg(&dir_str).spawn()
-        } else {
-            std::process::Command::new("xdg-open").arg(&dir_str).spawn()
-        };
-        result.map_err(|err| format!("open_log_dir fallback failed: {err}"))?;
-    }
-    Ok(())
-}

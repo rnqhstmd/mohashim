@@ -89,7 +89,7 @@ export type Inventory = {
  * 단일 편지 항목 (Phase 23 FR-2, BR-3).
  * Rust 단일 writer (P-D4) — TS는 get_mailbox IPC + getMailbox() read-only만 노출.
  */
-export type MailboxKind = "SESSION" | "MONTHLY" | "SYSTEM";
+export type MailboxKind = "SESSION" | "MONTHLY" | "SYSTEM" | "ATTENDANCE";
 export type Letter = {
   id: string;
   kind: MailboxKind;
@@ -470,14 +470,11 @@ export async function getLastCleanupYear(): Promise<number> {
 export async function getEconomy(): Promise<Economy> {
   const raw = await get("economy");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    // DEBUG (REMOVE-AFTER-TEST): 새싹 999 강제로 상점 장착 테스트.
-    return { sprouts: 999, lastTodoSproutDate: null };
+    return { sprouts: 0, lastTodoSproutDate: null };
   }
   const e = raw as Record<string, unknown>;
-  const sproutsRaw =
+  const sprouts =
     typeof e.sprouts === "number" && e.sprouts >= 0 ? e.sprouts : 0;
-  // DEBUG (REMOVE-AFTER-TEST): 잔액 999 floor 적용 — Rust read_economy_state와 정합.
-  const sprouts = Math.max(sproutsRaw, 999);
   const lastTodoSproutDate =
     typeof e.lastTodoSproutDate === "string" && e.lastTodoSproutDate.length > 0
       ? e.lastTodoSproutDate
@@ -537,7 +534,7 @@ export async function getMailbox(): Promise<Letter[]> {
       if (!item || typeof item !== "object") return [];
       const l = item as Record<string, unknown>;
       if (typeof l.id !== "string" || !l.id) return [];
-      if (!["SESSION", "MONTHLY", "SYSTEM"].includes(l.kind as string)) return [];
+      if (!["SESSION", "MONTHLY", "SYSTEM", "ATTENDANCE"].includes(l.kind as string)) return [];
       if (typeof l.title !== "string") return [];
       if (typeof l.body !== "string") return [];
       if (typeof l.createdAt !== "string" || !l.createdAt) return [];

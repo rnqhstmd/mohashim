@@ -86,18 +86,21 @@ export function FocusStartButton({
 
         {/* 우측: dB(top) / 대사(중앙·2줄) / 집중 시작 버튼(bottom) */}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <span
-            className="inline-flex items-center gap-1 text-[11px] font-bold"
-            style={{ color: dbColor }}
-          >
-            <span aria-hidden>{env.icon}</span>
-            <span>{env.label}</span>
-            {!inactive && (
-              <span className="ml-0.5 tabular-nums opacity-90">
-                {Math.round(dbSpl)}dB
-              </span>
-            )}
-          </span>
+          {/* dB — 가로 중앙 정렬 */}
+          <div className="flex justify-center">
+            <span
+              className="inline-flex items-center gap-1 text-[11px] font-bold"
+              style={{ color: dbColor }}
+            >
+              <span aria-hidden>{env.icon}</span>
+              <span>{env.label}</span>
+              {!inactive && (
+                <span className="ml-0.5 tabular-nums opacity-90">
+                  {Math.round(dbSpl)}dB
+                </span>
+              )}
+            </span>
+          </div>
           {/* 대사: 좌우/수직 중앙 정렬, 2줄 고정 영역. whitespace-pre-line으로 phrases.ts의 \n 줄바꿈 보존. */}
           <div className="flex min-h-[2.8rem] flex-1 items-center justify-center">
             <p className="whitespace-pre-line text-center text-[14px] italic leading-[1.35] text-ink/75 line-clamp-2">

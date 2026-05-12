@@ -141,8 +141,12 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         e
     })?;
 
+    // macOS template 모드는 build() 이후 `set_icon_as_template` 호출이 일부 환경에서
+    // 무시되는 회귀가 있어, 빌더 단계에서 `icon_as_template(true)`로 NSStatusItem 생성과
+    // 동시에 적용한다 (Tauri 2.11.0). 비-macOS는 no-op이라 cfg 분기 불필요.
     let tray = TrayIconBuilder::with_id("main")
         .icon(initial_image)
+        .icon_as_template(true)
         .tooltip("모하심")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -232,15 +236,8 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         }
     }
 
-    // FR-B3: macOS template 모드.
-    // 컴파일타임 cfg로 분기하여 비-macOS 타겟에서 set_icon_as_template 심볼 미존재로 인한
-    // 빌드 실패를 차단한다 (apply_icon과 동일 패턴).
-    #[cfg(target_os = "macos")]
-    if let Some(t) = app.tray_by_id("main") {
-        if let Err(e) = t.set_icon_as_template(true) {
-            eprintln!("[mohashim] set_icon_as_template failed: {e}");
-        }
-    }
+    // template 모드는 위 빌더의 `.icon_as_template(true)`로 NSStatusItem 생성 시점에
+    // 함께 적용되므로 추가 호출 불필요.
 
     Ok(())
 }
@@ -458,12 +455,10 @@ pub fn apply_icon<R: Runtime>(
     let img = cache
         .get(&state)
         .ok_or_else(|| format!("icon missing for {state:?}"))?;
-    tray.set_icon(Some(img.clone()))
-        .map_err(|e| format!("set_icon failed: {e}"))?;
-    #[cfg(target_os = "macos")]
-    if let Err(e) = tray.set_icon_as_template(true) {
-        eprintln!("[mohashim] set_icon_as_template failed: {e}");
-    }
+    // 원자적 set_icon + template 플래그 — set_icon 후 별도 set_icon_as_template 호출 시
+    // 일부 macOS 환경에서 template 플래그가 적용 안 되는 회귀를 방지한다.
+    tray.set_icon_with_as_template(Some(img.clone()), true)
+        .map_err(|e| format!("set_icon_with_as_template failed: {e}"))?;
     Ok(())
 }
 

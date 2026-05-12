@@ -23,7 +23,7 @@ export function ScoreHelpModal({ open, onClose }: ScoreHelpModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="score-help-title"
-      className="fixed inset-0 z-50 flex items-center justify-center px-3 py-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden rounded-[18px] px-3 py-4"
       style={{ backgroundColor: "rgba(40, 37, 32, 0.7)" }}
       onClick={onClose}
     >
@@ -51,33 +51,23 @@ export function ScoreHelpModal({ open, onClose }: ScoreHelpModalProps) {
 
         <div className="mt-2 space-y-2 text-[10px] leading-relaxed text-ink/75">
           <div>
-            <p className="font-bold text-ink">총점 = 작업 + 소음</p>
-            <p className="mt-0.5">
-              0~100점. 점수에 따라 집중 / 차분 / 산만 / 가려짐 / 스트레스 5단계 상태.
-            </p>
+            <p className="font-bold text-ink">총점 = 작업 + 소음 (0~100)</p>
+            <p className="mt-0.5">점수에 따라 감자 표정이 5단계로 변해요.</p>
           </div>
 
           <div className="rounded-md bg-ink/5 px-2 py-1.5">
             <p className="font-bold text-ink">⌨️ 작업 (0~80)</p>
-            <ul className="mt-0.5 list-disc pl-3.5 space-y-0.5">
-              <li>입력 있으면 80점</li>
-              <li>3분 무입력 후 10초당 5점 차감</li>
-              <li>6분 이상이면 0점</li>
-              <li>차감 빠름, 회복 느림</li>
-            </ul>
+            <p className="mt-0.5">입력 시 80점 · 3분 후 차감 · 6분 이상 0점</p>
           </div>
 
           <div className="rounded-md bg-ink/5 px-2 py-1.5">
             <p className="font-bold text-ink">🔊 소음 (0 / 20)</p>
-            <ul className="mt-0.5 list-disc pl-3.5 space-y-0.5">
-              <li>80dB 이하 → 20점</li>
-              <li>80dB 초과 → 0점</li>
-            </ul>
+            <p className="mt-0.5">80dB 이하 = 20점</p>
           </div>
 
           <div className="rounded-md bg-ink/5 px-2 py-1.5">
             <p className="font-bold text-ink">☕ 휴식 중</p>
-            <p className="mt-0.5">집중 종료 시점 점수가 그대로 유지돼요.</p>
+            <p className="mt-0.5">집중 종료 점수 그대로 유지돼요.</p>
           </div>
         </div>
       </div>

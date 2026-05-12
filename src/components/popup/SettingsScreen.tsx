@@ -38,7 +38,7 @@ type SettingsScreenProps = {
 };
 
 // Phase 21 사용자 피드백: 설정 화면을 카드 리스트로 단순화. 시간/태그 편집은 모두 별도
-// 페이지로 이동, 인라인 편집 제거. 알림 / 로그 폴더 / 데이터 초기화 / 버전 footer 추가.
+// 페이지로 이동, 인라인 편집 제거. 알림 / 데이터 초기화 / 버전 footer 추가.
 type View = "main" | "loc" | "work" | "durations" | "autostart" | "update";
 
 /**
@@ -49,7 +49,6 @@ type View = "main" | "loc" | "work" | "durations" | "autostart" | "update";
  *   2. 🏷 작업 태그 — WorkTagEditorScreen으로 이동
  *   3. 📍 위치 태그 — LocationEditorScreen으로 이동
  *   4. 🔔 알림 — OS 알림 권한 (정보 + 시스템 설정 링크)
- *   5. 📁 로그 폴더 열기 — Finder/Explorer로 폴더 노출
  *
  * 하단:
  *   - "데이터 초기화" 버튼 (빨간 텍스트, 명시적 확인 모달)
@@ -264,18 +263,6 @@ export function SettingsScreen({
               kind: "notification",
             }).catch((err) =>
               console.error("[mohashim] open notification settings failed", err)
-            );
-          }}
-        />
-
-        {/* 로그 폴더 */}
-        <Row
-          icon="📁"
-          label="로그 폴더 열기"
-          sub="분석용 JSON Lines 기록"
-          onClick={() => {
-            void invoke("open_log_dir").catch((err) =>
-              console.error("[mohashim] open_log_dir failed", err)
             );
           }}
         />
