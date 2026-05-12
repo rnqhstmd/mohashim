@@ -1,4 +1,4 @@
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = __APP_VERSION__;
 
 const REPO = "rnqhstmd/mohashim";
 
