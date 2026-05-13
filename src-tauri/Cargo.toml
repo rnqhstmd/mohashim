@@ -21,11 +21,19 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 tauri-plugin-autostart = "2"
 cpal = "0.15"
-rdev = "0.5"
 tokio = { version = "1", features = ["sync", "rt"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 chrono = "0.4"
+
+[target."cfg(target_os = \"windows\")".dependencies]
+# 입력 idle 감지용 GetLastInputInfo / GetTickCount (input.rs).
+# rdev의 IME 충돌(ToUnicodeEx 부작용)을 회피하기 위해 v1.0.6에서 도입.
+windows = { version = "0.58", features = [
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_SystemInformation",
+    "Win32_Foundation",
+] }
 
 [target."cfg(target_os = \"macos\")".dependencies]
 objc2 = "0.6"
