@@ -44,12 +44,12 @@ describe("shopCatalog", () => {
     expect(names).toEqual({
       face_round_glasses: "동글 안경",
       face_heart_glasses: "불타는 눈빛",
-      face_square_horn: "멋쟁이 선글라스",
+      face_square_horn: "멋쟁이 하늘색 안경",
       head_strawhat: "새싹 핀",
       head_beret_red: "노란 안전모",
       head_wizard_cone: "마법사 고깔",
       back_blanket_check: "포근한 담요 망토",
-      back_cloak_navy: "빨간 히어로 망토",
+      back_cloak_navy: "어두운 밤하늘 목도리",
       back_cloak_aura: "반짝이는 오라",
     });
   });

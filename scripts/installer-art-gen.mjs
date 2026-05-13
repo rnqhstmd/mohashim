@@ -90,21 +90,19 @@ const POTATO_GROUP = `
 `;
 
 // Header — 150x57. 모하 캐릭터만 좌측에 노출 (텍스트 무).
-// 화질 향상: SVG의 raster 사이즈를 4×(600x228)로 명시 supersample. POTATO_GROUP의
-// 본체 stroke-width(2.8 SVG unit)가 50px 사이즈에서 1px 미만으로 줄어 사라지던
-// 문제를, raster 단계에서 4× 더 큰 픽셀 그리드로 그린 뒤 svgToBmp가 150×57로
-// 다운샘플하여 stroke이 매끄러우면서도 명확하게 보존되도록 한다.
-const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="228" viewBox="0 0 150 57">
+// scale 0.275→0.3으로 키워 새싹/얼굴/볼터치가 명확히 보이게 하고, translate으로
+// 좌측 5px inset + vertical center 정렬을 정확히 맞춤. supersample은 6×(900x342)로
+// 강화하여 안티앨리어싱 매끄러움을 추가 확보 (낮은 DPI 윈도우에서도 stroke 보존).
+const HEADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="456" viewBox="0 0 150 57">
   <rect width="150" height="57" fill="${BG}"/>
-  <g transform="translate(2, 1) scale(0.275)">
+  <g transform="translate(-10, 1) scale(0.3)">
     ${POTATO_GROUP}
   </g>
 </svg>`;
 
 // Sidebar — 164x314. 모하 캐릭터만 크게 가운데 노출 (텍스트 무).
-// 화질 향상: 헤더와 동일하게 4× supersample(656x1256) — 헤더보다 모하가 크게
-// 노출되지만 같은 supersampling을 적용하면 라인이 더 매끄러움.
-const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="656" height="1256" viewBox="0 0 164 314">
+// 화질 향상: 8× supersample(1312x2512)로 라인이 더 매끄러움 (4× → 8×).
+const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1312" height="2512" viewBox="0 0 164 314">
   <rect width="164" height="314" fill="${BG}"/>
   <g transform="translate(12, 87) scale(0.7)">
     ${POTATO_GROUP}
@@ -119,7 +117,8 @@ const SIDEBAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="656" height=
  * 다운샘플링. 작은 사이드바/헤더에서도 모하 라인이 매끄럽게 보존된다.
  */
 async function svgToBmp(svg, w, h, outFile) {
-  const { data: rgba, info } = await sharp(Buffer.from(svg), { density: 384 })
+  // density: 600 + 8× supersample 으로 작은 BMP에서도 stroke/볼터치 디테일 보존.
+  const { data: rgba, info } = await sharp(Buffer.from(svg), { density: 600 })
     .resize(w, h, { kernel: "lanczos3" })
     .flatten({ background: BG })
     .ensureAlpha()
