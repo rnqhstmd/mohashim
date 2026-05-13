@@ -121,6 +121,8 @@ export type StoreSchema = {
   mailbox: Mailbox;
   /** 월간 인사이트 마지막 발송 YYYY-MM. 미발송 시 null (Phase 26 write). */
   last_monthly_letter_year_month: string | null;
+  /** 사용자에게 마지막으로 "What's new" 변경사항을 보여준 앱 버전. null이면 첫 실행. */
+  last_seen_version: string | null;
 };
 
 export const STORE_FILE = ".store.json";
@@ -163,6 +165,7 @@ export const STORE_DEFAULTS: StoreSchema = {
   inventory: { owned: [], equipped: { face: null, head: null, back: null } },
   mailbox: [],
   last_monthly_letter_year_month: null,
+  last_seen_version: null,
 };
 
 type StoreInstance = Awaited<ReturnType<typeof Store.load>>;
@@ -268,6 +271,14 @@ export async function getOnboardingCompleted(): Promise<boolean> {
 
 export async function setOnboardingCompleted(value: boolean): Promise<void> {
   await set("onboarding_completed", value);
+}
+
+export async function getLastSeenVersion(): Promise<string | null> {
+  return get("last_seen_version");
+}
+
+export async function setLastSeenVersion(value: string): Promise<void> {
+  await set("last_seen_version", value);
 }
 
 /**

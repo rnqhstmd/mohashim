@@ -91,9 +91,11 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     )?;
 
     let separator_bottom = PredefinedMenuItem::separator(app)?;
+    let restart_item = MenuItem::with_id(app, "restart", "재시작", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
     // 자동 시작 메뉴 항목 제거 — 설정 화면의 자동 시작 토글로 일원화 (사용자 피드백).
+    // 재시작 메뉴 추가 — 업데이트 설치 안내 등에서 호출되는 단일 진입점.
     #[cfg(target_os = "windows")]
     let menu = Menu::with_items(
         app,
@@ -102,13 +104,20 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             &separator_top,
             &pin_guide_item,
             &separator_bottom,
+            &restart_item,
             &quit_item,
         ],
     )?;
     #[cfg(not(target_os = "windows"))]
     let menu = Menu::with_items(
         app,
-        &[&open_item, &separator_top, &separator_bottom, &quit_item],
+        &[
+            &open_item,
+            &separator_top,
+            &separator_bottom,
+            &restart_item,
+            &quit_item,
+        ],
     )?;
 
     // FR-1/BR-2/AC-4: TrayIconBuilder 빌드 시점에 초기 아이콘 설정.
@@ -168,6 +177,15 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 if let Err(e) = app.emit("show-pin-guide", ()) {
                     eprintln!("[mohashim] show-pin-guide emit failed: {e}");
                 }
+            }
+            "restart" => {
+                // 현재 exe를 새 프로세스로 spawn 후 즉시 종료. tauri-plugin-process의 relaunch와
+                // 달리 외부 IPC 없이 메뉴 클릭만으로 동작 — UpdateScreen 재시작 버튼 제거 후
+                // 단일 진입점으로 일원화 (사용자 피드백).
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = std::process::Command::new(exe).spawn();
+                }
+                app.exit(0);
             }
             "quit" => {
                 app.exit(0);

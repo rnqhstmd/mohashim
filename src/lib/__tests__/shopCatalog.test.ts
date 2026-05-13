@@ -23,12 +23,12 @@ describe("shopCatalog", () => {
       face_round_glasses: 30,
       face_heart_glasses: 40,
       face_square_horn: 60,
-      head_strawhat: 100,
-      head_beret_red: 120,
-      head_wizard_cone: 150,
-      back_blanket_check: 200,
-      back_cloak_navy: 250,
-      back_cloak_aura: 300,
+      head_strawhat: 40,
+      head_beret_red: 55,
+      head_wizard_cone: 70,
+      back_blanket_check: 80,
+      back_cloak_navy: 100,
+      back_cloak_aura: 120,
     });
   });
 

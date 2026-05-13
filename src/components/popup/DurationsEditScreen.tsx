@@ -162,17 +162,18 @@ export function DurationsEditScreen({ onClose }: DurationsEditScreenProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* 헤더: ← 뒤로가기 / 제목 / 저장 (TagListEditor와 동일 패턴) */}
-      <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
+      <div className="flex items-center gap-2 border-b border-ink/10 px-3 py-2.5">
         <button
           type="button"
           onClick={handleBack}
-          className="inline-flex items-center gap-1.5 text-sm font-bold text-ink/75 hover:text-ink"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink/60 transition-colors hover:bg-ink/8 hover:text-ink"
+          aria-label="뒤로"
         >
-          <span aria-hidden>←</span>
-          <span>뒤로</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
-        <h2 className="text-sm font-extrabold text-ink">시간 편집</h2>
+        <span className="flex-1 truncate text-[13px] font-semibold text-ink">시간 편집</span>
         <button
           type="button"
           onClick={() => {

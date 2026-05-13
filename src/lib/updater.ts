@@ -40,6 +40,35 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
   }
 }
 
+/**
+ * 특정 버전 태그의 GitHub release 정보를 조회. 업데이트 직후 "What's new" 모달용.
+ * 실패(네트워크/태그 미존재) 시 null 반환 — silent fail로 앱 흐름은 유지된다.
+ */
+export async function fetchReleaseByVersion(
+  version: string
+): Promise<UpdateInfo | null> {
+  try {
+    const tag = version.startsWith("v") ? version : `v${version}`;
+    const res = await fetch(
+      `https://api.github.com/repos/${REPO}/releases/tags/${tag}`,
+      { headers: { Accept: "application/vnd.github+json" } }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      tag_name: string;
+      html_url: string;
+      body: string | null;
+    };
+    return {
+      version: data.tag_name.replace(/^v/, ""),
+      releaseUrl: data.html_url,
+      body: data.body ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function parseSemver(s: string): [number, number, number] | null {
   const m = SEMVER_RE.exec(s);
   if (!m) return null;

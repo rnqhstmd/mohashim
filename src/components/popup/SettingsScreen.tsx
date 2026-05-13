@@ -37,6 +37,8 @@ type SettingsScreenProps = {
    */
   onAcceptDeeplink: () => void;
   updateInfo: UpdateInfo | null;
+  /** 진입 시 최초 view 지정. 메인 헤더의 업데이트 아이콘에서 "update"로 진입 가능. */
+  initialView?: "main" | "update";
 };
 
 // Phase 21 사용자 피드백: 설정 화면을 카드 리스트로 단순화. 시간/태그 편집은 모두 별도
@@ -63,8 +65,9 @@ export function SettingsScreen({
   onPendingDeeplinkChange,
   onAcceptDeeplink,
   updateInfo,
+  initialView = "main",
 }: SettingsScreenProps) {
-  const [view, setView] = useState<View>("main");
+  const [view, setView] = useState<View>(initialView);
   const [showReset, setShowReset] = useState(false);
   const [showDeeplinkConfirm, setShowDeeplinkConfirm] = useState(false);
   const [focusMin, setFocusMin] = useState<number | null>(null);
@@ -486,18 +489,6 @@ type UpdateScreenProps = {
 };
 
 function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
-  const [relaunching, setRelaunching] = useState(false);
-
-  const handleRelaunch = async () => {
-    if (relaunching) return;
-    setRelaunching(true);
-    try {
-      await invoke("relaunch");
-    } catch (err) {
-      console.error("[mohashim] relaunch failed", err);
-      setRelaunching(false);
-    }
-  };
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -559,34 +550,34 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  h1: ({ children }) => (
+                  h1: ({ children }: { children?: React.ReactNode }) => (
                     <h3 className="mt-2 mb-1 text-[13px] font-extrabold text-ink first:mt-0">
                       {children}
                     </h3>
                   ),
-                  h2: ({ children }) => (
+                  h2: ({ children }: { children?: React.ReactNode }) => (
                     <h4 className="mt-2 mb-1 text-[12px] font-extrabold text-ink first:mt-0">
                       {children}
                     </h4>
                   ),
-                  h3: ({ children }) => (
+                  h3: ({ children }: { children?: React.ReactNode }) => (
                     <h5 className="mt-2 mb-0.5 text-[11px] font-bold text-ink first:mt-0">
                       {children}
                     </h5>
                   ),
-                  p: ({ children }) => <p className="mt-1 first:mt-0">{children}</p>,
-                  ul: ({ children }) => (
+                  p: ({ children }: { children?: React.ReactNode }) => <p className="mt-1 first:mt-0">{children}</p>,
+                  ul: ({ children }: { children?: React.ReactNode }) => (
                     <ul className="mt-1 list-disc space-y-0.5 pl-4">{children}</ul>
                   ),
-                  ol: ({ children }) => (
+                  ol: ({ children }: { children?: React.ReactNode }) => (
                     <ol className="mt-1 list-decimal space-y-0.5 pl-4">{children}</ol>
                   ),
-                  li: ({ children }) => <li>{children}</li>,
-                  strong: ({ children }) => (
+                  li: ({ children }: { children?: React.ReactNode }) => <li>{children}</li>,
+                  strong: ({ children }: { children?: React.ReactNode }) => (
                     <strong className="font-bold text-ink">{children}</strong>
                   ),
-                  em: ({ children }) => <em className="italic">{children}</em>,
-                  a: ({ href, children }) => (
+                  em: ({ children }: { children?: React.ReactNode }) => <em className="italic">{children}</em>,
+                  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
                     <a
                       href={href}
                       onClick={(e) => {
@@ -602,17 +593,17 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
                       {children}
                     </a>
                   ),
-                  code: ({ children }) => (
+                  code: ({ children }: { children?: React.ReactNode }) => (
                     <code className="rounded bg-ink/10 px-1 font-mono text-[10px]">
                       {children}
                     </code>
                   ),
-                  pre: ({ children }) => (
+                  pre: ({ children }: { children?: React.ReactNode }) => (
                     <pre className="mt-1 overflow-x-auto rounded bg-ink/10 p-2 font-mono text-[10px]">
                       {children}
                     </pre>
                   ),
-                  blockquote: ({ children }) => (
+                  blockquote: ({ children }: { children?: React.ReactNode }) => (
                     <blockquote className="mt-1 border-l-2 border-ink/20 pl-2 italic">
                       {children}
                     </blockquote>
@@ -641,18 +632,7 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
           </button>
         )}
 
-        {/* 재시작 버튼 */}
-        <button
-          type="button"
-          onClick={() => {
-            void handleRelaunch();
-          }}
-          disabled={relaunching}
-          className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-paperWarm px-3 py-2.5 text-[13px] font-extrabold text-ink shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none disabled:opacity-50"
-        >
-          {relaunching ? "재시작 중..." : "앱 재시작"}
-        </button>
-
+        {/* 재시작은 트레이 아이콘 우클릭 메뉴(재시작)로 일원화. */}
       </div>
     </div>
   );

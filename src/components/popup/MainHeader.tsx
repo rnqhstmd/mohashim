@@ -7,6 +7,10 @@ type MainHeaderProps = {
   unreadCount: number;
   onOpenMailbox: () => void;
   onOpenSettings: () => void;
+  /** 새 버전 알림 표시 여부. true일 때 편지함 좌측에 다운로드 아이콘이 노출된다. */
+  hasUpdate?: boolean;
+  /** 다운로드 아이콘 클릭 시 콜백 — 설정 → 앱 업데이트 상세 화면 진입. */
+  onOpenUpdate?: () => void;
 };
 
 function formatNow(): string {
@@ -32,6 +36,8 @@ export function MainHeader({
   unreadCount,
   onOpenMailbox,
   onOpenSettings,
+  hasUpdate = false,
+  onOpenUpdate,
 }: MainHeaderProps) {
   const [timeStr, setTimeStr] = useState(formatNow);
   const showFocusChip = phase === "focus" || phase === "break";
@@ -49,8 +55,28 @@ export function MainHeader({
         {timeStr}
       </div>
 
-      {/* 우측: 메세지함 → 설정 → 상태 칩 */}
+      {/* 우측: (업데이트 알림 →) 메세지함 → 설정 → 상태 칩 */}
       <div className="ml-auto flex items-center gap-1.5">
+        {hasUpdate && onOpenUpdate && (
+          <button
+            type="button"
+            onClick={onOpenUpdate}
+            aria-label="새 버전 다운로드"
+            title="새 버전이 있어요"
+            className="relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-deepNavy/30 bg-[#fde6c8] text-deepNavy shadow-[1px_1px_0_0_rgba(40,37,32,0.06)] transition-colors hover:bg-[#fcdfb8]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onOpenMailbox}

@@ -3,8 +3,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import {
+  getLastSeenVersion,
   getOnboardingCompleted,
   initStorage,
+  setLastSeenVersion,
   setOnboardingCompleted,
 } from "./lib/storage";
 import { cleanupCompletedTodos, seedDefaultTags } from "./lib/todos";
@@ -20,10 +22,16 @@ import {
   type PermissionState,
 } from "./lib/permissions";
 import { attachTrayClickListener, type TargetOs } from "./lib/trayPopup";
-import { checkForUpdate, type UpdateInfo } from "./lib/updater";
+import {
+  APP_VERSION,
+  checkForUpdate,
+  fetchReleaseByVersion,
+  type UpdateInfo,
+} from "./lib/updater";
 import { OnboardingScreen } from "./components/popup/OnboardingScreen";
 import { MainScreen } from "./components/popup/MainScreen";
 import { PinGuideModal } from "./components/popup/PinGuideModal";
+import { WhatsNewModal } from "./components/popup/WhatsNewModal";
 // Phase 21 사용자 피드백: PopupTail(꼬리 < 도형) 미노출 — 사각형 팝업만 유지.
 
 type BootStatus = "loading" | "ready";
@@ -41,6 +49,7 @@ function App() {
   // 트레이 우클릭 → "작업 표시줄에 고정 안내" 클릭 시 Rust에서 emit하는 이벤트로 토글.
   const [showPinGuide, setShowPinGuide] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [whatsNew, setWhatsNew] = useState<UpdateInfo | null>(null);
   const isRefreshingRef = useRef(false);
 
   // 부트: Storage init + 권한 status + onboarding 플래그 1회 조회.
@@ -122,6 +131,49 @@ function App() {
       if (info) setUpdateInfo(info);
     });
   }, []);
+
+  // 새 버전으로 첫 실행이면 "What's new" 모달 노출.
+  // 비교 규칙:
+  //   last_seen_version == null  → 신규 설치(또는 최초 도입). 모달 표시 없이 즉시 동기화.
+  //   last_seen_version != APP_VERSION → 업데이트 직후. 현재 버전 릴리즈 노트를 가져와 모달 표시.
+  //   last_seen_version == APP_VERSION → 변경 없음. 모달 미표시.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const last = await getLastSeenVersion();
+        if (cancelled) return;
+        if (last === null) {
+          // 최초 도입 시 silent 마킹 — 이후 진짜 업데이트부터 모달 표시.
+          await setLastSeenVersion(APP_VERSION);
+          return;
+        }
+        if (last === APP_VERSION) return;
+        // 새 버전으로 첫 실행: 현재 버전의 릴리즈 노트 fetch.
+        const info = await fetchReleaseByVersion(APP_VERSION);
+        if (cancelled) return;
+        setWhatsNew(
+          info ?? {
+            version: APP_VERSION,
+            releaseUrl: "",
+            body: null,
+          }
+        );
+      } catch (err) {
+        console.error("[mohashim] whats-new check failed", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleWhatsNewConfirm = () => {
+    setWhatsNew(null);
+    void setLastSeenVersion(APP_VERSION).catch((err) =>
+      console.error("[mohashim] setLastSeenVersion failed", err)
+    );
+  };
 
   // 트레이 우클릭 메뉴 "작업 표시줄에 고정 안내" → Rust가 emit한 "show-pin-guide" 수신.
   useEffect(() => {
@@ -254,6 +306,12 @@ function App() {
       <PinGuideModal
         open={showPinGuide}
         onClose={() => setShowPinGuide(false)}
+      />
+      <WhatsNewModal
+        open={whatsNew !== null}
+        version={whatsNew?.version ?? APP_VERSION}
+        body={whatsNew?.body ?? null}
+        onConfirm={handleWhatsNewConfirm}
       />
     </div>
   );
