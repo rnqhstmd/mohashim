@@ -34,10 +34,24 @@ export const EMOJI_PALETTE: readonly string[] = [
   "☕", "🏢", "📍", "🌳", "🎯", "💡",
 ];
 
-/** 태그 편집 시 선택 가능한 색상 10종. */
+/** 태그 편집 시 선택 가능한 파스텔 톤 16색 (4×4 그리드 정렬). */
 export const COLOR_PALETTE: readonly string[] = [
-  "#7aa3e6", "#9d7ad9", "#f4a261", "#5fa97a", "#d68a6a",
-  "#a8b3cc", "#7dc89a", "#5a8dd8", "#c46455", "#f4d160",
+  "#a5c3ec", // 0  소프트 블루
+  "#b8a4e0", // 1  라일락
+  "#f4b48e", // 2  살구
+  "#88c4a3", // 3  민트
+  "#e3a899", // 4  코랄
+  "#b8c0d0", // 5  그레이블루
+  "#a8d4b8", // 6  세이지
+  "#8aafe0", // 7  베이비 블루
+  "#e0a89c", // 8  더스티 로즈
+  "#f5d989", // 9  크림 옐로우
+  "#c3a8d8", // 10 라벤더
+  "#d8b66e", // 11 머스타드
+  "#f0b8c4", // 12 페일 핑크
+  "#b8e0c8", // 13 페퍼민트
+  "#c4d8ea", // 14 더스티 스카이
+  "#c8a888", // 15 모카
 ];
 
 // ---------- 기본 태그 ----------
@@ -55,7 +69,7 @@ export const DEFAULT_WORK_TAGS: readonly WorkTag[] = [
  * 기본 위치 태그 3종 (집/카페/도서관).
  */
 export const DEFAULT_LOCATIONS: readonly Location[] = [
-  { id: "loc-default-home",    emoji: "🏠", label: "집",     color: COLOR_PALETTE[7] },
+  { id: "loc-default-home",    emoji: "🏠", label: "집",     color: COLOR_PALETTE[3] },
   { id: "loc-default-cafe",    emoji: "☕", label: "카페",   color: COLOR_PALETTE[4] },
   { id: "loc-default-library", emoji: "📚", label: "도서관", color: COLOR_PALETTE[9] },
 ];

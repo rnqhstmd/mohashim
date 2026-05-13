@@ -20,15 +20,15 @@ describe("shopCatalog", () => {
   it("AC-12: 가격 BR-1 정합", () => {
     const prices = Object.fromEntries(CATALOG.map((i) => [i.id, i.price]));
     expect(prices).toEqual({
-      face_round_glasses: 30,
-      face_heart_glasses: 40,
-      face_square_horn: 60,
-      head_strawhat: 100,
-      head_beret_red: 120,
-      head_wizard_cone: 150,
-      back_blanket_check: 200,
-      back_cloak_navy: 250,
-      back_cloak_aura: 300,
+      face_round_glasses: 15,
+      face_heart_glasses: 22,
+      face_square_horn: 35,
+      head_strawhat: 40,
+      head_beret_red: 55,
+      head_wizard_cone: 70,
+      back_blanket_check: 80,
+      back_cloak_navy: 100,
+      back_cloak_aura: 120,
     });
   });
 
@@ -43,19 +43,19 @@ describe("shopCatalog", () => {
     const names = Object.fromEntries(CATALOG.map((i) => [i.id, i.nameKo]));
     expect(names).toEqual({
       face_round_glasses: "동글 안경",
-      face_heart_glasses: "불타는 눈빛",
-      face_square_horn: "멋쟁이 선글라스",
-      head_strawhat: "새싹 핀",
-      head_beret_red: "노란 안전모",
+      face_heart_glasses: "불타는 안경",
+      face_square_horn: "멋쟁이 하늘색 안경",
+      head_strawhat: "밀짚모자",
+      head_beret_red: "예술가 모자",
       head_wizard_cone: "마법사 고깔",
-      back_blanket_check: "포근한 담요 망토",
-      back_cloak_navy: "빨간 히어로 망토",
-      back_cloak_aura: "반짝이는 오라",
+      back_blanket_check: "포근한 담요 목도리",
+      back_cloak_navy: "어두운 밤하늘 목도리",
+      back_cloak_aura: "반짝이는 오라 목도리",
     });
   });
 
   it("findItem: 정의된 ID 조회 성공", () => {
-    expect(findItem("face_round_glasses")?.price).toBe(30);
+    expect(findItem("face_round_glasses")?.price).toBe(15);
   });
 
   it("findItem: 미정의 ID는 undefined", () => {

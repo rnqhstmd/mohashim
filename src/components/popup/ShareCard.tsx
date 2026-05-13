@@ -1,40 +1,91 @@
 import { forwardRef, useMemo, type CSSProperties } from "react";
 import {
-  SHARE_CARD_SIZE,
+  SHARE_CARD_WIDTH,
+  SHARE_CARD_HEIGHT,
   GRASS_COLORS,
   type DayCell,
   type MonthData,
 } from "../../lib/grass";
 
-// Phase 21 사용자 피드백: 잔디 자랑 PNG의 폰트가 앱 본문(KyoboHandwriting2019)과
-// 다른 회귀 — canvas는 SVG-as-image 렌더 시 외부 CSS @font-face에 접근하지 못해
-// 시스템 폴백으로 합성됨. 해소: SVG <defs><style>에 @font-face data-URL을 인라인
-// 임베드하고 <text>에 명시적 font-family를 지정. composeShareCard가 직렬화 직전에
-// data URL을 주입한다 (`fontDataUrl` prop). 미설정 시 fontFamily만 적용되고 시스템
-// 폴백(Apple SD Gothic Neo 등)으로 렌더 — 본 prop은 항상 함께 사용한다.
 const SHARE_FONT_FAMILY =
   "KyoboHandwriting2019, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif";
 
-/**
- * Phase 16 CON-2: 미리보기 표시 픽셀. SVG는 viewBox=1080을 유지하고
- * width/height만 260으로 축소하여 비율을 보존.
- */
-export const SHARE_PREVIEW_DISPLAY_PX = 260;
+export const SHARE_PREVIEW_DISPLAY_PX = 240;
+
+// === Layout (864 × 1164, 네모 카드) ===
+
+// 헤더: 텍스트만 중앙 정렬
+const TITLE_Y = 124;
+const MONTH_Y = 176;
+
+// 요일 헤더
+const WEEKDAY_Y = 238;
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+// 잔디 그리드
+const CELL = 76;
+const STEP = 86;
+const GRID_COLS = 7;
+const GRID_WIDTH = (GRID_COLS - 1) * STEP + CELL; // 592
+const GRID_X = Math.round((SHARE_CARD_WIDTH - GRID_WIDTH) / 2); // 136
+const GRID_TOP = 262;
+
+// 범례 — 적음 ▢▢▢▢▢ 많음 (잔디맵 우측 하단 끝에 align)
+const LEGEND_Y = 778;
+const LEGEND_CELL = 18;
+const LEGEND_CELL_GAP = 6;
+const LEGEND_TEXT_WIDTH = 36; // "적음" / "많음" 추정 폭 (fontSize 18)
+const LEGEND_TEXT_GAP = 8;
+const LEGEND_WIDTH =
+  LEGEND_TEXT_WIDTH +
+  LEGEND_TEXT_GAP +
+  (LEGEND_CELL * 5 + LEGEND_CELL_GAP * 4) +
+  LEGEND_TEXT_GAP +
+  LEGEND_TEXT_WIDTH;
+const LEGEND_RIGHT_X = GRID_X + GRID_WIDTH;
+const LEGEND_LEFT_X = LEGEND_RIGHT_X - LEGEND_WIDTH;
+
+// 업적 좌우 분할 (라벨 + 메인)
+const ACH_LABEL_Y = 858;
+const ACH_MAIN_Y = 898;
+const COL1_X = 232; // 좌측 column center
+const COL2_X = 632; // 우측 column center
+
+// 자랑 한마디 (업적 아래, 풀폭)
+const MSG_LABEL_Y = 968;
+const MSG_MAIN_Y = 1020;
+
+const WATERMARK_Y = 1130;
+
+// 배경 캐릭터 워터마크 — 더 크게 (420 → 580)
+const BG_CHAR_SIZE = 580;
+const BG_CHAR_X = Math.round((SHARE_CARD_WIDTH - BG_CHAR_SIZE) / 2);
+const BG_CHAR_Y = 440;
+const BG_CHAR_SCALE = BG_CHAR_SIZE / 200;
+const BG_OPACITY = 0.09;
+
+// === Potato (calm) palette ===
+const P_SKIN = "#fdeed1";
+const P_SKIN_LIGHT = "#fff7e3";
+const P_SKIN_SHADE = "#f0d9a8";
+const P_OUTLINE = "#5a3d1f";
+const P_CHEEK = "#f9c4b0";
+const P_SPROUT = "#81C784";
+const HAND_DRAWN_BODY =
+  "M 50 100 C 49 88, 53 75, 62 64 C 70 53, 84 45, 100 44 C 117 43, 132 51, 142 64 " +
+  "C 151 76, 153 90, 153 105 C 154 122, 149 138, 138 152 C 127 165, 113 173, 100 173 " +
+  "C 87 173, 72 167, 61 154 C 51 141, 49 124, 50 100 Z";
 
 type ShareCardProps = {
   data: MonthData | null;
   message: string;
-  /**
-   * 미지정: off-screen 1080×1080 (PNG 변환용 원본, BR-3/AC-16).
-   * 지정: visible 미리보기 (Phase 16 FR-4).
-   */
   previewSize?: number;
-  /**
-   * Phase 21: KyoboHandwriting2019 woff base64 data URL.
-   * 지정 시 SVG 내부에 @font-face를 임베드하여 canvas 렌더링에서도 손글씨 폰트
-   * 적용. 미지정/실패 시 fontFamily 폴백 체인으로 자연 렌더.
-   */
   fontDataUrl?: string | null;
+  itemDataUrls?: {
+    face?: string | null;
+    head?: string | null;
+    back?: string | null;
+  } | null;
 };
 
 type MonthHighlights = {
@@ -42,11 +93,6 @@ type MonthHighlights = {
   mostTodos: { date: string; count: number } | null;
 };
 
-/**
- * 그 달 cells에서 (1) 평균 점수가 가장 높은 날, (2) todo를 가장 많이 완료한 날을
- * 계산한다. 동률이면 더 이른 날짜가 우선. sessions=0인 날은 점수 계산에서 제외하여
- * 점수 0의 노출을 방지. todo는 cells.todos 그대로 사용.
- */
 function computeMonthHighlights(data: MonthData | null): MonthHighlights {
   if (!data) return { bestFocus: null, mostTodos: null };
   let best: { date: string; score: number } | null = null;
@@ -54,56 +100,132 @@ function computeMonthHighlights(data: MonthData | null): MonthHighlights {
   for (const cell of data.cells as DayCell[]) {
     if (cell.date === null || cell.isFuture) continue;
     if (cell.sessions > 0) {
-      if (!best || cell.avg > best.score) {
-        best = { date: cell.date, score: cell.avg };
-      }
+      if (!best || cell.avg > best.score) best = { date: cell.date, score: cell.avg };
     }
     if (cell.todos > 0) {
-      if (!most || cell.todos > most.count) {
-        most = { date: cell.date, count: cell.todos };
-      }
+      if (!most || cell.todos > most.count) most = { date: cell.date, count: cell.todos };
     }
   }
   return { bestFocus: best, mostTodos: most };
 }
 
-/** 'YYYY-MM-DD' → 'M월 D일' 한글 표기. 파싱 실패 시 빈 문자열. */
 function formatShortKoreanDate(date: string): string {
   const [, m, d] = date.split("-").map(Number);
   if (!m || !d) return "";
   return `${m}월 ${d}일`;
 }
 
-/**
- * 공유 카드 SVG 본체 (Phase 8 + Phase 16 + Phase 21 재설계).
- *
- * Phase 21 변경:
- * - 워터마크 "MOHASHIM" → "모하심" (한글)
- * - <g id="highlights">: 그 달의 베스트 (가장 집중 잘 한 날 / 할일 가장 많이 한 날) 노출
- *
- * <foreignObject> 미사용 (AC-G30) — <text>만 사용.
- */
+/** 인라인 calm-state 감자 (헤더 아이콘 + 배경 워터마크 공용) */
+function PotatoSvg({
+  x,
+  y,
+  scale,
+}: {
+  x: number;
+  y: number;
+  scale: number;
+}) {
+  return (
+    <g transform={`translate(${x}, ${y}) scale(${scale})`}>
+      <path
+        d="M100 38 Q100.5 33 102 28"
+        stroke={P_OUTLINE}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M99 31 Q94 28 91 23 Q94 24 96 26 Q98 28 100 30 Z"
+        fill={P_SPROUT}
+        stroke={P_OUTLINE}
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <path
+        d="M101 30 Q108 25 112 17 Q108 18 104 21 Q100 25 99 29 Z"
+        fill={P_SPROUT}
+        stroke={P_OUTLINE}
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <path
+        d={HAND_DRAWN_BODY}
+        fill={P_SKIN}
+        stroke={P_OUTLINE}
+        strokeWidth="3"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <path
+        d="M 56 130 C 56 152, 75 170, 95 172 C 78 168, 62 152, 56 130 Z"
+        fill={P_SKIN_SHADE}
+        opacity="0.25"
+      />
+      <ellipse
+        cx="74"
+        cy="68"
+        rx="11"
+        ry="14"
+        fill={P_SKIN_LIGHT}
+        opacity="0.55"
+        transform="rotate(-18 74 68)"
+      />
+      <ellipse cx="86" cy="112" rx="3" ry="3.3" fill={P_OUTLINE} />
+      <ellipse cx="114" cy="112" rx="3" ry="3.3" fill={P_OUTLINE} />
+      <path
+        d="M95 124 Q100 128 105 124"
+        stroke={P_OUTLINE}
+        strokeWidth="2.6"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <ellipse cx="76" cy="125" rx="5" ry="3" fill={P_CHEEK} opacity="0.55" />
+      <ellipse cx="124" cy="125" rx="5" ry="3" fill={P_CHEEK} opacity="0.55" />
+    </g>
+  );
+}
+
 export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function ShareCard(
-  { data, message, previewSize, fontDataUrl },
+  { data, message, previewSize, fontDataUrl, itemDataUrls },
   ref
 ) {
   const isPreview = typeof previewSize === "number";
-  const renderSize = isPreview ? previewSize : SHARE_CARD_SIZE;
+  const aspectScale = SHARE_CARD_HEIGHT / SHARE_CARD_WIDTH;
+  const renderWidth = isPreview ? previewSize : SHARE_CARD_WIDTH;
+  const renderHeight = isPreview ? previewSize * aspectScale : SHARE_CARD_HEIGHT;
   const highlights = useMemo(() => computeMonthHighlights(data), [data]);
 
-  const wrapperClass = isPreview
-    ? ""
-    : "pointer-events-none absolute top-0";
+  const wrapperClass = isPreview ? "" : "pointer-events-none";
   const wrapperStyle: CSSProperties = isPreview
-    ? { width: previewSize, height: previewSize }
-    : { left: "-99999px" };
+    ? { width: renderWidth, height: renderHeight }
+    : {};
 
-  // 그리드는 grass 영역 상단으로 고정 (translate y=180). 셀 100 + gap 10 → 행당 110.
-  // 6주 최대 660px → grass 영역은 y 180~840 사이. 베스트 통계는 y=890~1010 영역,
-  // 사용자 메시지는 y=1040 (이전 y=950보다 아래로 이동하여 통계와 분리).
-  const GRASS_TOP = 180;
-  const HIGHLIGHTS_TOP = 880;
-  const MESSAGE_Y = 1010;
+  const focusBlock = highlights.bestFocus
+    ? {
+        label: "🏆 가장 집중한 날",
+        main: `${formatShortKoreanDate(highlights.bestFocus.date)}, 평균 ${highlights.bestFocus.score}점`,
+        color: "#445478",
+      }
+    : {
+        label: "🏆 가장 집중한 날",
+        main: "기록 없음",
+        color: "#9aa0b0",
+      };
+
+  const todosBlock = highlights.mostTodos
+    ? {
+        label: "✅ 할일 많이 한 날",
+        main: `${formatShortKoreanDate(highlights.mostTodos.date)}, ${highlights.mostTodos.count}개 완료`,
+        color: "#5fa97a",
+      }
+    : {
+        label: "✅ 할일 많이 한 날",
+        main: "기록 없음",
+        color: "#9aa0b0",
+      };
 
   return (
     <div
@@ -114,12 +236,10 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
       <svg
         ref={ref}
         xmlns="http://www.w3.org/2000/svg"
-        width={renderSize}
-        height={renderSize}
-        viewBox={`0 0 ${SHARE_CARD_SIZE} ${SHARE_CARD_SIZE}`}
+        width={renderWidth}
+        height={renderHeight}
+        viewBox={`0 0 ${SHARE_CARD_WIDTH} ${SHARE_CARD_HEIGHT}`}
       >
-        {/* Phase 21: 폰트 임베드. data URL이 들어오면 canvas-as-image 경로에서도
-            손글씨 폰트가 적용된다. 미설정 시 fontFamily 폴백 체인으로 렌더. */}
         {fontDataUrl && (
           <defs>
             <style>
@@ -132,114 +252,246 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
             </style>
           </defs>
         )}
-        {/* 배경 — cream (Phase 17 FR-D1 통일: #fff8e0 → #fffaed) */}
-        <rect width="100%" height="100%" fill="#fffaed" />
 
-        {/* 워터마크 — Phase 21: 한글 "모하심"으로 교체 (브랜드 일관성). */}
-        <g id="watermark">
-          <text
-            x={SHARE_CARD_SIZE / 2}
-            y="90"
-            textAnchor="middle"
-            fontSize="56"
-            fontWeight="bold"
-            fontFamily={SHARE_FONT_FAMILY}
-            fill="#445478"
-          >
-            모하심
-          </text>
-          {data && (
-            <text
-              x={SHARE_CARD_SIZE / 2}
-              y="140"
-              textAnchor="middle"
-              fontSize="28"
-              fontFamily={SHARE_FONT_FAMILY}
-              fill="#8a93a6"
-            >
-              {`${data.year}년 ${data.month}월`}
-            </text>
+        {/* 카드 본체 cream 배경 (네모) */}
+        <rect
+          width={SHARE_CARD_WIDTH}
+          height={SHARE_CARD_HEIGHT}
+          fill="#fffaed"
+        />
+
+        {/* 배경 캐릭터 워터마크 */}
+        <g id="bg-character" opacity={BG_OPACITY}>
+          {itemDataUrls?.back && (
+            <image
+              href={itemDataUrls.back}
+              x={BG_CHAR_X}
+              y={BG_CHAR_Y}
+              width={BG_CHAR_SIZE}
+              height={BG_CHAR_SIZE}
+            />
+          )}
+          <PotatoSvg x={BG_CHAR_X} y={BG_CHAR_Y} scale={BG_CHAR_SCALE} />
+          {itemDataUrls?.head && (
+            <image
+              href={itemDataUrls.head}
+              x={BG_CHAR_X}
+              y={BG_CHAR_Y}
+              width={BG_CHAR_SIZE}
+              height={BG_CHAR_SIZE}
+            />
+          )}
+          {itemDataUrls?.face && (
+            <image
+              href={itemDataUrls.face}
+              x={BG_CHAR_X}
+              y={BG_CHAR_Y}
+              width={BG_CHAR_SIZE}
+              height={BG_CHAR_SIZE}
+            />
           )}
         </g>
 
-        {/* 잔디 그리드 — 7×N, 셀 100×100, gap 10 */}
-        <g id="grass-grid" transform={`translate(140, ${GRASS_TOP})`}>
+        {/* 헤더 — "모하심 잔디 자랑하기" 중앙 정렬 */}
+        <text
+          x={SHARE_CARD_WIDTH / 2}
+          y={TITLE_Y}
+          textAnchor="middle"
+          fontSize="54"
+          fontWeight="bold"
+          fontFamily={SHARE_FONT_FAMILY}
+          fill="#445478"
+        >
+          모하심 잔디 자랑하기
+        </text>
+        {data && (
+          <text
+            x={SHARE_CARD_WIDTH / 2}
+            y={MONTH_Y}
+            textAnchor="middle"
+            fontSize="32"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#8a93a6"
+          >
+            {`${data.year}년 ${data.month}월`}
+          </text>
+        )}
+
+        {/* 요일 헤더 — 일~토 */}
+        <g id="weekdays">
+          {WEEKDAYS.map((wd, i) => {
+            const cx = GRID_X + i * STEP + CELL / 2;
+            const color = i === 0 ? "#c46455" : i === 6 ? "#5a8dd8" : "#8a93a6";
+            return (
+              <text
+                key={wd}
+                x={cx}
+                y={WEEKDAY_Y}
+                textAnchor="middle"
+                fontSize="22"
+                fontFamily={SHARE_FONT_FAMILY}
+                fill={color}
+              >
+                {wd}
+              </text>
+            );
+          })}
+        </g>
+
+        {/* 잔디 그리드 */}
+        <g id="grass-grid" transform={`translate(${GRID_X}, ${GRID_TOP})`}>
           {(data?.cells ?? []).map((cell, idx) => {
             if (cell.date === null) return null;
-            const col = idx % 7;
-            const row = Math.floor(idx / 7);
+            const col = idx % GRID_COLS;
+            const row = Math.floor(idx / GRID_COLS);
             return (
               <rect
                 key={idx}
-                x={col * 110}
-                y={row * 110}
-                width="100"
-                height="100"
-                rx="8"
+                x={col * STEP}
+                y={row * STEP}
+                width={CELL}
+                height={CELL}
+                rx="14"
                 fill={GRASS_COLORS[cell.level]}
               />
             );
           })}
         </g>
 
-        {/* Phase 21: 그 달의 베스트 — 가장 집중 잘 한 날 / 할일 가장 많이 한 날.
-            세션이 1건도 없는 신규 사용자/빈 달은 안내문으로 폴백. */}
-        <g id="highlights">
-          {highlights.bestFocus ? (
-            <text
-              x={SHARE_CARD_SIZE / 2}
-              y={HIGHLIGHTS_TOP}
-              textAnchor="middle"
-              fontSize="32"
-              fontFamily={SHARE_FONT_FAMILY}
-              fill="#445478"
-            >
-              {`🏆 가장 집중 잘 한 날 — ${formatShortKoreanDate(
-                highlights.bestFocus.date
-              )} (${highlights.bestFocus.score}점)`}
-            </text>
-          ) : (
-            <text
-              x={SHARE_CARD_SIZE / 2}
-              y={HIGHLIGHTS_TOP}
-              textAnchor="middle"
-              fontSize="28"
-              fontFamily={SHARE_FONT_FAMILY}
-              fill="#8a93a6"
-            >
-              아직 집중 세션 없음
-            </text>
-          )}
-          {highlights.mostTodos ? (
-            <text
-              x={SHARE_CARD_SIZE / 2}
-              y={HIGHLIGHTS_TOP + 60}
-              textAnchor="middle"
-              fontSize="32"
-              fontFamily={SHARE_FONT_FAMILY}
-              fill="#5fa97a"
-            >
-              {`✅ 할일 가장 많이 한 날 — ${formatShortKoreanDate(
-                highlights.mostTodos.date
-              )} (${highlights.mostTodos.count}개)`}
-            </text>
-          ) : null}
+        {/* 적음 → 많음 범례 (잔디맵 우측 하단 정렬) */}
+        <g id="legend">
+          <text
+            x={LEGEND_LEFT_X}
+            y={LEGEND_Y + LEGEND_CELL - 4}
+            fontSize="18"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            적음
+          </text>
+          {GRASS_COLORS.map((color, i) => (
+            <rect
+              key={i}
+              x={LEGEND_LEFT_X + LEGEND_TEXT_WIDTH + LEGEND_TEXT_GAP + i * (LEGEND_CELL + LEGEND_CELL_GAP)}
+              y={LEGEND_Y}
+              width={LEGEND_CELL}
+              height={LEGEND_CELL}
+              rx="4"
+              fill={color}
+            />
+          ))}
+          <text
+            x={LEGEND_LEFT_X + LEGEND_TEXT_WIDTH + LEGEND_TEXT_GAP + (LEGEND_CELL * 5 + LEGEND_CELL_GAP * 4) + LEGEND_TEXT_GAP}
+            y={LEGEND_Y + LEGEND_CELL - 4}
+            fontSize="18"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            많음
+          </text>
         </g>
 
-        {/* Phase 16 FR-2: 사용자 메시지 (비어있지 않을 때만 렌더) */}
-        {message && (
+        {/* 업적 — 좌우 분할 (라벨 + 메인) */}
+        <g id="achievements">
+          {/* 좌측: 집중 */}
           <text
-            x={SHARE_CARD_SIZE / 2}
-            y={MESSAGE_Y}
+            x={COL1_X}
+            y={ACH_LABEL_Y}
             textAnchor="middle"
-            fontSize="56"
+            fontSize="22"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            {focusBlock.label}
+          </text>
+          <text
+            x={COL1_X}
+            y={ACH_MAIN_Y}
+            textAnchor="middle"
+            fontSize="30"
             fontWeight="bold"
             fontFamily={SHARE_FONT_FAMILY}
-            fill="#2b2520"
+            fill={focusBlock.color}
           >
-            {message}
+            {focusBlock.main}
           </text>
+
+          {/* 우측: 할일 */}
+          <text
+            x={COL2_X}
+            y={ACH_LABEL_Y}
+            textAnchor="middle"
+            fontSize="22"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            {todosBlock.label}
+          </text>
+          <text
+            x={COL2_X}
+            y={ACH_MAIN_Y}
+            textAnchor="middle"
+            fontSize="30"
+            fontWeight="bold"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill={todosBlock.color}
+          >
+            {todosBlock.main}
+          </text>
+
+          {/* 좌우 사이 구분 점 */}
+          <circle cx={SHARE_CARD_WIDTH / 2} cy={ACH_MAIN_Y - 12} r="3" fill="#d8d0bf" />
+        </g>
+
+        {/* 자랑 한마디 — 그 아래 풀폭 */}
+        {message && (
+          <g id="user-message">
+            <text
+              x={SHARE_CARD_WIDTH / 2}
+              y={MSG_LABEL_Y}
+              textAnchor="middle"
+              fontSize="22"
+              fontFamily={SHARE_FONT_FAMILY}
+              fill="#9aa0b0"
+            >
+              💬 내 자랑 한마디
+            </text>
+            <text
+              x={SHARE_CARD_WIDTH / 2}
+              y={MSG_MAIN_Y}
+              textAnchor="middle"
+              fontSize="56"
+              fontWeight="bold"
+              fontFamily={SHARE_FONT_FAMILY}
+              fill="#2b2520"
+            >
+              {message}
+            </text>
+          </g>
         )}
+
+        {/* 워터마크 */}
+        <text
+          x={SHARE_CARD_WIDTH / 2}
+          y={WATERMARK_Y}
+          textAnchor="middle"
+          fontSize="22"
+          fontFamily={SHARE_FONT_FAMILY}
+          fill="#b8b0a4"
+        >
+          모하심으로 기록 중 🌱
+        </text>
+
+        {/* 카드 외곽선 (네모) */}
+        <rect
+          x="0.9"
+          y="0.9"
+          width={SHARE_CARD_WIDTH - 1.8}
+          height={SHARE_CARD_HEIGHT - 1.8}
+          fill="none"
+          stroke="#e2d8c4"
+          strokeWidth="1.8"
+        />
       </svg>
     </div>
   );

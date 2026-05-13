@@ -69,6 +69,8 @@ export function MainScreen({ onResetDone, updateInfo }: MainScreenProps) {
   const [overlayScreen, setOverlayScreen] = useState<
     "mailbox" | "settings" | null
   >(null);
+  // SettingsScreen 진입 시 초기 view 지정 — 메인 헤더의 업데이트 아이콘 클릭 시 "update"로 시작.
+  const [settingsInitial, setSettingsInitial] = useState<"main" | "update">("main");
   const [unreadCount, setUnreadCount] = useState(0);
   // Phase 27 FR-11: settings 오버레이 활성 시 mailbox-deeplink 수신 신호.
   // SettingsScreen이 본 신호를 감지하여 더티 판정(view !== "main")에 따라 confirm 다이얼로그
@@ -240,6 +242,7 @@ export function MainScreen({ onResetDone, updateInfo }: MainScreenProps) {
           onPendingDeeplinkChange={setPendingDeeplink}
           onAcceptDeeplink={handleAcceptDeeplink}
           updateInfo={updateInfo}
+          initialView={settingsInitial}
         />
       ) : (
         <>
@@ -250,7 +253,15 @@ export function MainScreen({ onResetDone, updateInfo }: MainScreenProps) {
             phase={phase}
             unreadCount={unreadCount}
             onOpenMailbox={() => setOverlayScreen("mailbox")}
-            onOpenSettings={() => setOverlayScreen("settings")}
+            onOpenSettings={() => {
+              setSettingsInitial("main");
+              setOverlayScreen("settings");
+            }}
+            hasUpdate={updateInfo !== null}
+            onOpenUpdate={() => {
+              setSettingsInitial("update");
+              setOverlayScreen("settings");
+            }}
           />
           <main className="flex flex-1 flex-col overflow-hidden">
             {tab === "todos" ? (

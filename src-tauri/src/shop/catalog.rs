@@ -20,14 +20,14 @@ pub struct CatalogEntry {
 pub fn find(item_id: &str) -> Option<CatalogEntry> {
     match item_id {
         "face_round_glasses"  => Some(CatalogEntry { price: 15,  slot: Slot::Face, name_ko: "동글 안경" }),
-        "face_heart_glasses"  => Some(CatalogEntry { price: 22,  slot: Slot::Face, name_ko: "불타는 눈빛" }),
-        "face_square_horn"    => Some(CatalogEntry { price: 35,  slot: Slot::Face, name_ko: "멋쟁이 선글라스" }),
-        "head_strawhat"       => Some(CatalogEntry { price: 55,  slot: Slot::Head, name_ko: "새싹 핀" }),
-        "head_beret_red"      => Some(CatalogEntry { price: 65,  slot: Slot::Head, name_ko: "노란 안전모" }),
-        "head_wizard_cone"    => Some(CatalogEntry { price: 85,  slot: Slot::Head, name_ko: "마법사 고깔" }),
-        "back_blanket_check"  => Some(CatalogEntry { price: 110, slot: Slot::Back, name_ko: "포근한 담요 망토" }),
-        "back_cloak_navy"     => Some(CatalogEntry { price: 140, slot: Slot::Back, name_ko: "빨간 히어로 망토" }),
-        "back_cloak_aura"     => Some(CatalogEntry { price: 170, slot: Slot::Back, name_ko: "반짝이는 오라" }),
+        "face_heart_glasses"  => Some(CatalogEntry { price: 22,  slot: Slot::Face, name_ko: "불타는 안경" }),
+        "face_square_horn"    => Some(CatalogEntry { price: 35,  slot: Slot::Face, name_ko: "멋쟁이 하늘색 안경" }),
+        "head_strawhat"       => Some(CatalogEntry { price: 40,  slot: Slot::Head, name_ko: "밀짚모자" }),
+        "head_beret_red"      => Some(CatalogEntry { price: 55,  slot: Slot::Head, name_ko: "예술가 모자" }),
+        "head_wizard_cone"    => Some(CatalogEntry { price: 70,  slot: Slot::Head, name_ko: "마법사 고깔" }),
+        "back_blanket_check"  => Some(CatalogEntry { price: 80,  slot: Slot::Back, name_ko: "포근한 담요 목도리" }),
+        "back_cloak_navy"     => Some(CatalogEntry { price: 100, slot: Slot::Back, name_ko: "어두운 밤하늘 목도리" }),
+        "back_cloak_aura"     => Some(CatalogEntry { price: 120, slot: Slot::Back, name_ko: "반짝이는 오라 목도리" }),
         _ => None,
     }
 }
@@ -69,12 +69,12 @@ mod tests {
         assert_eq!(find("face_round_glasses").unwrap().price, 15);
         assert_eq!(find("face_heart_glasses").unwrap().price, 22);
         assert_eq!(find("face_square_horn").unwrap().price, 35);
-        assert_eq!(find("head_strawhat").unwrap().price, 55);
-        assert_eq!(find("head_beret_red").unwrap().price, 65);
-        assert_eq!(find("head_wizard_cone").unwrap().price, 85);
-        assert_eq!(find("back_blanket_check").unwrap().price, 110);
-        assert_eq!(find("back_cloak_navy").unwrap().price, 140);
-        assert_eq!(find("back_cloak_aura").unwrap().price, 170);
+        assert_eq!(find("head_strawhat").unwrap().price, 40);
+        assert_eq!(find("head_beret_red").unwrap().price, 55);
+        assert_eq!(find("head_wizard_cone").unwrap().price, 70);
+        assert_eq!(find("back_blanket_check").unwrap().price, 80);
+        assert_eq!(find("back_cloak_navy").unwrap().price, 100);
+        assert_eq!(find("back_cloak_aura").unwrap().price, 120);
     }
 
     #[test]

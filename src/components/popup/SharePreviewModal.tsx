@@ -5,12 +5,24 @@ import {
   copyShareCardToClipboard,
 } from "../../lib/grass";
 import { ShareCard, SHARE_PREVIEW_DISPLAY_PX } from "./ShareCard";
-// Phase 21: 잔디 공유 PNG에 손글씨 폰트를 임베드하기 위해 woff URL을 Vite로
-// 정적 분석. 실제 fetch + base64 변환은 모달 mount 시 수행 (cold start 비용 회피).
+import { getInventory } from "../../lib/storage";
+import { findItem } from "../../lib/shopCatalog";
 import kyoboFontUrl from "../../assets/fonts/KyoboHandwriting2019.woff?url";
 
-// 모듈 스코프 캐시. 모달이 다시 열릴 때 재요청을 회피하여 cold path 1회로 한정.
 let fontDataUrlCache: string | null = null;
+
+type ItemDataUrls = { face?: string | null; head?: string | null; back?: string | null };
+
+async function fetchSvgDataUrl(svgPath: string): Promise<string | null> {
+  try {
+    const res = await fetch(svgPath);
+    if (!res.ok) return null;
+    const text = await res.text();
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
+  } catch {
+    return null;
+  }
+}
 
 async function loadKyoboFontDataUrl(): Promise<string | null> {
   if (fontDataUrlCache) return fontDataUrlCache;
@@ -59,9 +71,8 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // Phase 21: 모달 mount 시 woff → base64 data URL 1회 fetch.
-  const [fontDataUrl, setFontDataUrl] = useState<string | null>(
-    fontDataUrlCache
-  );
+  const [fontDataUrl, setFontDataUrl] = useState<string | null>(fontDataUrlCache);
+  const [itemDataUrls, setItemDataUrls] = useState<ItemDataUrls | null>(null);
   const copyRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<number | null>(null);
@@ -89,6 +100,41 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
     };
     // mount 시 1회만 트리거 — fontDataUrl 변경은 자기 자신의 set이 유발한 변경 외에는 발생하지 않음.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 팝업 창(320×470) 안에서 모달이 열린 동안 body 스크롤 잠금.
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, []);
+
+  // 장착 아이템 SVG → data URL 변환 (canvas 렌더링 시 외부 참조 차단 우회).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const inv = await getInventory();
+        const urls: ItemDataUrls = {};
+        for (const slot of ["face", "head", "back"] as const) {
+          const id = inv.equipped[slot];
+          if (!id) continue;
+          const item = findItem(id);
+          if (!item) continue;
+          const url = await fetchSvgDataUrl(item.svgPath);
+          if (url) urls[slot] = url;
+        }
+        if (!cancelled) setItemDataUrls(urls);
+      } catch (err) {
+        console.error("[mohashim] item svg load failed", err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // FR-8a: ESC 키 닫기. deps=[]로 고정하여 listener 재등록 사이클 회피.
@@ -160,7 +206,7 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
       role="presentation"
     >
       <div
-        className="relative w-[300px] rounded-md bg-cream p-4 shadow-lg animate-slide-up"
+        className="relative max-h-[calc(100vh-16px)] w-[300px] overflow-y-auto rounded-md bg-cream p-4 shadow-lg animate-slide-up"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -186,6 +232,7 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
             message={message}
             previewSize={SHARE_PREVIEW_DISPLAY_PX}
             fontDataUrl={fontDataUrl}
+            itemDataUrls={itemDataUrls}
           />
         </div>
         <input
@@ -216,13 +263,28 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
             복사에 실패했어요. 잠시 후 다시 시도해 주세요 😢
           </p>
         )}
-        {/* MA-1: off-screen 인스턴스를 panel 내부에 배치 */}
-        <ShareCard
-          ref={copyRef}
-          data={data}
-          message={message}
-          fontDataUrl={fontDataUrl}
-        />
+        {/* off-screen PNG 원본 인스턴스 — 1080×1080 SVG가 문서 흐름이나 스크롤에
+            영향을 주지 않도록 0×0 fixed hidden 컨테이너에 완전 격리. */}
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: 0,
+            height: 0,
+            overflow: "hidden",
+            pointerEvents: "none",
+          }}
+        >
+          <ShareCard
+            ref={copyRef}
+            data={data}
+            message={message}
+            fontDataUrl={fontDataUrl}
+            itemDataUrls={itemDataUrls}
+          />
+        </div>
       </div>
     </div>
   );

@@ -91,9 +91,11 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     )?;
 
     let separator_bottom = PredefinedMenuItem::separator(app)?;
+    let restart_item = MenuItem::with_id(app, "restart", "재시작", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
     // 자동 시작 메뉴 항목 제거 — 설정 화면의 자동 시작 토글로 일원화 (사용자 피드백).
+    // 재시작 메뉴 추가 — 업데이트 설치 안내 등에서 호출되는 단일 진입점.
     #[cfg(target_os = "windows")]
     let menu = Menu::with_items(
         app,
@@ -102,13 +104,20 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             &separator_top,
             &pin_guide_item,
             &separator_bottom,
+            &restart_item,
             &quit_item,
         ],
     )?;
     #[cfg(not(target_os = "windows"))]
     let menu = Menu::with_items(
         app,
-        &[&open_item, &separator_top, &separator_bottom, &quit_item],
+        &[
+            &open_item,
+            &separator_top,
+            &separator_bottom,
+            &restart_item,
+            &quit_item,
+        ],
     )?;
 
     // FR-1/BR-2/AC-4: TrayIconBuilder 빌드 시점에 초기 아이콘 설정.
@@ -168,6 +177,13 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 if let Err(e) = app.emit("show-pin-guide", ()) {
                     eprintln!("[mohashim] show-pin-guide emit failed: {e}");
                 }
+            }
+            "restart" => {
+                // Tauri 2.x AppHandle::restart() — 내부적으로 webview/windows 정리 후
+                // 새 프로세스 spawn + 안전 종료를 처리한다. 직접 `Command::spawn() + app.exit(0)`
+                // 방식은 Chromium WebView가 정리되기 전에 프로세스가 끝나면서 stderr에
+                // `Failed to unregister class Chrome_WidgetWin_0. Error = 1412` 경고가 남는다.
+                app.restart();
             }
             "quit" => {
                 app.exit(0);

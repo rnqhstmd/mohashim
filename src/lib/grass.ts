@@ -15,7 +15,12 @@ export const GRASS_3 = "#30a14e";
 export const GRASS_4 = "#216e39";
 export const GRASS_COLORS: readonly string[] = [GRASS_0, GRASS_1, GRASS_2, GRASS_3, GRASS_4];
 
+/** @deprecated 정사각 기준 상수. 새 코드는 SHARE_CARD_WIDTH/HEIGHT 사용. */
 export const SHARE_CARD_SIZE = 1080;
+/** 잔디 공유 카드 캔버스 가로 (둥근 카드 영역만, 외부 cream 여백 제거). */
+export const SHARE_CARD_WIDTH = 864;
+/** 잔디 공유 카드 캔버스 세로 (둥근 카드 영역만). */
+export const SHARE_CARD_HEIGHT = 1164;
 
 // ---------- 타입 ----------
 
@@ -227,11 +232,11 @@ export async function composeShareCard(svgEl: SVGSVGElement): Promise<Blob> {
   img.src = dataUrl;
   await img.decode();
   const canvas = document.createElement("canvas");
-  canvas.width = SHARE_CARD_SIZE;
-  canvas.height = SHARE_CARD_SIZE;
+  canvas.width = SHARE_CARD_WIDTH;
+  canvas.height = SHARE_CARD_HEIGHT;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas 2d 컨텍스트 미지원");
-  ctx.drawImage(img, 0, 0, SHARE_CARD_SIZE, SHARE_CARD_SIZE);
+  ctx.drawImage(img, 0, 0, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT);
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);

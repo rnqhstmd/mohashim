@@ -31,13 +31,13 @@ export type ShopItem = {
 export const CATALOG: ShopItem[] = [
   { id: "face_round_glasses", slot: "face", nameKo: "동글 안경",             price: 15,  svgPath: faceRoundGlassesSvg },
   { id: "face_heart_glasses", slot: "face", nameKo: "불타는 안경",            price: 22,  svgPath: faceHeartGlassesSvg },
-  { id: "face_square_horn",   slot: "face", nameKo: "멋쟁이 선글라스",        price: 35,  svgPath: faceSquareHornSvg },
-  { id: "head_strawhat",      slot: "head", nameKo: "밀짚모자",               price: 55,  svgPath: headStrawhatSvg },
-  { id: "head_beret_red",     slot: "head", nameKo: "예술가 모자",            price: 65,  svgPath: headBeretRedSvg },
-  { id: "head_wizard_cone",   slot: "head", nameKo: "마법사 고깔",            price: 85,  svgPath: headWizardConeSvg },
-  { id: "back_blanket_check", slot: "back", nameKo: "포근한 담요 목도리",     price: 110, svgPath: backBlanketCheckSvg },
-  { id: "back_cloak_navy",    slot: "back", nameKo: "빨간 히어로 목도리",     price: 140, svgPath: backCloakNavySvg },
-  { id: "back_cloak_aura",    slot: "back", nameKo: "반짝이는 오라 목도리",   price: 170, svgPath: backCloakAuraSvg },
+  { id: "face_square_horn",   slot: "face", nameKo: "멋쟁이 하늘색 안경",      price: 35,  svgPath: faceSquareHornSvg },
+  { id: "head_strawhat",      slot: "head", nameKo: "밀짚모자",               price: 40,  svgPath: headStrawhatSvg },
+  { id: "head_beret_red",     slot: "head", nameKo: "예술가 모자",            price: 55,  svgPath: headBeretRedSvg },
+  { id: "head_wizard_cone",   slot: "head", nameKo: "마법사 고깔",            price: 70,  svgPath: headWizardConeSvg },
+  { id: "back_blanket_check", slot: "back", nameKo: "포근한 담요 목도리",     price: 80,  svgPath: backBlanketCheckSvg },
+  { id: "back_cloak_navy",    slot: "back", nameKo: "어두운 밤하늘 목도리",    price: 100, svgPath: backCloakNavySvg },
+  { id: "back_cloak_aura",    slot: "back", nameKo: "반짝이는 오라 목도리",   price: 120, svgPath: backCloakAuraSvg },
 ];
 
 export function findItem(id: string): ShopItem | undefined {
