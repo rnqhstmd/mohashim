@@ -628,7 +628,7 @@ function UpdateScreen({ updateInfo, onClose }: UpdateScreenProps) {
             }}
             className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-ink bg-[#3e4d70] px-3 py-2.5 text-[13px] font-extrabold text-paperWarm shadow-[1.5px_1.5px_0_0_#2b2520] transition-transform hover:-translate-y-px active:translate-y-0 active:shadow-none"
           >
-            다운로드 링크
+            새 버전 확인하기
           </button>
         )}
 
