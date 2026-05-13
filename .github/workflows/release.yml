@@ -79,22 +79,12 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🩹 모하심 v1.0.6 — 키보드 IME 충돌 핫픽스
+            ## 🩹 모하심 v1.0.6
 
-            ### 🐛 수정 내역
-            - **한국어 IME 동시 입력 회귀 차단**: 일부 환경에서 한·영키를 누르지 않았는데도 한글과 영어가 동시에 입력되거나, 한글 입력 도중 자모가 빠지는 회귀를 수정했습니다.
-              - 원인: 이전 버전이 사용하던 `rdev` 라이브러리의 Windows 백엔드가 키 이벤트를 가로채는 과정에서 `ToUnicodeEx` / `GetKeyboardState` 시스템 호출을 발생시켜 IME 입력 큐를 망가뜨리던 부작용.
-              - 조치: 입력 후킹 방식을 **OS 표준 polling API** (`GetLastInputInfo` / `CGEventSourceSecondsSinceLastEventType`) 로 교체. 시스템이 자체적으로 기록한 마지막 입력 시각을 1초 주기로 read-only 조회하여 사용자 입력 큐 / dead-key / sticky-key 등에 **무영향**.
+            - 한·영을 안 눌렀는데 한글과 영어가 동시에 입력되던 문제를 수정했어요.
+            - 키보드 입력 감지 방식을 더 안정적인 OS 표준 방식으로 바꿨어요.
 
-            ### 🔧 기술 변경
-            - `rdev = "0.5"` 의존성 제거, Windows-target `windows = "0.58"` 의존성 추가.
-            - macOS 의존성은 기존 `core-foundation` 으로 충분 (CoreGraphics framework 직접 link).
-            - 폴링 주기는 score tick과 동일한 **1초** — idle 표시 지연은 사용자 체감 없음.
-
-            위 내용을 수정하였고 ${{ needs.prepare.outputs.suffix }}.
-
-            ### 🔍 전체 변경사항
-            [CHANGELOG.md](https://github.com/rnqhstmd/mohashim/blob/main/CHANGELOG.md)에서 확인하세요.
+            ${{ needs.prepare.outputs.suffix }}.
           releaseDraft: false
           prerelease: false
           args: --target universal-apple-darwin
@@ -108,22 +98,12 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '모하심 ${{ github.ref_name }}'
           releaseBody: |
-            ## 🩹 모하심 v1.0.6 — 키보드 IME 충돌 핫픽스
+            ## 🩹 모하심 v1.0.6
 
-            ### 🐛 수정 내역
-            - **한국어 IME 동시 입력 회귀 차단**: 일부 환경에서 한·영키를 누르지 않았는데도 한글과 영어가 동시에 입력되거나, 한글 입력 도중 자모가 빠지는 회귀를 수정했습니다.
-              - 원인: 이전 버전이 사용하던 `rdev` 라이브러리의 Windows 백엔드가 키 이벤트를 가로채는 과정에서 `ToUnicodeEx` / `GetKeyboardState` 시스템 호출을 발생시켜 IME 입력 큐를 망가뜨리던 부작용.
-              - 조치: 입력 후킹 방식을 **OS 표준 polling API** (`GetLastInputInfo` / `CGEventSourceSecondsSinceLastEventType`) 로 교체. 시스템이 자체적으로 기록한 마지막 입력 시각을 1초 주기로 read-only 조회하여 사용자 입력 큐 / dead-key / sticky-key 등에 **무영향**.
+            - 한·영을 안 눌렀는데 한글과 영어가 동시에 입력되던 문제를 수정했어요.
+            - 키보드 입력 감지 방식을 더 안정적인 OS 표준 방식으로 바꿨어요.
 
-            ### 🔧 기술 변경
-            - `rdev = "0.5"` 의존성 제거, Windows-target `windows = "0.58"` 의존성 추가.
-            - macOS 의존성은 기존 `core-foundation` 으로 충분 (CoreGraphics framework 직접 link).
-            - 폴링 주기는 score tick과 동일한 **1초** — idle 표시 지연은 사용자 체감 없음.
-
-            위 내용을 수정하였고 ${{ needs.prepare.outputs.suffix }}.
-
-            ### 🔍 전체 변경사항
-            [CHANGELOG.md](https://github.com/rnqhstmd/mohashim/blob/main/CHANGELOG.md)에서 확인하세요.
+            ${{ needs.prepare.outputs.suffix }}.
           releaseDraft: false
           prerelease: false
 
