@@ -82,9 +82,9 @@ mod tests {
         assert_eq!(find("face_round_glasses").unwrap().slot, Slot::Face);
         assert_eq!(find("face_round_glasses").unwrap().name_ko, "동글 안경");
         assert_eq!(find("head_strawhat").unwrap().slot, Slot::Head);
-        assert_eq!(find("head_strawhat").unwrap().name_ko, "새싹 핀");
+        assert_eq!(find("head_strawhat").unwrap().name_ko, "밀짚모자");
         assert_eq!(find("back_cloak_aura").unwrap().slot, Slot::Back);
-        assert_eq!(find("back_cloak_aura").unwrap().name_ko, "반짝이는 오라");
+        assert_eq!(find("back_cloak_aura").unwrap().name_ko, "반짝이는 오라 목도리");
     }
 
     /// AC-23 / BR-4: 슬롯 접두사 판별.
