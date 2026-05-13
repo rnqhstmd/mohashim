@@ -20,14 +20,14 @@ pub struct CatalogEntry {
 pub fn find(item_id: &str) -> Option<CatalogEntry> {
     match item_id {
         "face_round_glasses"  => Some(CatalogEntry { price: 15,  slot: Slot::Face, name_ko: "동글 안경" }),
-        "face_heart_glasses"  => Some(CatalogEntry { price: 22,  slot: Slot::Face, name_ko: "불타는 눈빛" }),
+        "face_heart_glasses"  => Some(CatalogEntry { price: 22,  slot: Slot::Face, name_ko: "불타는 안경" }),
         "face_square_horn"    => Some(CatalogEntry { price: 35,  slot: Slot::Face, name_ko: "멋쟁이 하늘색 안경" }),
-        "head_strawhat"       => Some(CatalogEntry { price: 40,  slot: Slot::Head, name_ko: "새싹 핀" }),
-        "head_beret_red"      => Some(CatalogEntry { price: 55,  slot: Slot::Head, name_ko: "노란 안전모" }),
+        "head_strawhat"       => Some(CatalogEntry { price: 40,  slot: Slot::Head, name_ko: "밀짚모자" }),
+        "head_beret_red"      => Some(CatalogEntry { price: 55,  slot: Slot::Head, name_ko: "예술가 모자" }),
         "head_wizard_cone"    => Some(CatalogEntry { price: 70,  slot: Slot::Head, name_ko: "마법사 고깔" }),
-        "back_blanket_check"  => Some(CatalogEntry { price: 80,  slot: Slot::Back, name_ko: "포근한 담요 망토" }),
+        "back_blanket_check"  => Some(CatalogEntry { price: 80,  slot: Slot::Back, name_ko: "포근한 담요 목도리" }),
         "back_cloak_navy"     => Some(CatalogEntry { price: 100, slot: Slot::Back, name_ko: "어두운 밤하늘 목도리" }),
-        "back_cloak_aura"     => Some(CatalogEntry { price: 120, slot: Slot::Back, name_ko: "반짝이는 오라" }),
+        "back_cloak_aura"     => Some(CatalogEntry { price: 120, slot: Slot::Back, name_ko: "반짝이는 오라 목도리" }),
         _ => None,
     }
 }
