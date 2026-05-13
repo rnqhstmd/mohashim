@@ -179,13 +179,11 @@ pub fn init_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 }
             }
             "restart" => {
-                // 현재 exe를 새 프로세스로 spawn 후 즉시 종료. tauri-plugin-process의 relaunch와
-                // 달리 외부 IPC 없이 메뉴 클릭만으로 동작 — UpdateScreen 재시작 버튼 제거 후
-                // 단일 진입점으로 일원화 (사용자 피드백).
-                if let Ok(exe) = std::env::current_exe() {
-                    let _ = std::process::Command::new(exe).spawn();
-                }
-                app.exit(0);
+                // Tauri 2.x AppHandle::restart() — 내부적으로 webview/windows 정리 후
+                // 새 프로세스 spawn + 안전 종료를 처리한다. 직접 `Command::spawn() + app.exit(0)`
+                // 방식은 Chromium WebView가 정리되기 전에 프로세스가 끝나면서 stderr에
+                // `Failed to unregister class Chrome_WidgetWin_0. Error = 1412` 경고가 남는다.
+                app.restart();
             }
             "quit" => {
                 app.exit(0);
