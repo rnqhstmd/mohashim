@@ -224,11 +224,15 @@ fn show_window_for_onboarding<R: Runtime>(app: &AppHandle<R>) {
     }
     // 알림 권한이 있으면 안내 알림 송출. 없으면 silent (트레이 아이콘 자체가 indicator).
     use tauri_plugin_notification::NotificationExt;
+    #[cfg(target_os = "windows")]
+    let body = "작업 표시줄 우측 ^ 버튼을 눌러 부실감자 아이콘을 찾아 클릭해주세요!";
+    #[cfg(not(target_os = "windows"))]
+    let body = "메뉴바 우상단의 부실감자 아이콘을 클릭해 시작해주세요!";
     let _ = app
         .notification()
         .builder()
         .title("모하심이 시작되었어요")
-        .body("메뉴바 우상단의 부실감자 아이콘을 클릭해 시작해주세요!")
+        .body(body)
         .show();
 }
 
