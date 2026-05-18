@@ -254,7 +254,7 @@ describe("storage", () => {
     inMemory.set("session_logs", [log]);
     const mod = await import("../storage");
     await expect(mod.getSessionLogs()).resolves.toEqual([
-      { ...log, avg_db: 0, earned_sprouts: 0 },
+      { ...log, avg_db: 0, earned_sprouts: 0, work_tag_id: null, location_id: null },
     ]);
   });
 

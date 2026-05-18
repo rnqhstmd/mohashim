@@ -87,10 +87,10 @@ describe("useIdleChipLabel", () => {
     rerender({ active: false });
     expect(result.current).toBe("");
 
-    // Phase 21: IDLE_LABELS 5개 기준 — 0.5 * 5 = 2.5 → floor = 2.
+    // IDLE_LABELS 6개 기준 — 0.5 * 6 = 3.0 → floor = 3.
     randomSpy.mockReturnValue(0.5);
     rerender({ active: true });
-    expect(result.current).toBe(IDLE_LABELS[2]);
+    expect(result.current).toBe(IDLE_LABELS[3]);
   });
 
   it("clears interval on unmount", async () => {

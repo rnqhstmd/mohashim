@@ -53,11 +53,11 @@ describe("ShopTab", () => {
     const { ShopTab } = await import("../ShopTab");
     render(<ShopTab />);
 
-    // face 슬롯 3개 카드 (동글 안경/불타는 눈빛/멋쟁이 선글라스).
+    // face 슬롯 3개 카드 (동글 안경/불타는 안경/멋쟁이 하늘색 안경).
     await waitFor(() => {
       expect(screen.getByText("동글 안경")).toBeInTheDocument();
-      expect(screen.getByText("불타는 눈빛")).toBeInTheDocument();
-      expect(screen.getByText("멋쟁이 선글라스")).toBeInTheDocument();
+      expect(screen.getByText("불타는 안경")).toBeInTheDocument();
+      expect(screen.getByText("멋쟁이 하늘색 안경")).toBeInTheDocument();
     });
   });
 
@@ -71,9 +71,9 @@ describe("ShopTab", () => {
     const { ShopTab } = await import("../ShopTab");
     const { container } = render(<ShopTab />);
 
-    // 35🌱 멋쟁이 선글라스: 잔액 25 → 부족 10🌱.
+    // 35🌱 멋쟁이 하늘색 안경: 잔액 25 → 부족 10🌱.
     await waitFor(() => {
-      expect(screen.getByText("멋쟁이 선글라스")).toBeInTheDocument();
+      expect(screen.getByText("멋쟁이 하늘색 안경")).toBeInTheDocument();
     });
 
     // 카드 컨테이너에서 title 속성 확인 (부족분 툴팁).
@@ -156,18 +156,18 @@ describe("ShopTab", () => {
 
     await waitFor(() => {
       expect(screen.getByText("동글 안경")).toBeInTheDocument();
-      expect(screen.getByText("불타는 눈빛")).toBeInTheDocument();
+      expect(screen.getByText("불타는 안경")).toBeInTheDocument();
     });
 
     // "내 아이템" 체크박스 클릭.
     const checkbox = screen.getByLabelText("내 아이템");
     fireEvent.click(checkbox);
 
-    // 보유 아이템(동글 안경)만 표시, 미보유 아이템(불타는 눈빛, 멋쟁이 선글라스)은 사라짐.
+    // 보유 아이템(동글 안경)만 표시, 미보유 아이템(불타는 안경, 멋쟁이 하늘색 안경)은 사라짐.
     await waitFor(() => {
       expect(screen.getByText("동글 안경")).toBeInTheDocument();
-      expect(screen.queryByText("불타는 눈빛")).not.toBeInTheDocument();
-      expect(screen.queryByText("멋쟁이 선글라스")).not.toBeInTheDocument();
+      expect(screen.queryByText("불타는 안경")).not.toBeInTheDocument();
+      expect(screen.queryByText("멋쟁이 하늘색 안경")).not.toBeInTheDocument();
     });
   });
 

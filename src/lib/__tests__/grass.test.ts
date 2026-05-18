@@ -408,7 +408,7 @@ describe("grass.ts — composeShareCard (SVG→PNG)", () => {
     const imgMock = { src: "", decode: vi.fn().mockResolvedValue(undefined) };
     vi.spyOn(globalThis, "Image").mockImplementation(() => imgMock as unknown as HTMLImageElement);
 
-    const { composeShareCard, SHARE_CARD_SIZE } = await import("../grass");
+    const { composeShareCard, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT } = await import("../grass");
 
     const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     const blob = await composeShareCard(svgEl);
@@ -419,8 +419,8 @@ describe("grass.ts — composeShareCard (SVG→PNG)", () => {
       imgMock,
       0,
       0,
-      SHARE_CARD_SIZE,
-      SHARE_CARD_SIZE
+      SHARE_CARD_WIDTH,
+      SHARE_CARD_HEIGHT
     );
     expect(toBlobMock).toHaveBeenCalledWith(expect.any(Function), "image/png");
   });
