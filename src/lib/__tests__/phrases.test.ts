@@ -263,8 +263,8 @@ describe("POTATO_PHRASES — Phase 11 원문 보존 (AC-1~AC-5, BR-1)", () => {
     expect(POTATO_PHRASES.discarded).not.toContain("다음엔 꼭 끝내줘 크크");
   });
 
-  // AC-7 BR-2: focus 3버킷 불변.
-  it("AC-7 (BR-2): focusHigh 12개 / focusLow 3개 / focusBroken 3개 불변", () => {
+  // AC-7 BR-2: focus 3버킷 개수 검증.
+  it("AC-7 (BR-2): focusHigh 12개 / focusLow 3개 / focusBroken 3개 검증", () => {
     expect(POTATO_PHRASES.focusHigh.length).toBe(12);
     expect(POTATO_PHRASES.focusLow.length).toBe(3);
     expect(POTATO_PHRASES.focusBroken.length).toBe(3);
