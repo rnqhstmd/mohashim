@@ -79,7 +79,9 @@ export const POTATO_PHRASES: Record<BucketKey, readonly string[]> = {
     "아 안되겠다 조용히해달라고\n전화해야겠다. ... 여보세요?",
   ],
   noiseMedium: [
-    "음~ 좀 시끄러운 것 같은데?",
+    "카페왔나보다!!",
+    "노래틀고 하는 중이야??",
+    "확실히 집은 아닌둣;;",
   ],
   discarded: [
     "엇 이번 건 기록 못 했움...",
