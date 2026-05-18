@@ -10,12 +10,14 @@ export type BucketKey =
   | "break"
   | "sessionComplete"
   | "noiseLoud"
+  | "noiseMedium"
   | "discarded";
 
 export type PhraseCtx = {
   phase: Phase;
   total: number;
   noiseLoudActive: boolean;
+  noiseMediumActive: boolean;
 };
 
 export const POTATO_PHRASES: Record<BucketKey, readonly string[]> = {
@@ -76,6 +78,9 @@ export const POTATO_PHRASES: Record<BucketKey, readonly string[]> = {
     "조용한 곳을 가야\n집중이 잘 되거등요~,,",
     "아 안되겠다 조용히해달라고\n전화해야겠다. ... 여보세요?",
   ],
+  noiseMedium: [
+    "음~ 좀 시끄러운 것 같은데?",
+  ],
   discarded: [
     "엇 이번 건 기록 못 했움...",
     "아쉽다 다음에 또 힘내서\n시작해보자 키키",
@@ -84,21 +89,21 @@ export const POTATO_PHRASES: Record<BucketKey, readonly string[]> = {
 };
 
 /**
- * 점수 엔진의 (phase, total, noiseLoudActive)를 멘트 버킷으로 매핑한다.
+ * 점수 엔진의 (phase, total, noiseLoudActive, noiseMediumActive)를 멘트 버킷으로 매핑한다.
  *
- * @param ctx.phase — score.ts의 Phase union 값 ("idle"|"focus"|"break"|"complete"|"discarded").
- * @param ctx.total — 0~100 범위 가정 (PRD BR-4). 범위 초과값(음수/100초과)은 호출자 책임이며,
- *   현재 구현은 음수→focusBroken, 100초과→focusHigh로 폴백한다 (의도된 동작 아님).
- *   score.ts에서 total을 0~100으로 clamp하거나 호출 직전에 보정해야 한다.
- * @param ctx.noiseLoudActive — Rust score::tick의 hysteresis 카운터 활성 플래그.
- *   phase=idle && noiseLoudActive=true에서만 noiseLoud 버킷 진입 (FR-7, BR-3).
- *   PR #11 리뷰: 원래 ctx.db로 분기했으나 db는 더 이상 분기에 사용되지 않아 제거됨.
+ * 소음 3단계 분리: noiseLoud(80+) > noiseMedium(60-80) > phase 기반 멘트.
+ * 소음 멘트는 idle/focus/break 모든 phase에서 점수 기반 멘트보다 우선 출력된다.
+ *
+ * @param ctx.noiseLoudActive — Rust apply_noise_hysteresis의 loud 활성 플래그 (5초 hysteresis).
+ * @param ctx.noiseMediumActive — Rust apply_noise_hysteresis의 medium 활성 플래그 (5초 hysteresis).
+ *   loud와 상호 배타 (BR-1) — 둘 다 true인 입력은 loud 우선 분기로 방어.
  */
 export function selectBucket(ctx: PhraseCtx): BucketKey {
   if (ctx.phase === "discarded") return "discarded";
   if (ctx.phase === "complete") return "sessionComplete";
+  if (ctx.noiseLoudActive) return "noiseLoud";
+  if (ctx.noiseMediumActive) return "noiseMedium";
   if (ctx.phase === "break") return "break";
-  if (ctx.phase === "idle" && ctx.noiseLoudActive) return "noiseLoud";
   if (ctx.phase === "idle") return "idle";
   if (ctx.total >= 80) return "focusHigh";
   if (ctx.total >= 40) return "focusLow";

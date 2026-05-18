@@ -82,16 +82,26 @@ pub fn should_reset_next_tick(elapsed_past: std::time::Duration) -> bool {
     elapsed_past >= std::time::Duration::from_secs(TICK_POLLUTION_RESET_THRESHOLD_SECS)
 }
 
-/// FR-2 / BR-noise-80: phase=Idle 상태에서 db_ema > NOISE_LOUD_THRESHOLD_DB 인 1Hz tick 카운터.
-/// hysteresis 활용: NOISE_LOUD_HYSTERESIS_TICKS 도달 시 noiseLoud 활성, db≤80 또는
-/// phase 전환 시 0 리셋 (Phase 11 FR-7~9, BR-5).
-pub static IDLE_NOISE_LOUD_TICKS: AtomicU64 = AtomicU64::new(0);
+/// db_ema > NOISE_LOUD_THRESHOLD_DB 인 1Hz tick 카운터. Idle/Focus/Break 모든 phase에서 누적.
+/// hysteresis 활용: NOISE_LOUD_HYSTERESIS_TICKS 도달 시 noiseLoud 활성.
+/// Complete/Discarded 진입 시 0 리셋.
+pub static NOISE_LOUD_TICKS: AtomicU64 = AtomicU64::new(0);
 
-/// FR-7 / BR-3 / BR-5: noiseLoud 활성 진입에 필요한 누적 틱 수 (5초 hysteresis).
+/// noiseLoud 활성 진입에 필요한 누적 틱 수 (5초 hysteresis).
 pub const NOISE_LOUD_HYSTERESIS_TICKS: u64 = 5;
 
-/// FR-2 / BR-noise-80 / BR-4: noiseLoud 판정 dB 임계값. 80은 미해당, 81 이상부터 누적.
+/// noiseLoud 판정 dB 임계값. 80은 미해당, 81 이상부터 누적.
 pub const NOISE_LOUD_THRESHOLD_DB: f32 = 80.0;
+
+/// 60.0 < db_ema ≤ 80.0 구간 1Hz tick 카운터 (medium 누적).
+/// NOISE_MEDIUM_HYSTERESIS_TICKS 도달 시 noiseMedium 활성. loud와 상호 배타.
+pub static NOISE_MEDIUM_TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// noiseMedium 활성 진입에 필요한 누적 틱 수 (5초 hysteresis, loud와 동일).
+pub const NOISE_MEDIUM_HYSTERESIS_TICKS: u64 = 5;
+
+/// noiseMedium 판정 dB 하한. 60은 미해당, 61 이상부터 누적. 상한은 NOISE_LOUD_THRESHOLD_DB.
+pub const NOISE_MEDIUM_THRESHOLD_DB: f32 = 60.0;
 
 /// 세션 점수 누적 합 (Focus 진행 중 매초 work+noise를 더함).
 /// Focus 시작 시 0으로 리셋. Complete 1-tick에서 평균 산출 후 다시 0.
@@ -300,8 +310,10 @@ pub fn current_phase() -> Phase {
 /// (Phase 11 hysteresis 카운터의 "Idle 외 일괄 리셋" 패턴과 의도적으로 다름.)
 pub fn store_phase(p: Phase) {
     PHASE_BITS.store(p.as_u8(), Relaxed);
-    if !matches!(p, Phase::Idle) {
-        reset_noise_loud_state();
+    // 소음 hysteresis 카운터는 세션 종료(Complete/Discarded) 시에만 리셋.
+    // Focus⇄Break 전환에서는 누적 보존하여 멘트 일관성 유지.
+    if matches!(p, Phase::Complete | Phase::Discarded) {
+        reset_noise_state();
     }
     // Phase 13 FR-17: Idle/Focus 진입 시 buffer clear. Break/Complete 미clear.
     if matches!(p, Phase::Idle | Phase::Focus) {
@@ -315,29 +327,46 @@ pub fn store_phase(p: Phase) {
     }
 }
 
-/// FR-8 / FR-9 / BR-5: hysteresis 카운터 0 리셋.
-/// 호출자: db≤80 / phase 전환 / store_phase 내장 호출.
-pub fn reset_noise_loud_state() {
-    IDLE_NOISE_LOUD_TICKS.store(0, Relaxed);
+/// 두 hysteresis 카운터 모두 0으로 리셋.
+/// 호출자: store_phase 내부(Complete/Discarded 진입 시).
+pub fn reset_noise_state() {
+    NOISE_LOUD_TICKS.store(0, Relaxed);
+    NOISE_MEDIUM_TICKS.store(0, Relaxed);
 }
 
-/// FR-7~9 / BR-3~5: idle+db>80 hysteresis 산출 (순수 함수).
+/// 소음 hysteresis 산출 (순수 함수).
 ///
-/// atomic 의존 없이 입력값만으로 (new_count, active)를 결정한다 — tick_loop에서
-/// fetch_update 클로저 안에서 호출 (PR #11 리뷰: load-store race 방지).
-/// CON-2 단위 테스트 가능성을 위해 분리.
+/// 두 카운터(loud, medium)를 한 번에 결정한다. 분기:
+/// - phase = Complete/Discarded → (0, 0, false, false)
+/// - db is NaN → (0, 0, false, false)
+/// - db > NOISE_LOUD_THRESHOLD_DB (80.0) → loud 누적, medium 0
+/// - db > NOISE_MEDIUM_THRESHOLD_DB (60.0) && db ≤ 80.0 → medium 누적, loud 0
+/// - 그 외 (db ≤ 60.0) → 둘 다 0
 ///
-/// - phase != Idle → (0, false)  (BR-3: Idle 외 phase는 어떤 dB여도 누적 불가)
-/// - phase == Idle && !(db > NOISE_LOUD_THRESHOLD_DB) → (0, false)
-///   (BR-4: db=80 미증가 + NaN 방어 — `!(NaN > 80)`은 true이므로 NaN 입력 시 0 리셋)
-/// - phase == Idle && db > NOISE_LOUD_THRESHOLD_DB  → (prev+1, prev+1 >= NOISE_LOUD_HYSTERESIS_TICKS)
-pub fn apply_noise_loud_hysteresis(phase: Phase, db: f32, prev_count: u64) -> (u64, bool) {
-    if !matches!(phase, Phase::Idle) || !(db > NOISE_LOUD_THRESHOLD_DB) {
-        return (0, false);
+/// 분기 자체가 mutually exclusive하므로 loud_active && medium_active는 불가능 (BR-1).
+pub fn apply_noise_hysteresis(
+    phase: Phase,
+    db: f32,
+    prev_loud: u64,
+    prev_medium: u64,
+) -> (u64, u64, bool, bool) {
+    if matches!(phase, Phase::Complete | Phase::Discarded) {
+        return (0, 0, false, false);
     }
-    let new_count = prev_count.saturating_add(1);
-    let active = new_count >= NOISE_LOUD_HYSTERESIS_TICKS;
-    (new_count, active)
+    if db.is_nan() {
+        return (0, 0, false, false);
+    }
+    if db > NOISE_LOUD_THRESHOLD_DB {
+        let nl = prev_loud.saturating_add(1);
+        let active_l = nl >= NOISE_LOUD_HYSTERESIS_TICKS;
+        return (nl, 0, active_l, false);
+    }
+    if db > NOISE_MEDIUM_THRESHOLD_DB {
+        let nm = prev_medium.saturating_add(1);
+        let active_m = nm >= NOISE_MEDIUM_HYSTERESIS_TICKS;
+        return (0, nm, false, active_m);
+    }
+    (0, 0, false, false)
 }
 
 /// Phase 14: prev/now wall-clock diff 기반 sleep 합성 산출 (순수 함수).
@@ -545,91 +574,181 @@ mod tests {
         store_time_left(0);
     }
 
-    // Phase 11 — noiseLoud hysteresis 단위 테스트 (AC-9~AC-12).
+    // Noise hysteresis 단위 테스트 — 3단계 분리 (AC-1~AC-11).
 
     #[test]
-    fn ac9_hysteresis_reaches_active_at_5th_tick() {
-        // 1~4틱: 누적 중이지만 active=false.
-        let (c1, a1) = apply_noise_loud_hysteresis(Phase::Idle, 85.0, 0);
-        assert_eq!(c1, 1);
-        assert!(!a1);
-        let (c2, a2) = apply_noise_loud_hysteresis(Phase::Idle, 85.0, c1);
-        assert_eq!(c2, 2);
-        assert!(!a2);
-        let (c3, a3) = apply_noise_loud_hysteresis(Phase::Idle, 85.0, c2);
-        assert_eq!(c3, 3);
-        assert!(!a3);
-        let (c4, a4) = apply_noise_loud_hysteresis(Phase::Idle, 85.0, c3);
-        assert_eq!(c4, 4);
-        assert!(!a4);
-        // 5틱째: active=true.
-        let (c5, a5) = apply_noise_loud_hysteresis(Phase::Idle, 85.0, c4);
-        assert_eq!(c5, 5);
-        assert!(a5);
+    fn ac1_focus_loud_increments() {
+        // AC-1: Idle 외 phase(Focus)에서도 loud 카운트 시작.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Focus, 85.0, 0, 0);
+        assert_eq!(nl, 1);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
     }
 
     #[test]
-    fn ac10_db_below_threshold_resets() {
-        // db ≤ 80 → 누적 중이던 카운터를 0으로 리셋, active=false.
-        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, 70.0, 7);
-        assert_eq!(c, 0);
-        assert!(!a);
+    fn ac2_focus_loud_active_at_5th() {
+        // AC-2: Focus phase에서 5틱 연속 85dB → 5번째에 loud_active=true.
+        let mut prev_loud = 0u64;
+        for tick in 1..=5 {
+            let (nl, _, la, _) =
+                apply_noise_hysteresis(Phase::Focus, 85.0, prev_loud, 0);
+            assert_eq!(nl, tick);
+            if tick < 5 {
+                assert!(!la);
+            } else {
+                assert!(la);
+            }
+            prev_loud = nl;
+        }
+    }
+
+    #[test]
+    fn ac3_focus_medium_active_at_5th() {
+        // AC-3: Focus phase에서 5틱 연속 70dB → medium_active=true, loud_active=false.
+        let mut prev_medium = 0u64;
+        for tick in 1..=5 {
+            let (nl, nm, la, ma) =
+                apply_noise_hysteresis(Phase::Focus, 70.0, 0, prev_medium);
+            assert_eq!(nl, 0);
+            assert_eq!(nm, tick);
+            assert!(!la);
+            if tick < 5 {
+                assert!(!ma);
+            } else {
+                assert!(ma);
+            }
+            prev_medium = nm;
+        }
+    }
+
+    #[test]
+    fn ac4_medium_to_loud_resets_medium() {
+        // AC-4: medium 카운터 3 누적 상태에서 85dB 진입 → medium 리셋, loud 1 시작.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Idle, 85.0, 0, 3);
+        assert_eq!(nl, 1);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
+    }
+
+    #[test]
+    fn ac5_loud_to_medium_resets_loud() {
+        // AC-5: loud 카운터 3 누적 상태에서 70dB 진입 → loud 리셋, medium 1 시작.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Idle, 70.0, 3, 0);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 1);
+        assert!(!la);
+        assert!(!ma);
+    }
+
+    #[test]
+    fn ac6_db_60_exact_no_medium() {
+        // AC-6: db=60.0 정확히 → medium 미누적 (strict `db > 60.0`).
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Idle, 60.0, 0, 0);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
+    }
+
+    #[test]
+    fn ac7_db_80_exact_medium() {
+        // AC-7: db=80.0 정확히 → medium 누적 (`60 < 80 ≤ 80`), loud 0.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Idle, 80.0, 0, 0);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 1);
+        assert!(!la);
+        assert!(!ma);
+    }
+
+    #[test]
+    fn ac8_nan_resets_both() {
+        // AC-8: db=NaN → 두 카운터 모두 0.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Idle, f32::NAN, 7, 4);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
+    }
+
+    #[test]
+    fn ac9_complete_resets_both() {
+        // AC-9: Phase::Complete → 두 카운터 모두 0.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Complete, 85.0, 4, 4);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
+    }
+
+    #[test]
+    fn ac10_discarded_resets_both() {
+        // AC-10: Phase::Discarded → 두 카운터 모두 0.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Discarded, 70.0, 3, 3);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
     }
 
     #[test]
     #[serial]
-    fn ac11_store_phase_focus_resets_counter() {
-        // 누적된 카운터가 Idle 외 phase 진입 시 0으로 리셋.
-        IDLE_NOISE_LOUD_TICKS.store(7, Relaxed);
-        store_phase(Phase::Focus);
-        assert_eq!(IDLE_NOISE_LOUD_TICKS.load(Relaxed), 0);
+    fn ac11_focus_to_break_preserves_counters() {
+        // AC-11: Focus → Break 전환 → 두 카운터 모두 유지 (BR-2).
+        NOISE_LOUD_TICKS.store(3, Relaxed);
+        NOISE_MEDIUM_TICKS.store(2, Relaxed);
+        store_phase(Phase::Break);
+        assert_eq!(NOISE_LOUD_TICKS.load(Relaxed), 3);
+        assert_eq!(NOISE_MEDIUM_TICKS.load(Relaxed), 2);
         // 종료 시 atomic 복원.
+        NOISE_LOUD_TICKS.store(0, Relaxed);
+        NOISE_MEDIUM_TICKS.store(0, Relaxed);
         store_phase(Phase::Idle);
     }
 
     #[test]
     #[serial]
-    fn ac11_store_phase_idle_preserves_counter() {
-        // Idle→Idle 전이는 카운터 유지 (FR-7 누적 보존).
-        IDLE_NOISE_LOUD_TICKS.store(7, Relaxed);
+    fn store_phase_complete_resets_both_counters() {
+        // Complete 진입 시 두 카운터 모두 0 (BR-2).
+        NOISE_LOUD_TICKS.store(5, Relaxed);
+        NOISE_MEDIUM_TICKS.store(5, Relaxed);
+        store_phase(Phase::Complete);
+        assert_eq!(NOISE_LOUD_TICKS.load(Relaxed), 0);
+        assert_eq!(NOISE_MEDIUM_TICKS.load(Relaxed), 0);
         store_phase(Phase::Idle);
-        assert_eq!(IDLE_NOISE_LOUD_TICKS.load(Relaxed), 7);
-        // 종료 시 atomic 복원.
-        IDLE_NOISE_LOUD_TICKS.store(0, Relaxed);
-    }
-
-    #[test]
-    fn ac12_db_80_does_not_increment() {
-        // 경계값: db=80은 noiseLoud 조건 미해당 (BR-4).
-        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, 80.0, 0);
-        assert_eq!(c, 0);
-        assert!(!a);
     }
 
     #[test]
     fn nan_db_returns_zero_inactive() {
-        // PR #11 리뷰: NaN 입력 시 카운터가 증가하지 않고 즉시 리셋.
-        // `!(NaN > 80.0)` is true → (0, false) 보장.
-        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::NAN, 7);
-        assert_eq!(c, 0);
-        assert!(!a);
+        // NaN 입력 시 두 카운터 모두 즉시 리셋.
+        let (nl, nm, la, ma) = apply_noise_hysteresis(Phase::Idle, f32::NAN, 7, 4);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
     }
 
     #[test]
     fn negative_infinity_db_returns_zero_inactive() {
-        // 음의 무한대도 `!(-inf > 80.0)` true → (0, false).
-        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::NEG_INFINITY, 7);
-        assert_eq!(c, 0);
-        assert!(!a);
+        // 음의 무한대는 `!(-inf > 60.0)` true → (0, 0, false, false).
+        let (nl, nm, la, ma) =
+            apply_noise_hysteresis(Phase::Idle, f32::NEG_INFINITY, 7, 4);
+        assert_eq!(nl, 0);
+        assert_eq!(nm, 0);
+        assert!(!la);
+        assert!(!ma);
     }
 
     #[test]
-    fn positive_infinity_db_increments() {
-        // 양의 무한대는 `+inf > 80.0` true이므로 누적은 됨 (실 운영에서는 audio sanitize가 차단).
-        // 그러나 hysteresis 정책상 phase=Idle && db>80에서는 누적이 정의된 동작이라 의도적 허용.
-        let (c, a) = apply_noise_loud_hysteresis(Phase::Idle, f32::INFINITY, 4);
-        assert_eq!(c, 5);
-        assert!(a);
+    fn positive_infinity_db_increments_loud() {
+        // 양의 무한대는 `+inf > 80.0` true → loud 누적.
+        let (nl, nm, la, ma) =
+            apply_noise_hysteresis(Phase::Idle, f32::INFINITY, 4, 0);
+        assert_eq!(nl, 5);
+        assert_eq!(nm, 0);
+        assert!(la);
+        assert!(!ma);
     }
 
     // ---------- Phase 14 C-2 — wall-clock drift detection 테스트 (FR-6, AC-6) ----------

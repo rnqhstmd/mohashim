@@ -21,6 +21,7 @@ export type ScoreSnapshot = {
   phase: Phase;
   timeLeft: number;
   noiseLoud: boolean;
+  noiseMedium: boolean;
 };
 
 export const SCORE_TICK_EVENT = "score-tick";

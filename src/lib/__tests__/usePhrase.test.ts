@@ -10,6 +10,7 @@ type Ctx = {
   total: number;
   state: LiveState;
   noiseLoudActive: boolean;
+  noiseMediumActive: boolean;
 };
 
 const idleCtx: Ctx = {
@@ -17,18 +18,21 @@ const idleCtx: Ctx = {
   total: 0,
   state: "calm",
   noiseLoudActive: false,
+  noiseMediumActive: false,
 };
 const focusHighCtx: Ctx = {
   phase: "focus",
   total: 90,
   state: "focused",
   noiseLoudActive: false,
+  noiseMediumActive: false,
 };
 const noiseLoudCtx: Ctx = {
   phase: "idle",
   total: 0,
   state: "calm",
   noiseLoudActive: true,
+  noiseMediumActive: false,
 };
 
 let mockRandom: MockInstance<() => number>;
@@ -126,6 +130,7 @@ describe("usePhrase", () => {
       total: 0,
       state: "calm",
       noiseLoudActive: false,
+      noiseMediumActive: false,
     };
     const { result, unmount } = renderHook(() => usePhrase(ctx));
     expect(result.current.bucket).toBe("idle");
@@ -140,6 +145,7 @@ describe("usePhrase", () => {
       total: 0,
       state: "calm",
       noiseLoudActive: true,
+      noiseMediumActive: false,
     };
     const { result, unmount } = renderHook(() => usePhrase(ctx));
     expect(result.current.bucket).toBe("noiseLoud");
@@ -177,6 +183,7 @@ describe("usePhrase", () => {
       total: 0,
       state: "calm",
       noiseLoudActive: false,
+      noiseMediumActive: false,
     };
     const { result, unmount } = renderHook(() => usePhrase(discardedCtx));
     expect(result.current.bucket).toBe("idle");

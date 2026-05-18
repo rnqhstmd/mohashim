@@ -17,9 +17,9 @@ use crate::permissions::{self, PermissionStatus};
 use crate::power;
 use crate::score::phase::{final_tray_state, grace_from, state_from_total, LiveState, Phase};
 use crate::score::shared::{
-    apply_noise_loud_hysteresis, current_phase, load_db_ema, seconds_idle, store_time_left,
-    time_left_secs, update_work_ema, AX_GRANTED, EMIT_ERR_COUNT, IDLE_NOISE_LOUD_TICKS,
-    MIC_GRANTED, SCORE_STARTED, START_AT,
+    apply_noise_hysteresis, current_phase, load_db_ema, seconds_idle, store_time_left,
+    time_left_secs, update_work_ema, AX_GRANTED, EMIT_ERR_COUNT, MIC_GRANTED, NOISE_LOUD_TICKS,
+    NOISE_MEDIUM_TICKS, SCORE_STARTED, START_AT,
 };
 use crate::score::state::ScoreSnapshot;
 use crate::score::{noise::noise_score, work::work_score};
@@ -95,8 +95,9 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
     let mut prev_tray_state: Option<LiveState> = None;
     let mut prev_title: Option<Option<String>> = None;
     let mut next_tick = Instant::now();
-    // Phase 18 FR-B5 (F): noise_enter/exit 전환 감지용 로컬 상태.
-    // Idle phase 한정 — Focus/Break/Complete 진입 시 active=true→false 합성으로 NoiseExit 발화.
+    // noise_enter/exit 전환 감지용 로컬 상태.
+    // 3단계 분리: hysteresis가 Idle/Focus/Break 모든 phase에서 동작하므로 phase 무관하게 추적.
+    // Complete/Discarded 진입 시 active=true→false 합성으로 NoiseExit 발화.
     let mut prev_noise_loud_active = false;
     let mut noise_loud_started_at_secs: u64 = 0;
     loop {
@@ -263,23 +264,23 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        // Phase 11 FR-7~9 / BR-3~5: noiseLoud hysteresis 진입 산출.
-        // PR #11 리뷰: fetch_update로 원자화 (load-store race 방지).
-        // store_phase가 다른 스레드에서 카운터를 0으로 리셋하면 클로저가 재호출되어
-        // 새 prev=0 기준으로 (1, false)를 산출 → race 발생 시에도 일관성 보장.
-        // phase_at_emit이 Idle 외이거나 db가 NaN/≤80이면 (0, false)로 즉시 리셋.
-        // NOISE_LOUD_HYSTERESIS_TICKS(=5) 도달 시 active=true.
-        let mut noise_loud_active = false;
-        let _ = IDLE_NOISE_LOUD_TICKS.fetch_update(Relaxed, Relaxed, |prev| {
-            let (new_count, active) =
-                apply_noise_loud_hysteresis(phase_at_emit, db, prev);
-            noise_loud_active = active;
-            Some(new_count)
-        });
+        // 소음 hysteresis 3단계 분리: loud(80+)/medium(60-80)/quiet(≤60) 동시 산출.
+        // 두 AtomicU64를 load→store 패턴으로 갱신. tick_loop은 단일 스레드이므로 자체 race 없음.
+        // 외부 race(store_phase의 reset_noise_state)는 phase 전환 시점 단발 호출이라
+        // 같은 tick의 hysteresis 산출과 충돌하지 않는다.
+        let prev_loud = NOISE_LOUD_TICKS.load(Relaxed);
+        let prev_medium = NOISE_MEDIUM_TICKS.load(Relaxed);
+        let (new_loud, new_medium, noise_loud_active, noise_medium_active) =
+            apply_noise_hysteresis(phase_at_emit, db, prev_loud, prev_medium);
+        NOISE_LOUD_TICKS.store(new_loud, Relaxed);
+        NOISE_MEDIUM_TICKS.store(new_medium, Relaxed);
+        debug_assert!(
+            !(noise_loud_active && noise_medium_active),
+            "BR-1: loud와 medium은 상호 배타"
+        );
 
-        // Phase 18 FR-B5 (F): noise_enter/exit 전환 감지 (Idle phase 한정).
-        // apply_noise_loud_hysteresis가 Idle 외 phase에서 (0, false)를 반환하므로
-        // Focus/Break 진입 시 prev=true → cur=false 자연스러운 전환 → NoiseExit 합성 발화.
+        // noise_enter/exit 전환 감지 (loud 한정 — medium은 로깅 비대상).
+        // Idle/Focus/Break 모든 phase에서 동작. Complete/Discarded 진입 시 active 강제 false.
         // BR-B4: hysteresis 5틱 도달 시점이 noise_enter 기록 시점.
         let now_secs = crate::score::shared::START_AT
             .get()
@@ -319,6 +320,7 @@ fn tick_loop<R: Runtime>(app: AppHandle<R>) {
             phase: phase_at_emit,
             time_left: time_left_for_emit,
             noise_loud: noise_loud_active,
+            noise_medium: noise_medium_active,
         };
 
         if let Err(e) = app.emit("score-tick", &snap) {
