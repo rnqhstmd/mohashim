@@ -151,8 +151,8 @@ describe("pickPhrase — 빈 배열 가드 (회귀 방지, DEC-9-3)", () => {
 
 describe("POTATO_PHRASES — Phase 11 원문 보존 (AC-1~AC-5, BR-1)", () => {
   // AC-1~AC-5 버킷 길이 검증.
-  it("AC-1: idle 정확히 7개", () => {
-    expect(POTATO_PHRASES.idle.length).toBe(7);
+  it("AC-1: idle 정확히 13개", () => {
+    expect(POTATO_PHRASES.idle.length).toBe(13);
   });
 
   it("AC-2: break 정확히 5개", () => {
@@ -173,12 +173,12 @@ describe("POTATO_PHRASES — Phase 11 원문 보존 (AC-1~AC-5, BR-1)", () => {
 
   // AC-1: idle[0] 원문 일치.
   it("AC-1 (BR-1): idle[0] 정확 일치", () => {
-    expect(POTATO_PHRASES.idle[0]).toBe("오늘도 화이팅해서 잔디 심어줘 크크");
+    expect(POTATO_PHRASES.idle[0]).toBe("오늘도 화이팅해서\n잔디 심어줘 크크");
   });
 
   // AC-4: noiseLoud 신규 원문 + 구버전 부재.
   it("AC-4 (BR-1): noiseLoud[0] 정확 일치 (점 2개+점 3개 ASCII)", () => {
-    expect(POTATO_PHRASES.noiseLoud[0]).toBe("엇..주변이 조금 시끄럽네...");
+    expect(POTATO_PHRASES.noiseLoud[0]).toBe("엇..주변이 조금\n시끄럽네...");
   });
 
   it("AC-4: noiseLoud 구버전 텍스트 부재", () => {
@@ -200,8 +200,8 @@ describe("POTATO_PHRASES — Phase 11 원문 보존 (AC-1~AC-5, BR-1)", () => {
   });
 
   // AC-7 BR-2: focus 3버킷 불변.
-  it("AC-7 (BR-2): focusHigh 8개 / focusLow 3개 / focusBroken 3개 불변", () => {
-    expect(POTATO_PHRASES.focusHigh.length).toBe(8);
+  it("AC-7 (BR-2): focusHigh 12개 / focusLow 3개 / focusBroken 3개 불변", () => {
+    expect(POTATO_PHRASES.focusHigh.length).toBe(12);
     expect(POTATO_PHRASES.focusLow.length).toBe(3);
     expect(POTATO_PHRASES.focusBroken.length).toBe(3);
   });
