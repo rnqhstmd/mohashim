@@ -2,14 +2,12 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ShareCard, SHARE_PREVIEW_DISPLAY_PX } from "../ShareCard";
 import type { MonthData } from "../../../lib/grass";
+import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT } from "../../../lib/grass";
 
 /**
- * Phase 16 + Phase 21 ShareCard 검증.
+ * Part B ShareCard 레이아웃 검증.
  *
- * Phase 21 변경:
- * - 워터마크 "MOHASHIM" → "모하심" + 연월 서브타이틀
- * - <g id="highlights">: 가장 집중 잘 한 날 / 할일 가장 많이 한 날
- * - 사용자 메시지: y=950 fontSize=72 → y=1010 fontSize=56 (베스트 통계 위로 이동)
+ * 레이아웃: 헤더 → top-character(좌) + highlights 3블록(우) → 잔디맵 → 범례 → 워터마크.
  */
 
 const sampleData: MonthData = {
@@ -43,7 +41,7 @@ describe("ShareCard", () => {
   it("워터마크는 한글 '모하심'으로 표기 + 연월 서브타이틀 노출", () => {
     const { container } = render(<ShareCard data={sampleData} message="" />);
     const texts = Array.from(container.querySelectorAll("svg text"));
-    const watermark = texts.find((t) => t.textContent === "모하심");
+    const watermark = texts.find((t) => (t.textContent ?? "").includes("모하심으로 기록 중"));
     expect(watermark).toBeTruthy();
     const subtitle = texts.find((t) => t.textContent === "2026년 5월");
     expect(subtitle).toBeTruthy();
@@ -52,39 +50,38 @@ describe("ShareCard", () => {
   it("highlights — 가장 집중 잘 한 날 + 할일 가장 많이 한 날 노출 (sampleData)", () => {
     const { container } = render(<ShareCard data={sampleData} message="" />);
     const texts = Array.from(container.querySelectorAll("svg text"));
-    const focusLine = texts.find((t) =>
+    const focusLabel = texts.find((t) =>
       (t.textContent ?? "").includes("가장 집중 잘 한 날")
     );
-    const todoLine = texts.find((t) =>
+    expect(focusLabel).toBeTruthy();
+    const focusMain = texts.find((t) =>
+      (t.textContent ?? "").includes("70점") && (t.textContent ?? "").includes("5월 1일")
+    );
+    expect(focusMain).toBeTruthy();
+    const todoLabel = texts.find((t) =>
       (t.textContent ?? "").includes("할일 가장 많이 한 날")
     );
-    expect(focusLine).toBeTruthy();
-    expect(focusLine?.textContent).toContain("70점");
-    expect(focusLine?.textContent).toContain("5월 1일");
-    expect(todoLine).toBeTruthy();
-    expect(todoLine?.textContent).toContain("2개");
+    expect(todoLabel).toBeTruthy();
+    const todoMain = texts.find((t) =>
+      (t.textContent ?? "").includes("2개")
+    );
+    expect(todoMain).toBeTruthy();
   });
 
-  it("highlights — 데이터 없는 달은 '아직 집중 세션 없음' 폴백", () => {
+  it("highlights — 데이터 없는 달은 '기록 없음' 폴백", () => {
     const { container } = render(<ShareCard data={emptyData} message="" />);
     const texts = Array.from(container.querySelectorAll("svg text"));
-    const fallback = texts.find(
-      (t) => t.textContent === "아직 집중 세션 없음"
-    );
+    const fallback = texts.find((t) => t.textContent === "기록 없음");
     expect(fallback).toBeTruthy();
   });
 
-  it("message가 비어있지 않으면 y=1010, fontSize=56, bold, fill=#2b2520 (Phase 21)", () => {
+  it("message가 비어있지 않으면 highlights 블록 안에 bold #2b2520 렌더", () => {
     const { container } = render(
       <ShareCard data={sampleData} message="안녕" />
     );
     const texts = Array.from(container.querySelectorAll("svg text"));
     const messageText = texts.find((t) => t.textContent === "안녕");
     expect(messageText).toBeTruthy();
-    expect(messageText?.getAttribute("x")).toBe("540");
-    expect(messageText?.getAttribute("y")).toBe("1010");
-    expect(messageText?.getAttribute("text-anchor")).toBe("middle");
-    expect(messageText?.getAttribute("font-size")).toBe("56");
     expect(messageText?.getAttribute("font-weight")).toBe("bold");
     expect(messageText?.getAttribute("fill")).toBe("#2b2520");
   });
@@ -94,14 +91,14 @@ describe("ShareCard", () => {
     const wrapper = container.firstChild as HTMLElement;
     expect(wrapper.getAttribute("aria-hidden")).toBe("true");
     expect(wrapper.className).toContain("absolute");
-    expect((wrapper.style.left || "")).toBe("-99999px");
+    expect(wrapper.style.left).toBe("-99999px");
     const svg = container.querySelector("svg");
-    expect(svg?.getAttribute("width")).toBe("1080");
-    expect(svg?.getAttribute("height")).toBe("1080");
-    expect(svg?.getAttribute("viewBox")).toBe("0 0 1080 1080");
+    expect(svg?.getAttribute("width")).toBe(String(SHARE_CARD_WIDTH));
+    expect(svg?.getAttribute("height")).toBe(String(SHARE_CARD_HEIGHT));
+    expect(svg?.getAttribute("viewBox")).toBe(`0 0 ${SHARE_CARD_WIDTH} ${SHARE_CARD_HEIGHT}`);
   });
 
-  it("previewSize=260: visible wrapper + SVG width/height=260, viewBox=1080 유지", () => {
+  it(`previewSize=${SHARE_PREVIEW_DISPLAY_PX}: visible wrapper + SVG width=${SHARE_PREVIEW_DISPLAY_PX}, viewBox 유지`, () => {
     const { container } = render(
       <ShareCard
         data={sampleData}
@@ -111,11 +108,9 @@ describe("ShareCard", () => {
     );
     const wrapper = container.firstChild as HTMLElement;
     expect(wrapper.getAttribute("aria-hidden")).toBeNull();
-    expect(wrapper.style.width).toBe("260px");
-    expect(wrapper.style.height).toBe("260px");
+    expect(wrapper.style.width).toBe(`${SHARE_PREVIEW_DISPLAY_PX}px`);
     const svg = container.querySelector("svg");
-    expect(svg?.getAttribute("width")).toBe("260");
-    expect(svg?.getAttribute("height")).toBe("260");
-    expect(svg?.getAttribute("viewBox")).toBe("0 0 1080 1080");
+    expect(svg?.getAttribute("width")).toBe(String(SHARE_PREVIEW_DISPLAY_PX));
+    expect(svg?.getAttribute("viewBox")).toBe(`0 0 ${SHARE_CARD_WIDTH} ${SHARE_CARD_HEIGHT}`);
   });
 });

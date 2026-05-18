@@ -12,14 +12,25 @@ const SHARE_FONT_FAMILY =
 
 export const SHARE_PREVIEW_DISPLAY_PX = 240;
 
-// === Layout (864 × 1164, 네모 카드) ===
+// === Layout (864 × 1164) ===
 
-// 헤더: 텍스트만 중앙 정렬
+// 헤더
 const TITLE_Y = 124;
 const MONTH_Y = 176;
 
-// 요일 헤더
-const WEEKDAY_Y = 238;
+// 상단 캐릭터 + 통계 블록 (헤더 바로 아래)
+const TOP_BLOCK_Y = 220;
+const TOP_BLOCK_HEIGHT = 260;
+const CHAR_BLOCK_SIZE = 240;
+const CHAR_X = 64;
+const CHAR_Y = TOP_BLOCK_Y + (TOP_BLOCK_HEIGHT - CHAR_BLOCK_SIZE) / 2; // =230
+const STATS_X = 380;
+const STATS_BLOCK_GAP = 80;
+const STATS_FIRST_Y = TOP_BLOCK_Y + 30; // =250
+
+// 요일 헤더 + 잔디 그리드 (상단 블록 아래)
+const GRID_TOP = TOP_BLOCK_Y + TOP_BLOCK_HEIGHT + 30; // =510
+const WEEKDAY_Y = GRID_TOP - 24; // =486
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 // 잔디 그리드
@@ -28,13 +39,12 @@ const STEP = 86;
 const GRID_COLS = 7;
 const GRID_WIDTH = (GRID_COLS - 1) * STEP + CELL; // 592
 const GRID_X = Math.round((SHARE_CARD_WIDTH - GRID_WIDTH) / 2); // 136
-const GRID_TOP = 262;
 
-// 범례 — 적음 ▢▢▢▢▢ 많음 (잔디맵 우측 하단 끝에 align)
-const LEGEND_Y = 778;
+// 범례
+const LEGEND_Y = 1040;
 const LEGEND_CELL = 18;
 const LEGEND_CELL_GAP = 6;
-const LEGEND_TEXT_WIDTH = 36; // "적음" / "많음" 추정 폭 (fontSize 18)
+const LEGEND_TEXT_WIDTH = 36;
 const LEGEND_TEXT_GAP = 8;
 const LEGEND_WIDTH =
   LEGEND_TEXT_WIDTH +
@@ -45,24 +55,7 @@ const LEGEND_WIDTH =
 const LEGEND_RIGHT_X = GRID_X + GRID_WIDTH;
 const LEGEND_LEFT_X = LEGEND_RIGHT_X - LEGEND_WIDTH;
 
-// 업적 좌우 분할 (라벨 + 메인)
-const ACH_LABEL_Y = 858;
-const ACH_MAIN_Y = 898;
-const COL1_X = 232; // 좌측 column center
-const COL2_X = 632; // 우측 column center
-
-// 자랑 한마디 (업적 아래, 풀폭)
-const MSG_LABEL_Y = 968;
-const MSG_MAIN_Y = 1020;
-
-const WATERMARK_Y = 1130;
-
-// 배경 캐릭터 워터마크 — 더 크게 (420 → 580)
-const BG_CHAR_SIZE = 580;
-const BG_CHAR_X = Math.round((SHARE_CARD_WIDTH - BG_CHAR_SIZE) / 2);
-const BG_CHAR_Y = 440;
-const BG_CHAR_SCALE = BG_CHAR_SIZE / 200;
-const BG_OPACITY = 0.09;
+const WATERMARK_Y = 1120;
 
 // === Potato (calm) palette ===
 const P_SKIN = "#fdeed1";
@@ -115,16 +108,7 @@ function formatShortKoreanDate(date: string): string {
   return `${m}월 ${d}일`;
 }
 
-/** 인라인 calm-state 감자 (헤더 아이콘 + 배경 워터마크 공용) */
-function PotatoSvg({
-  x,
-  y,
-  scale,
-}: {
-  x: number;
-  y: number;
-  scale: number;
-}) {
+function PotatoSvg({ x, y, scale }: { x: number; y: number; scale: number }) {
   return (
     <g transform={`translate(${x}, ${y}) scale(${scale})`}>
       <path
@@ -198,34 +182,20 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
   const renderHeight = isPreview ? previewSize * aspectScale : SHARE_CARD_HEIGHT;
   const highlights = useMemo(() => computeMonthHighlights(data), [data]);
 
-  const wrapperClass = isPreview ? "" : "pointer-events-none";
+  const wrapperClass = isPreview ? "" : "absolute pointer-events-none";
   const wrapperStyle: CSSProperties = isPreview
     ? { width: renderWidth, height: renderHeight }
-    : {};
+    : { left: -99999, top: 0 };
 
-  const focusBlock = highlights.bestFocus
-    ? {
-        label: "🏆 가장 집중한 날",
-        main: `${formatShortKoreanDate(highlights.bestFocus.date)}, 평균 ${highlights.bestFocus.score}점`,
-        color: "#445478",
-      }
-    : {
-        label: "🏆 가장 집중한 날",
-        main: "기록 없음",
-        color: "#9aa0b0",
-      };
+  const focusMain = highlights.bestFocus
+    ? `${formatShortKoreanDate(highlights.bestFocus.date)}, 평균 ${highlights.bestFocus.score}점`
+    : "기록 없음";
+  const focusMainColor = highlights.bestFocus ? "#445478" : "#9aa0b0";
 
-  const todosBlock = highlights.mostTodos
-    ? {
-        label: "✅ 할일 많이 한 날",
-        main: `${formatShortKoreanDate(highlights.mostTodos.date)}, ${highlights.mostTodos.count}개 완료`,
-        color: "#5fa97a",
-      }
-    : {
-        label: "✅ 할일 많이 한 날",
-        main: "기록 없음",
-        color: "#9aa0b0",
-      };
+  const todosMain = highlights.mostTodos
+    ? `${formatShortKoreanDate(highlights.mostTodos.date)}, ${highlights.mostTodos.count}개 완료`
+    : "기록 없음";
+  const todosMainColor = highlights.mostTodos ? "#5fa97a" : "#9aa0b0";
 
   return (
     <div
@@ -253,46 +223,10 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           </defs>
         )}
 
-        {/* 카드 본체 cream 배경 (네모) */}
-        <rect
-          width={SHARE_CARD_WIDTH}
-          height={SHARE_CARD_HEIGHT}
-          fill="#fffaed"
-        />
+        {/* 카드 본체 cream 배경 */}
+        <rect width={SHARE_CARD_WIDTH} height={SHARE_CARD_HEIGHT} fill="#fffaed" />
 
-        {/* 배경 캐릭터 워터마크 */}
-        <g id="bg-character" opacity={BG_OPACITY}>
-          {itemDataUrls?.back && (
-            <image
-              href={itemDataUrls.back}
-              x={BG_CHAR_X}
-              y={BG_CHAR_Y}
-              width={BG_CHAR_SIZE}
-              height={BG_CHAR_SIZE}
-            />
-          )}
-          <PotatoSvg x={BG_CHAR_X} y={BG_CHAR_Y} scale={BG_CHAR_SCALE} />
-          {itemDataUrls?.head && (
-            <image
-              href={itemDataUrls.head}
-              x={BG_CHAR_X}
-              y={BG_CHAR_Y}
-              width={BG_CHAR_SIZE}
-              height={BG_CHAR_SIZE}
-            />
-          )}
-          {itemDataUrls?.face && (
-            <image
-              href={itemDataUrls.face}
-              x={BG_CHAR_X}
-              y={BG_CHAR_Y}
-              width={BG_CHAR_SIZE}
-              height={BG_CHAR_SIZE}
-            />
-          )}
-        </g>
-
-        {/* 헤더 — "모하심 잔디 자랑하기" 중앙 정렬 */}
+        {/* 헤더 */}
         <text
           x={SHARE_CARD_WIDTH / 2}
           y={TITLE_Y}
@@ -317,7 +251,105 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           </text>
         )}
 
-        {/* 요일 헤더 — 일~토 */}
+        {/* 좌측 캐릭터 (풀 컬러) */}
+        <g id="top-character">
+          {itemDataUrls?.back && (
+            <image
+              href={itemDataUrls.back}
+              x={CHAR_X}
+              y={CHAR_Y}
+              width={CHAR_BLOCK_SIZE}
+              height={CHAR_BLOCK_SIZE}
+            />
+          )}
+          <PotatoSvg x={CHAR_X} y={CHAR_Y} scale={CHAR_BLOCK_SIZE / 200} />
+          {itemDataUrls?.head && (
+            <image
+              href={itemDataUrls.head}
+              x={CHAR_X}
+              y={CHAR_Y}
+              width={CHAR_BLOCK_SIZE}
+              height={CHAR_BLOCK_SIZE}
+            />
+          )}
+          {itemDataUrls?.face && (
+            <image
+              href={itemDataUrls.face}
+              x={CHAR_X}
+              y={CHAR_Y}
+              width={CHAR_BLOCK_SIZE}
+              height={CHAR_BLOCK_SIZE}
+            />
+          )}
+        </g>
+
+        {/* 우측 통계 세로 3블록 */}
+        <g id="highlights">
+          {/* 🏆 가장 집중 잘 한 날 */}
+          <text
+            x={STATS_X}
+            y={STATS_FIRST_Y}
+            fontSize="20"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            🏆 가장 집중 잘 한 날
+          </text>
+          <text
+            x={STATS_X}
+            y={STATS_FIRST_Y + 34}
+            fontSize="26"
+            fontWeight="bold"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill={focusMainColor}
+          >
+            {focusMain}
+          </text>
+
+          {/* ✅ 할일 가장 많이 한 날 */}
+          <text
+            x={STATS_X}
+            y={STATS_FIRST_Y + STATS_BLOCK_GAP}
+            fontSize="20"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            ✅ 할일 가장 많이 한 날
+          </text>
+          <text
+            x={STATS_X}
+            y={STATS_FIRST_Y + STATS_BLOCK_GAP + 34}
+            fontSize="26"
+            fontWeight="bold"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill={todosMainColor}
+          >
+            {todosMain}
+          </text>
+
+          {/* 💬 내 자랑 한마디 */}
+          <text
+            x={STATS_X}
+            y={STATS_FIRST_Y + STATS_BLOCK_GAP * 2}
+            fontSize="20"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill="#9aa0b0"
+          >
+            💬 내 자랑 한마디
+          </text>
+          <text
+            x={STATS_X}
+            y={STATS_FIRST_Y + STATS_BLOCK_GAP * 2 + 34}
+            fontSize="26"
+            fontWeight="bold"
+            fontFamily={SHARE_FONT_FAMILY}
+            fill={message ? "#2b2520" : "#9aa0b0"}
+          >
+            {message || "자랑 한 마디 남겨줘!"}
+          </text>
+        </g>
+
+        {/* 요일 헤더 */}
         <g id="weekdays">
           {WEEKDAYS.map((wd, i) => {
             const cx = GRID_X + i * STEP + CELL / 2;
@@ -358,7 +390,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           })}
         </g>
 
-        {/* 적음 → 많음 범례 (잔디맵 우측 하단 정렬) */}
+        {/* 범례 */}
         <g id="legend">
           <text
             x={LEGEND_LEFT_X}
@@ -391,85 +423,6 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           </text>
         </g>
 
-        {/* 업적 — 좌우 분할 (라벨 + 메인) */}
-        <g id="achievements">
-          {/* 좌측: 집중 */}
-          <text
-            x={COL1_X}
-            y={ACH_LABEL_Y}
-            textAnchor="middle"
-            fontSize="22"
-            fontFamily={SHARE_FONT_FAMILY}
-            fill="#9aa0b0"
-          >
-            {focusBlock.label}
-          </text>
-          <text
-            x={COL1_X}
-            y={ACH_MAIN_Y}
-            textAnchor="middle"
-            fontSize="30"
-            fontWeight="bold"
-            fontFamily={SHARE_FONT_FAMILY}
-            fill={focusBlock.color}
-          >
-            {focusBlock.main}
-          </text>
-
-          {/* 우측: 할일 */}
-          <text
-            x={COL2_X}
-            y={ACH_LABEL_Y}
-            textAnchor="middle"
-            fontSize="22"
-            fontFamily={SHARE_FONT_FAMILY}
-            fill="#9aa0b0"
-          >
-            {todosBlock.label}
-          </text>
-          <text
-            x={COL2_X}
-            y={ACH_MAIN_Y}
-            textAnchor="middle"
-            fontSize="30"
-            fontWeight="bold"
-            fontFamily={SHARE_FONT_FAMILY}
-            fill={todosBlock.color}
-          >
-            {todosBlock.main}
-          </text>
-
-          {/* 좌우 사이 구분 점 */}
-          <circle cx={SHARE_CARD_WIDTH / 2} cy={ACH_MAIN_Y - 12} r="3" fill="#d8d0bf" />
-        </g>
-
-        {/* 자랑 한마디 — 그 아래 풀폭 */}
-        {message && (
-          <g id="user-message">
-            <text
-              x={SHARE_CARD_WIDTH / 2}
-              y={MSG_LABEL_Y}
-              textAnchor="middle"
-              fontSize="22"
-              fontFamily={SHARE_FONT_FAMILY}
-              fill="#9aa0b0"
-            >
-              💬 내 자랑 한마디
-            </text>
-            <text
-              x={SHARE_CARD_WIDTH / 2}
-              y={MSG_MAIN_Y}
-              textAnchor="middle"
-              fontSize="56"
-              fontWeight="bold"
-              fontFamily={SHARE_FONT_FAMILY}
-              fill="#2b2520"
-            >
-              {message}
-            </text>
-          </g>
-        )}
-
         {/* 워터마크 */}
         <text
           x={SHARE_CARD_WIDTH / 2}
@@ -482,7 +435,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           모하심으로 기록 중 🌱
         </text>
 
-        {/* 카드 외곽선 (네모) */}
+        {/* 카드 외곽선 */}
         <rect
           x="0.9"
           y="0.9"
