@@ -176,7 +176,7 @@ describe("DurationsEditScreen", () => {
     fireEvent.change(screen.getByDisplayValue("25"), {
       target: { value: "30" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /시간 편집/ }));
+    fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
     expect(screen.getByText("변경 사항 폐기")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "폐기" }));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -188,7 +188,7 @@ describe("DurationsEditScreen", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("25")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /시간 편집/ }));
+    fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("변경 사항 폐기")).not.toBeInTheDocument();
   });

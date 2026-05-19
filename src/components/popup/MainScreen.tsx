@@ -188,12 +188,13 @@ export function MainScreen({ onResetDone, updateInfo }: MainScreenProps) {
   const total = snap?.total ?? 0;
   const engineState = snap?.state ?? "calm";
   const noiseLoudActive = snap?.noiseLoud ?? false;
+  const noiseMediumActive = snap?.noiseMedium ?? false;
   // Phase 21 사용자 피드백: 평상시/집중 모두에서 dB 측정 UI가 노출되어야 함.
   const db = snap?.db ?? 50;
 
   const { phrase, potatoState } = usePhrase(
     snap
-      ? { phase, total, state: engineState, noiseLoudActive }
+      ? { phase, total, state: engineState, noiseLoudActive, noiseMediumActive }
       : null
   );
 

@@ -226,8 +226,10 @@ fn show_window_for_onboarding<R: Runtime>(app: &AppHandle<R>) {
     use tauri_plugin_notification::NotificationExt;
     #[cfg(target_os = "windows")]
     let body = "작업 표시줄 우측 ^ 버튼을 눌러 부실감자 아이콘을 찾아 클릭해주세요!";
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     let body = "메뉴바 우상단의 부실감자 아이콘을 클릭해 시작해주세요!";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let body = "시스템 트레이의 부실감자 아이콘을 클릭해 시작해주세요!";
     let _ = app
         .notification()
         .builder()

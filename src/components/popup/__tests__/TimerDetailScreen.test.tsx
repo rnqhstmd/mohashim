@@ -11,6 +11,25 @@ vi.mock("../../../lib/timer", () => ({
 vi.mock("../../../lib/storage", () => ({
   getFocusMinutes: vi.fn().mockResolvedValue(25),
   getBreakMinutes: vi.fn().mockResolvedValue(5),
+  STORE_DEFAULTS: {
+    onboarding_completed: false,
+    focus_minutes: 25,
+    break_minutes: 5,
+    notifications_enabled: true,
+    auto_launch_enabled: false,
+    todos: [],
+    work_tags: [],
+    locations: [],
+    sessions: {},
+    active_phase: "idle",
+    session_logs: [],
+    last_cleanup_year: 0,
+    economy: { sprouts: 0, lastTodoSproutDate: null },
+    inventory: { owned: [], equipped: { face: null, head: null, back: null } },
+    mailbox: [],
+    last_monthly_letter_year_month: null,
+    last_seen_version: null,
+  },
 }));
 
 import { TimerDetailScreen } from "../TimerDetailScreen";

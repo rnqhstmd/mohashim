@@ -162,13 +162,14 @@ describe("TodoItem (Phase 21 재구조)", () => {
     ).toBeInTheDocument();
   });
 
-  it("텍스트 클릭 → 인라인 편집 input 진입 + Enter 저장 → onEditText 호출", () => {
+  it("⋮ 메뉴 → 수정 클릭 → 인라인 편집 textarea 진입 + Enter 저장 → onEditText 호출", () => {
     const onEditText = vi.fn();
     render(
       <TodoItem {...baseProps} todo={baseTodo} onEditText={onEditText} />,
     );
-    fireEvent.click(screen.getByText("할 일 하나"));
-    const input = screen.getByDisplayValue("할 일 하나") as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: "할 일 메뉴 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /수정/ }));
+    const input = screen.getByDisplayValue("할 일 하나") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "수정된 내용" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onEditText).toHaveBeenCalledWith("t1", "수정된 내용");
@@ -179,8 +180,9 @@ describe("TodoItem (Phase 21 재구조)", () => {
     render(
       <TodoItem {...baseProps} todo={baseTodo} onEditText={onEditText} />,
     );
-    fireEvent.click(screen.getByText("할 일 하나"));
-    const input = screen.getByDisplayValue("할 일 하나") as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: "할 일 메뉴 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /수정/ }));
+    const input = screen.getByDisplayValue("할 일 하나") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "잘못 입력" } });
     fireEvent.keyDown(input, { key: "Escape" });
     expect(onEditText).not.toHaveBeenCalled();

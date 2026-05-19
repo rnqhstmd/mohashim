@@ -94,16 +94,17 @@ describe("getPermissionStatus", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("permission_status");
   });
 
-  it("notification not granted maps to not_determined (선택 권한)", async () => {
+  it("notification not granted maps to granted on non-Windows (macOS 기본 허용 정책)", async () => {
     mockedInvoke.mockResolvedValueOnce({
       mic: "granted",
       accessibility: "granted",
     });
     mockedNotifIsGranted.mockResolvedValueOnce(false);
+    // jsdom 환경에서 platform()은 에러 → isWindows()=false → macOS 경로 → "granted" 반환.
     await expect(getPermissionStatus()).resolves.toEqual({
       mic: "granted",
       accessibility: "granted",
-      notification: "not_determined",
+      notification: "granted",
     });
   });
 

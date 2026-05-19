@@ -6,9 +6,10 @@ import { findItem } from "../../../lib/shopCatalog";
 /**
  * ItemOverlay 컴포넌트 회귀 테스트 (Phase 25).
  *
- * Z-index 순서: back(z-0) → potato(z-10) → head(z-20) → face(z-30) (BR-1).
+ * Z-index 순서: potato(z-10 div) → back(z-[15]) → head(z-20) → face(z-30) (BR-1).
  * 미장착 슬롯은 <img>를 렌더하지 않는다 (FR-8).
  * previewItem은 동일 슬롯의 equipped를 시각적으로 대체한다 (FR-7).
+ * animated=true 시 루트 wrapper div에 animate-mh-bob 클래스 적용 (BR-3).
  */
 
 describe("ItemOverlay (Phase 25)", () => {
@@ -40,7 +41,7 @@ describe("ItemOverlay (Phase 25)", () => {
     expect(headImg!.getAttribute("src")).toBe(item.svgPath);
   });
 
-  it("AC-13: back 슬롯 equipped 시 z-0 img가 back SVG 경로로 렌더된다", () => {
+  it("AC-13: back 슬롯 equipped 시 z-[15] img가 back SVG 경로로 렌더된다", () => {
     const item = findItem("back_cloak_navy")!;
     const { container } = render(
       <ItemOverlay
@@ -48,10 +49,10 @@ describe("ItemOverlay (Phase 25)", () => {
         size={80}
       />,
     );
-    // .z-0은 img 외에 z-10 div도 있으므로 img 태그 한정으로 검색.
-    const backImg = container.querySelector("img.z-0") as HTMLImageElement | null;
-    expect(backImg).not.toBeNull();
-    expect(backImg!.getAttribute("src")).toBe(item.svgPath);
+    // back 슬롯은 z-[15] (Tailwind arbitrary value).
+    const imgs = container.querySelectorAll("img");
+    expect(imgs.length).toBe(1);
+    expect(imgs[0].getAttribute("src")).toBe(item.svgPath);
   });
 
   it("AC-14 (FR-8): 모든 슬롯이 null이면 컨테이너 내부에 <img>를 0개 렌더한다", () => {
@@ -84,7 +85,8 @@ describe("ItemOverlay (Phase 25)", () => {
     expect(faceImg!.getAttribute("src")).toBe(previewItem.svgPath);
     // 다른 슬롯은 영향 없음 — head/back img 미렌더.
     expect(container.querySelector("img.z-20")).toBeNull();
-    expect(container.querySelector("img.z-0")).toBeNull();
+    const imgs = container.querySelectorAll("img");
+    expect(imgs.length).toBe(1);
   });
 
   it("AC-7 (FR-8): face만 장착 시 head/back img는 미렌더 (img 1개만 존재)", () => {
@@ -101,7 +103,7 @@ describe("ItemOverlay (Phase 25)", () => {
     expect(container.querySelector("svg")).not.toBeNull();
   });
 
-  it("AC-8 (BR-3): animated=true 시 Potato svg에 animate-mh-bob 클래스 적용", () => {
+  it("AC-8 (BR-3): animated=true 시 루트 wrapper div에 animate-mh-bob 클래스 적용", () => {
     const { container } = render(
       <ItemOverlay
         equipped={{ face: null, head: null, back: null }}
@@ -109,12 +111,13 @@ describe("ItemOverlay (Phase 25)", () => {
         animated={true}
       />,
     );
-    const svg = container.querySelector("svg");
-    expect(svg).not.toBeNull();
-    expect(svg!.getAttribute("class") ?? "").toContain("animate-mh-bob");
+    // animate-mh-bob은 루트 wrapper div에 적용 (Potato svg 내부가 아님).
+    const root = container.firstChild as HTMLElement;
+    expect(root).not.toBeNull();
+    expect(root.className).toContain("animate-mh-bob");
   });
 
-  it("AC-9 (BR-3): animated=false 시 Potato svg에 animate-mh-bob 클래스 미적용", () => {
+  it("AC-9 (BR-3): animated=false 시 루트 wrapper div에 animate-mh-bob 클래스 미적용", () => {
     const { container } = render(
       <ItemOverlay
         equipped={{ face: null, head: null, back: null }}
@@ -122,12 +125,12 @@ describe("ItemOverlay (Phase 25)", () => {
         animated={false}
       />,
     );
-    const svg = container.querySelector("svg");
-    expect(svg).not.toBeNull();
-    expect(svg!.getAttribute("class") ?? "").not.toContain("animate-mh-bob");
+    const root = container.firstChild as HTMLElement;
+    expect(root).not.toBeNull();
+    expect(root.className).not.toContain("animate-mh-bob");
   });
 
-  it("AC-10 (BR-1): 모든 슬롯 장착 시 DOM 순서가 back(z-0) → head(z-20) → face(z-30)이고 Potato는 z-10 div에 위치", () => {
+  it("AC-10 (BR-1): 모든 슬롯 장착 시 DOM 순서가 potato wrapper(z-10) → back → head(z-20) → face(z-30)이고 img 3개 렌더", () => {
     const face = findItem("face_round_glasses")!;
     const head = findItem("head_strawhat")!;
     const back = findItem("back_cloak_navy")!;
@@ -140,14 +143,14 @@ describe("ItemOverlay (Phase 25)", () => {
     const root = container.firstChild as HTMLElement;
     expect(root).not.toBeNull();
     const children = Array.from(root.children) as HTMLElement[];
-    // 기대 순서: back img (z-0) → potato wrapper div (z-10) → head img (z-20) → face img (z-30).
+    // 기대 순서: potato wrapper div (z-10) → back img (z-[15]) → head img (z-20) → face img (z-30).
     expect(children.length).toBe(4);
-    expect(children[0].tagName).toBe("IMG");
-    expect(children[0].className).toContain("z-0");
-    expect(children[1].tagName).toBe("DIV");
-    expect(children[1].className).toContain("z-10");
+    expect(children[0].tagName).toBe("DIV");
+    expect(children[0].className).toContain("z-10");
     // z-10 div 내부에 Potato svg.
-    expect(children[1].querySelector("svg")).not.toBeNull();
+    expect(children[0].querySelector("svg")).not.toBeNull();
+    // back img는 z-[15] arbitrary class.
+    expect(children[1].tagName).toBe("IMG");
     expect(children[2].tagName).toBe("IMG");
     expect(children[2].className).toContain("z-20");
     expect(children[3].tagName).toBe("IMG");

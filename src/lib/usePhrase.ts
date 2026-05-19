@@ -14,6 +14,7 @@ export type UsePhraseInput =
       total: number;
       state: LiveState;
       noiseLoudActive: boolean;
+      noiseMediumActive: boolean;
     }
   | null;
 
@@ -35,11 +36,13 @@ const FALLBACK_INPUT: {
   total: number;
   state: LiveState;
   noiseLoudActive: boolean;
+  noiseMediumActive: boolean;
 } = {
   phase: "idle",
   total: 0,
   state: "calm",
   noiseLoudActive: false,
+  noiseMediumActive: false,
 };
 
 /**
@@ -69,6 +72,7 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
   const safeTotal = Math.max(0, Math.min(100, safeCtx.total));
   const safeState = safeCtx.state;
   const safeNoiseLoudActive = safeCtx.noiseLoudActive;
+  const safeNoiseMediumActive = safeCtx.noiseMediumActive;
 
   // 매 렌더의 bucket 산출.
   const currentBucket = useMemo(
@@ -77,8 +81,9 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
         phase: safePhase,
         total: safeTotal,
         noiseLoudActive: safeNoiseLoudActive,
+        noiseMediumActive: safeNoiseMediumActive,
       }),
-    [safePhase, safeTotal, safeNoiseLoudActive]
+    [safePhase, safeTotal, safeNoiseLoudActive, safeNoiseMediumActive]
   );
 
   // lazy init: 첫 렌더에서 currentBucket 기준 멘트 1개 산출.
@@ -111,10 +116,11 @@ export function usePhrase(input: UsePhraseInput): UsePhraseOutput {
           phase: safePhase,
           total: safeTotal,
           noiseLoudActive: safeNoiseLoudActive,
+          noiseMediumActive: safeNoiseMediumActive,
         },
         safeState
       ),
-    [safePhase, safeTotal, safeNoiseLoudActive, safeState]
+    [safePhase, safeTotal, safeNoiseLoudActive, safeNoiseMediumActive, safeState]
   );
 
   return { bucket: currentBucket, phrase, potatoState };
