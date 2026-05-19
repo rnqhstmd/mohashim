@@ -56,7 +56,7 @@ const SHARE_TIMEOUT_MS = 1000;
  *   overlay (onClick → onClose)
  *     panel (onClick stopPropagation, animate-slide-up)
  *       X 버튼 / 제목 / 미리보기 ShareCard(previewSize=260)
- *       메시지 입력창 (autofocus, maxLength=12)
+ *       메시지 입력창 (autofocus, maxLength=12) + 글자수 카운터
  *       "이미지 복사하기" 버튼 (busy disabled)
  *       복사/실패 안내문 (5초 자동 숨김, mutually exclusive)
  *       off-screen ShareCard(ref={copyRef}) — PNG 변환 원본 (AC-16)
@@ -235,16 +235,21 @@ export function SharePreviewModal({ data, onClose }: SharePreviewModalProps) {
             itemDataUrls={itemDataUrls}
           />
         </div>
-        <input
-          ref={inputRef}
-          type="text"
-          maxLength={12}
-          value={message}
-          // PR #17 gemini G3: maxLength=12에 맡김. 수동 slice는 surrogate pair 손상 위험.
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="자랑 한 마디 남겨줘!!"
-          className="mb-2 w-full rounded-md border border-deep/20 bg-white px-2 py-1 text-sm"
-        />
+        <div className="mb-2 w-full">
+          <input
+            ref={inputRef}
+            type="text"
+            maxLength={12}
+            value={message}
+            // PR #17 gemini G3: maxLength=12에 맡김. 수동 slice는 surrogate pair 손상 위험.
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="자랑 한 마디 남겨줘!!"
+            className="w-full rounded-md border border-deep/20 bg-white px-2 py-1 text-sm"
+          />
+          <p className="mt-0.5 text-right text-[10px] text-ink/40">
+            {message.length} / 12
+          </p>
+        </div>
         <button
           type="button"
           onClick={onCopy}

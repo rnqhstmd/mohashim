@@ -340,7 +340,7 @@ describe("mapPhaseToPotatoState — FR-22 / FR-23 / Phase 11 MA-1", () => {
   it("FR-23: discarded → 'stressed' (고정)", () => {
     expect(
       mapPhaseToPotatoState(
-        { phase: "discarded", total: 50, noiseLoudActive: false },
+        { phase: "discarded", total: 50, noiseLoudActive: false, noiseMediumActive: false },
         "focused"
       )
     ).toBe("stressed");

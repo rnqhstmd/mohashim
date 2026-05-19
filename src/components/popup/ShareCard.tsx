@@ -20,22 +20,22 @@ const MONTH_Y = 176;
 
 // 상단 캐릭터 + 통계 블록 (헤더 바로 아래)
 const TOP_BLOCK_Y = 220;
-const TOP_BLOCK_HEIGHT = 260;
-const CHAR_BLOCK_SIZE = 240;
-const CHAR_X = 64;
-const CHAR_Y = TOP_BLOCK_Y + (TOP_BLOCK_HEIGHT - CHAR_BLOCK_SIZE) / 2; // =230
-const STATS_X = 380;
-const STATS_BLOCK_GAP = 80;
-const STATS_FIRST_Y = TOP_BLOCK_Y + 30; // =250
+const TOP_BLOCK_HEIGHT = 300;
+const CHAR_BLOCK_SIZE = 280;
+const STATS_X = 432; // 잔디 그리드 가로 중앙 정렬
+const CHAR_X = 130; // 우측으로 살짝 이동
+const CHAR_Y = 210; // 통계 블록 세로 중앙 정렬
+const STATS_BLOCK_GAP = 100;
+const STATS_FIRST_Y = TOP_BLOCK_Y + 20; // =240
 
 // 요일 헤더 + 잔디 그리드 (상단 블록 아래)
-const GRID_TOP = TOP_BLOCK_Y + TOP_BLOCK_HEIGHT + 30; // =510
+const GRID_TOP = TOP_BLOCK_Y + TOP_BLOCK_HEIGHT + 30; // =550
 const WEEKDAY_Y = GRID_TOP - 24; // =486
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 // 잔디 그리드
-const CELL = 76;
-const STEP = 86;
+const CELL = 68;
+const STEP = 76;
 const GRID_COLS = 7;
 const GRID_WIDTH = (GRID_COLS - 1) * STEP + CELL; // 592
 const GRID_X = Math.round((SHARE_CARD_WIDTH - GRID_WIDTH) / 2); // 136
@@ -245,7 +245,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
             textAnchor="middle"
             fontSize="32"
             fontFamily={SHARE_FONT_FAMILY}
-            fill="#8a93a6"
+            fill="#445478"
           >
             {`${data.year}년 ${data.month}월`}
           </text>
@@ -289,7 +289,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           <text
             x={STATS_X}
             y={STATS_FIRST_Y}
-            fontSize="20"
+            fontSize="24"
             fontFamily={SHARE_FONT_FAMILY}
             fill="#9aa0b0"
           >
@@ -297,8 +297,8 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           </text>
           <text
             x={STATS_X}
-            y={STATS_FIRST_Y + 34}
-            fontSize="26"
+            y={STATS_FIRST_Y + 38}
+            fontSize="34"
             fontWeight="bold"
             fontFamily={SHARE_FONT_FAMILY}
             fill={focusMainColor}
@@ -310,7 +310,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           <text
             x={STATS_X}
             y={STATS_FIRST_Y + STATS_BLOCK_GAP}
-            fontSize="20"
+            fontSize="24"
             fontFamily={SHARE_FONT_FAMILY}
             fill="#9aa0b0"
           >
@@ -318,8 +318,8 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           </text>
           <text
             x={STATS_X}
-            y={STATS_FIRST_Y + STATS_BLOCK_GAP + 34}
-            fontSize="26"
+            y={STATS_FIRST_Y + STATS_BLOCK_GAP + 38}
+            fontSize="34"
             fontWeight="bold"
             fontFamily={SHARE_FONT_FAMILY}
             fill={todosMainColor}
@@ -331,7 +331,7 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           <text
             x={STATS_X}
             y={STATS_FIRST_Y + STATS_BLOCK_GAP * 2}
-            fontSize="20"
+            fontSize="24"
             fontFamily={SHARE_FONT_FAMILY}
             fill="#9aa0b0"
           >
@@ -339,8 +339,8 @@ export const ShareCard = forwardRef<SVGSVGElement, ShareCardProps>(function Shar
           </text>
           <text
             x={STATS_X}
-            y={STATS_FIRST_Y + STATS_BLOCK_GAP * 2 + 34}
-            fontSize="26"
+            y={STATS_FIRST_Y + STATS_BLOCK_GAP * 2 + 38}
+            fontSize="34"
             fontWeight="bold"
             fontFamily={SHARE_FONT_FAMILY}
             fill={message ? "#2b2520" : "#9aa0b0"}

@@ -14,12 +14,12 @@ type NoiseMeterProps = {
 };
 
 function envFromDb(db: number): { icon: string; label: string } {
-  if (db <= 40) return { icon: "📚", label: "조용해요" };
-  if (db <= 55) return { icon: "🏠", label: "조용해요" };
-  if (db <= 65) return { icon: "☕", label: "조용한 편" };
-  if (db <= 75) return { icon: "🗣", label: "조금 시끄러워" };
-  if (db <= 85) return { icon: "👥", label: "시끄러워요" };
-  return { icon: "🚧", label: "매우 시끄러워" };
+  if (db <= 40) return { icon: "📚", label: "조용하네" };
+  if (db <= 55) return { icon: "🏠", label: "조용하네" };
+  if (db <= 65) return { icon: "☕", label: "조용한듯아닌듯" };
+  if (db <= 75) return { icon: "🗣", label: "조금시끄러븜" };
+  if (db <= 85) return { icon: "👥", label: "시끄러워!!" };
+  return { icon: "🚧", label: "잠만에바다진짜" };
 }
 
 export function NoiseMeter({ db, size = "sm" }: NoiseMeterProps) {
